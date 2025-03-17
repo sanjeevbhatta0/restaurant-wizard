@@ -1,38 +1,64 @@
-.App {
-  text-align: center;
+/* Add this to your existing CSS */
+
+body {
+  background-color: #f8f9fa;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.card {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  transition: 0.3s;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
+.card:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary {
+  background-color: #4a6da7;
+  border-color: #4a6da7;
+}
+
+.btn-primary:hover {
+  background-color: #3a5a8f;
+  border-color: #3a5a8f;
+}
+
+.display-4 {
+  font-size: 2.5rem;
+}
+
+@media (min-width: 768px) {
+  .display-4 {
+    font-size: 3.5rem;
   }
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+/* Sidebar styles */
+.sidebar {
+  height: 100%;
+  margin-bottom: 20px;
+}
+
+.sidebar .nav-link {
+  color: #495057;
+  border-radius: 0;
+  cursor: pointer;
+  padding: 0.75rem 1.25rem;
+  border-left: 4px solid transparent;
+}
+
+.sidebar .nav-link:hover {
+  background-color: #f1f1f1;
+  border-left: 4px solid #ddd;
+}
+
+.sidebar .nav-link.active {
+  background-color: #4a6da7;
   color: white;
+  border-left: 4px solid #3a5a8f;
 }
 
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.sidebar .card-header {
+  font-weight: bold;
+  background-color: #f1f1f1;
 }
