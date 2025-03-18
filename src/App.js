@@ -9,6 +9,7 @@ import './App.css';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
+import MenuManagement from './components/MenuManagement';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -56,6 +57,7 @@ function App() {
             } 
           />
           <PrivateRoute exact path="/home" component={Home} />
+          <PrivateRoute exact path="/menu-management" component={MenuManagement} />
           <Route exact path="/">
             <Redirect to="/login" />
           </Route>
