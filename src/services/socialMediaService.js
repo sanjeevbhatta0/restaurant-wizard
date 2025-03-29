@@ -5,39 +5,45 @@ import { doc, setDoc, getDoc, updateDoc, collection } from 'firebase/firestore';
 const SOCIAL_CONNECTIONS_COLLECTION = 'socialMediaConnections';
 const SOCIAL_POSTS_COLLECTION = 'socialMediaPosts';
 
-export const socialMediaService = {
+const socialMediaService = {
   // Get user's social media connections
-  async getUserConnections(userId) {
+  getConnections: async (userId) => {
     try {
-      const docRef = doc(db, SOCIAL_CONNECTIONS_COLLECTION, userId);
+      const docRef = doc(db, 'users', userId, 'settings', 'socialMedia');
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
+        console.log('Found existing connections:', docSnap.data());
         return docSnap.data();
       } else {
-        // Initialize empty connections document
-        const initialData = {
-          facebook: { connected: false, token: null },
-          instagram: { connected: false, token: null },
-          twitter: { connected: false, token: null },
-          userId
-        };
-        await setDoc(docRef, initialData);
-        return initialData;
+        console.log('No existing connections found');
+        return {};
       }
     } catch (error) {
-      console.error('Error getting user connections:', error);
+      console.error('Error getting connections:', error);
       throw error;
     }
   },
 
   // Update social media connection status
-  async updateConnection(userId, platform, connectionData) {
+  updateConnection: async (userId, platform, connectionData) => {
     try {
-      const docRef = doc(db, SOCIAL_CONNECTIONS_COLLECTION, userId);
-      await updateDoc(docRef, {
-        [platform]: connectionData
-      });
+      console.log('Updating connection for:', { userId, platform, connectionData });
+      const docRef = doc(db, 'users', userId, 'settings', 'socialMedia');
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        // Update existing document
+        await updateDoc(docRef, {
+          [platform]: connectionData
+        });
+      } else {
+        // Create new document
+        await setDoc(docRef, {
+          [platform]: connectionData
+        });
+      }
+      console.log('Connection updated successfully');
     } catch (error) {
       console.error('Error updating connection:', error);
       throw error;
@@ -45,13 +51,10 @@ export const socialMediaService = {
   },
 
   // Store social media post
-  async createPost(userId, postData) {
+  createPost: async (userId, postData) => {
     try {
-      const postsCollection = collection(db, SOCIAL_POSTS_COLLECTION);
-      const postDoc = doc(postsCollection);
-      
-      await setDoc(postDoc, {
-        userId,
+      const postRef = doc(collection(db, 'users', userId, 'socialPosts'));
+      await setDoc(postRef, {
         content: postData.content,
         imageUrl: postData.imageUrl || null,
         platforms: postData.platforms,
@@ -59,8 +62,7 @@ export const socialMediaService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
-
-      return postDoc.id;
+      return postRef.id;
     } catch (error) {
       console.error('Error creating post:', error);
       throw error;
