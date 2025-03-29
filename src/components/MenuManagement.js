@@ -247,6 +247,7 @@ const MenuManagement = ({ user }) => {
   const handleItemSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
     
     try {
       let imageUrl = itemForm.imageUrl;
@@ -254,22 +255,36 @@ const MenuManagement = ({ user }) => {
       
       // Handle image upload if there's a new image
       if (itemForm.image) {
-        const fileName = `${Date.now()}-${itemForm.image.name}`;
-        imageStoragePath = `restaurants/${user.uid}/menuItems/${currentCategory.id}/${fileName}`;
-        const storageRef = ref(storage, imageStoragePath);
-        
-        // Upload the image
-        await uploadBytes(storageRef, itemForm.image);
-        imageUrl = await getDownloadURL(storageRef);
-        
-        // If updating an item and the old image is being replaced, delete old image
-        if (currentItem?.imageStoragePath && currentItem.imageStoragePath !== imageStoragePath) {
-          try {
-            const oldImageRef = ref(storage, currentItem.imageStoragePath);
-            await deleteObject(oldImageRef);
-          } catch (imgErr) {
-            console.warn("Could not delete old image:", imgErr);
+        try {
+          console.log('Starting image upload...');
+          const fileName = `${Date.now()}-${itemForm.image.name}`;
+          imageStoragePath = `restaurants/${user.uid}/menuItems/${currentCategory.id}/${fileName}`;
+          const storageRef = ref(storage, imageStoragePath);
+          
+          // Upload the image
+          console.log('Uploading image to storage...');
+          const uploadResult = await uploadBytes(storageRef, itemForm.image);
+          console.log('Image uploaded successfully:', uploadResult);
+          
+          // Get the download URL
+          console.log('Getting download URL...');
+          imageUrl = await getDownloadURL(storageRef);
+          console.log('Got download URL:', imageUrl);
+          
+          // If updating an item and the old image is being replaced, delete old image
+          if (currentItem?.imageStoragePath && currentItem.imageStoragePath !== imageStoragePath) {
+            try {
+              console.log('Deleting old image...');
+              const oldImageRef = ref(storage, currentItem.imageStoragePath);
+              await deleteObject(oldImageRef);
+              console.log('Old image deleted successfully');
+            } catch (imgErr) {
+              console.warn("Could not delete old image:", imgErr);
+            }
           }
+        } catch (uploadError) {
+          console.error('Error during image upload:', uploadError);
+          throw new Error(`Failed to upload image: ${uploadError.message}`);
         }
       }
       
@@ -300,21 +315,25 @@ const MenuManagement = ({ user }) => {
         itemData.finalPrice = parseFloat(itemForm.price);
       }
       
+      console.log('Saving item data to Firestore:', itemData);
+      
       if (currentItem) {
         // Update existing item
         const itemRef = doc(db, `restaurants/${user.uid}/menuCategories/${currentCategory.id}/items`, currentItem.id);
         await updateDoc(itemRef, itemData);
+        console.log('Item updated successfully');
       } else {
         // Create new item
         itemData.createdAt = new Date().toISOString();
-        await addDoc(collection(db, `restaurants/${user.uid}/menuCategories/${currentCategory.id}/items`), itemData);
+        const docRef = await addDoc(collection(db, `restaurants/${user.uid}/menuCategories/${currentCategory.id}/items`), itemData);
+        console.log('New item created successfully with ID:', docRef.id);
       }
       
       await fetchCategories();
       setShowItemModal(false);
     } catch (err) {
       console.error("Error saving menu item:", err);
-      setError('Failed to save menu item. Please try again.');
+      setError(`Failed to save menu item: ${err.message}`);
     } finally {
       setLoading(false);
     }
