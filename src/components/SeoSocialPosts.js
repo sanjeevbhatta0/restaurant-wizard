@@ -4,7 +4,7 @@ import { FaFacebook, FaInstagram, FaTwitter } from 'react-icons/fa';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import socialMediaService from '../services/socialMediaService';
-import FacebookLogin from 'react-facebook-login';
+import { facebookService } from '../services/facebookService';
 
 const SeoSocialPosts = ({ user }) => {
   const [connectedAccounts, setConnectedAccounts] = useState({
@@ -12,6 +12,8 @@ const SeoSocialPosts = ({ user }) => {
     instagram: false,
     twitter: false
   });
+  const [facebookPages, setFacebookPages] = useState([]);
+  const [selectedPage, setSelectedPage] = useState(null);
   const [postContent, setPostContent] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState({
@@ -23,80 +25,63 @@ const SeoSocialPosts = ({ user }) => {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load user's social media connections on component mount
   useEffect(() => {
-    const loadConnections = async () => {
-      try {
-        const connections = await socialMediaService.getUserConnections(user.uid);
-        setConnectedAccounts({
-          facebook: connections.facebook.connected,
-          instagram: connections.instagram.connected,
-          twitter: connections.twitter.connected
-        });
-      } catch (err) {
-        setError('Failed to load social media connections');
-        console.error(err);
+    checkFacebookLoginStatus();
+  }, []);
+
+  const checkFacebookLoginStatus = async () => {
+    try {
+      const response = await facebookService.initFacebookLogin();
+      if (response.status === 'connected') {
+        setConnectedAccounts(prev => ({ ...prev, facebook: true }));
+        loadFacebookPages();
       }
-    };
-
-    if (user?.uid) {
-      loadConnections();
-    }
-  }, [user]);
-
-  const handleFacebookResponse = async (response) => {
-    if (response.accessToken) {
-      try {
-        setIsLoading(true);
-        setError('');
-        
-        // Store the Facebook access token
-        const connectionData = {
-          connected: true,
-          token: response.accessToken,
-          userId: response.userID,
-          connectedAt: new Date().toISOString()
-        };
-
-        await socialMediaService.updateConnection(user.uid, 'facebook', connectionData);
-        
-        setConnectedAccounts(prev => ({
-          ...prev,
-          facebook: true
-        }));
-
-        setSuccess('Successfully connected to Facebook');
-      } catch (err) {
-        setError(`Failed to connect to Facebook: ${err.message}`);
-      } finally {
-        setIsLoading(false);
-      }
+    } catch (err) {
+      console.error('Error checking Facebook login status:', err);
     }
   };
 
-  const handleSocialConnect = async (platform) => {
+  const loadFacebookPages = async () => {
+    try {
+      const pages = await facebookService.getPages();
+      setFacebookPages(pages);
+      if (pages.length > 0) {
+        setSelectedPage(pages[0]);
+      }
+    } catch (err) {
+      console.error('Error loading Facebook pages:', err);
+      setError('Failed to load Facebook pages');
+    }
+  };
+
+  const handleFacebookLogin = async () => {
     try {
       setIsLoading(true);
       setError('');
       
-      // Here we'll implement the OAuth flow for each platform
-      // For now, we'll simulate a successful connection
+      const response = await facebookService.login();
+      
+      // Store the Facebook access token
       const connectionData = {
         connected: true,
-        token: 'dummy-token',
+        token: response.authResponse.accessToken,
+        userId: response.authResponse.userID,
         connectedAt: new Date().toISOString()
       };
 
-      await socialMediaService.updateConnection(user.uid, platform, connectionData);
+      await socialMediaService.updateConnection(user.uid, 'facebook', connectionData);
       
       setConnectedAccounts(prev => ({
         ...prev,
-        [platform]: true
+        facebook: true
       }));
 
-      setSuccess(`Successfully connected to ${platform}`);
+      // Load user's Facebook pages
+      await loadFacebookPages();
+
+      setSuccess('Successfully connected to Facebook');
     } catch (err) {
-      setError(`Failed to connect to ${platform}: ${err.message}`);
+      setError(`Failed to connect to Facebook: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -132,14 +117,17 @@ const SeoSocialPosts = ({ user }) => {
         imageUrl = await getDownloadURL(uploadResult.ref);
       }
 
-      // Create post in Firebase
-      const postId = await socialMediaService.createPost(user.uid, {
-        content: postContent,
-        imageUrl,
-        platforms: selectedPlatforms
-      });
+      // Post to Facebook if selected
+      if (selectedPlatforms.facebook && selectedPage) {
+        await facebookService.postToPage(
+          selectedPage.id,
+          selectedPage.access_token,
+          postContent,
+          imageUrl
+        );
+      }
 
-      setSuccess('Post created successfully! It will be published to selected platforms shortly.');
+      setSuccess('Post published successfully!');
       setPostContent('');
       setSelectedImage(null);
       setSelectedPlatforms({
@@ -148,7 +136,7 @@ const SeoSocialPosts = ({ user }) => {
         twitter: false
       });
     } catch (err) {
-      setError(`Failed to create post: ${err.message}`);
+      setError(`Failed to publish post: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -166,48 +154,34 @@ const SeoSocialPosts = ({ user }) => {
         <Card.Body>
           <Row>
             <Col md={4}>
-              {!connectedAccounts.facebook ? (
-                <FacebookLogin
-                  appId={process.env.REACT_APP_FACEBOOK_APP_ID}
-                  autoLoad={false}
-                  fields="name,email,picture"
-                  scope="pages_manage_posts,pages_read_engagement"
-                  callback={handleFacebookResponse}
-                  cssClass="btn btn-primary w-100 mb-3"
-                  icon={<FaFacebook className="me-2" />}
-                  textButton="Connect Facebook"
-                />
-              ) : (
-                <Button 
-                  variant="success"
-                  className="w-100 mb-3"
-                  disabled
-                >
-                  <FaFacebook className="me-2" />
-                  Connected to Facebook
-                </Button>
-              )}
+              <Button 
+                variant={connectedAccounts.facebook ? "success" : "primary"}
+                className="w-100 mb-3"
+                onClick={handleFacebookLogin}
+                disabled={isLoading}
+              >
+                <FaFacebook className="me-2" />
+                {connectedAccounts.facebook ? 'Connected to Facebook' : 'Connect Facebook'}
+              </Button>
             </Col>
             <Col md={4}>
               <Button 
                 variant={connectedAccounts.instagram ? "success" : "primary"}
                 className="w-100 mb-3"
-                onClick={() => handleSocialConnect('instagram')}
-                disabled={isLoading}
+                disabled={true}
               >
                 <FaInstagram className="me-2" />
-                {connectedAccounts.instagram ? 'Connected' : 'Connect Instagram'}
+                Coming Soon
               </Button>
             </Col>
             <Col md={4}>
               <Button 
                 variant={connectedAccounts.twitter ? "success" : "primary"}
                 className="w-100 mb-3"
-                onClick={() => handleSocialConnect('twitter')}
-                disabled={isLoading}
+                disabled={true}
               >
                 <FaTwitter className="me-2" />
-                {connectedAccounts.twitter ? 'Connected' : 'Connect X (Twitter)'}
+                Coming Soon
               </Button>
             </Col>
           </Row>
@@ -221,6 +195,23 @@ const SeoSocialPosts = ({ user }) => {
         </Card.Header>
         <Card.Body>
           <Form onSubmit={handleSubmit}>
+            {connectedAccounts.facebook && (
+              <Form.Group className="mb-3">
+                <Form.Label>Select Facebook Page</Form.Label>
+                <Form.Select
+                  value={selectedPage?.id || ''}
+                  onChange={(e) => setSelectedPage(facebookPages.find(p => p.id === e.target.value))}
+                  disabled={isLoading}
+                >
+                  {facebookPages.map(page => (
+                    <option key={page.id} value={page.id}>
+                      {page.name}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            )}
+
             <Form.Group className="mb-3">
               <Form.Label>Post Content</Form.Label>
               <Form.Control
@@ -279,7 +270,8 @@ const SeoSocialPosts = ({ user }) => {
               disabled={
                 isLoading || 
                 !postContent.trim() || 
-                (!selectedPlatforms.facebook && !selectedPlatforms.instagram && !selectedPlatforms.twitter)
+                (!selectedPlatforms.facebook && !selectedPlatforms.instagram && !selectedPlatforms.twitter) ||
+                (selectedPlatforms.facebook && !selectedPage)
               }
             >
               {isLoading ? 'Publishing...' : 'Post to Selected Platforms'}
