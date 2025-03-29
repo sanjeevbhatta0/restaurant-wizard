@@ -10,6 +10,8 @@ import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
 import MenuManagement from './components/MenuManagement';
+import SeoSocialPosts from './components/SeoSocialPosts';
+import Navigation from './components/Navigation';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -43,6 +45,7 @@ function App() {
   return (
     <Router>
       <div className="container mt-3">
+        {currentUser && <Navigation />}
         <Switch>
           <Route 
             exact path="/login" 
@@ -58,6 +61,7 @@ function App() {
           />
           <PrivateRoute exact path="/home" component={Home} />
           <PrivateRoute exact path="/menu-management" component={MenuManagement} />
+          <PrivateRoute exact path="/seo-social-posts" component={SeoSocialPosts} />
           <Route exact path="/">
             <Redirect to="/login" />
           </Route>
