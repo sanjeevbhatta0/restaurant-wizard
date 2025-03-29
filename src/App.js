@@ -12,6 +12,9 @@ import Home from './components/Home';
 import MenuManagement from './components/MenuManagement';
 import SeoSocialPosts from './components/SeoSocialPosts';
 import Navigation from './components/Navigation';
+import PrivacyPolicy from './components/PrivacyPolicy';
+import AppIcon from './components/AppIcon';
+import DataDeletion from './components/DataDeletion';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -59,6 +62,9 @@ function App() {
               currentUser ? <Redirect to="/home" /> : <Signup {...props} />
             } 
           />
+          <Route exact path="/privacy-policy" component={PrivacyPolicy} />
+          <Route exact path="/app-icon" component={AppIcon} />
+          <Route exact path="/data-deletion" component={DataDeletion} />
           <PrivateRoute exact path="/home" component={Home} />
           <PrivateRoute exact path="/menu-management" component={MenuManagement} />
           <PrivateRoute exact path="/seo-social-posts" component={SeoSocialPosts} />
