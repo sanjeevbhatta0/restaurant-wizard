@@ -217,12 +217,145 @@ window.RestaurantMenu = {
     const styles = `
       .restaurant-menu-container {
         display: grid;
-        grid-template-columns: 1fr 3fr;
+        grid-template-columns: 1fr 300px;
         gap: 20px;
         max-width: 1200px;
         margin: 0 auto;
         padding: 20px;
         position: relative;
+      }
+
+      .restaurant-menu-content {
+        grid-column: 1;
+      }
+
+      .restaurant-cart-container {
+        grid-column: 2;
+        position: sticky;
+        top: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        padding: 15px;
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
+      }
+
+      .restaurant-notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 15px 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+        animation: slideIn 0.3s ease-out;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+
+      .restaurant-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+
+      .restaurant-modal-content {
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+        position: relative;
+      }
+
+      .restaurant-modal-close {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+      }
+
+      .restaurant-modal-close:hover {
+        color: #333;
+      }
+
+      .restaurant-checkout-form {
+        display: grid;
+        gap: 15px;
+      }
+
+      .restaurant-checkout-form label {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+      }
+
+      .restaurant-checkout-form input,
+      .restaurant-checkout-form select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+      }
+
+      .restaurant-checkout-form .form-group {
+        margin-bottom: 15px;
+      }
+
+      .restaurant-button-loading {
+        position: relative;
+        color: transparent !important;
+      }
+
+      .restaurant-button-loading::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 20px;
+        height: 20px;
+        margin: -10px 0 0 -10px;
+        border: 3px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .restaurant-confirmation-message {
+        text-align: center;
+        padding: 20px;
+      }
+
+      .restaurant-confirmation-message h3 {
+        color: #28a745;
+        margin-bottom: 15px;
       }
 
       .restaurant-loading {
@@ -450,21 +583,35 @@ window.RestaurantMenu = {
     items: [],
     restaurantId: null,
 
-    addItem: function(item, quantity = 1) {
+    addItem: function(item) {
       const existingItem = this.items.find(i => i.id === item.id);
       if (existingItem) {
-        existingItem.quantity += quantity;
+        existingItem.quantity += 1;
       } else {
-        this.items.push({ ...item, quantity });
+        this.items.push({ ...item, quantity: 1 });
       }
-      this.updateCartUI();
-      this.saveCart();
+
+      // Show notification
+      const notification = document.createElement('div');
+      notification.className = 'restaurant-notification';
+      notification.innerHTML = `
+        <span>✓</span>
+        <span>${item.name} added to cart</span>
+      `;
+      document.body.appendChild(notification);
+
+      // Remove notification after 3 seconds
+      setTimeout(() => {
+        notification.style.animation = 'slideIn 0.3s ease-out reverse';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+
+      this.updateCart();
     },
 
     removeItem: function(itemId) {
       this.items = this.items.filter(item => item.id !== itemId);
-      this.updateCartUI();
-      this.saveCart();
+      this.updateCart();
     },
 
     updateQuantity: function(itemId, quantity) {
@@ -474,16 +621,14 @@ window.RestaurantMenu = {
         if (item.quantity === 0) {
           this.removeItem(itemId);
         } else {
-          this.updateCartUI();
-          this.saveCart();
+          this.updateCart();
         }
       }
     },
 
     clearCart: function() {
       this.items = [];
-      this.updateCartUI();
-      this.saveCart();
+      this.updateCart();
     },
 
     getTotal: function() {
@@ -498,17 +643,18 @@ window.RestaurantMenu = {
       const saved = localStorage.getItem(`restaurant-cart-${this.restaurantId}`);
       if (saved) {
         this.items = JSON.parse(saved);
-        this.updateCartUI();
+        this.updateCart();
       }
     },
 
-    updateCartUI: function() {
+    updateCart: function() {
       const cartContainer = document.getElementById('restaurant-cart');
       if (!cartContainer) return;
 
       if (this.items.length === 0) {
         cartContainer.innerHTML = `
-          <div class="restaurant-cart-empty">
+          <div class="restaurant-cart-container">
+            <h3>Your Cart</h3>
             <p>Your cart is empty</p>
           </div>
         `;
@@ -516,196 +662,182 @@ window.RestaurantMenu = {
       }
 
       cartContainer.innerHTML = `
-        <div class="restaurant-cart-items">
+        <div class="restaurant-cart-container">
+          <h3>Your Cart</h3>
           ${this.items.map(item => `
             <div class="restaurant-cart-item">
-              <div class="restaurant-cart-item-info">
-                <h4>${item.name}</h4>
-                <p class="restaurant-cart-item-price">$${(item.finalPrice * item.quantity).toFixed(2)}</p>
+              <div class="restaurant-cart-item-details">
+                <span>${item.quantity}x ${item.name}</span>
+                <span>$${(item.finalPrice * item.quantity).toFixed(2)}</span>
               </div>
-              <div class="restaurant-cart-item-quantity">
+              <div class="restaurant-cart-item-actions">
                 <button onclick="RestaurantMenu.cart.updateQuantity('${item.id}', ${item.quantity - 1})">-</button>
                 <span>${item.quantity}</span>
                 <button onclick="RestaurantMenu.cart.updateQuantity('${item.id}', ${item.quantity + 1})">+</button>
+                <button onclick="RestaurantMenu.cart.removeItem('${item.id}')" class="restaurant-button-danger">Remove</button>
               </div>
             </div>
           `).join('')}
           <div class="restaurant-cart-total">
-            <h3>Total: $${this.getTotal().toFixed(2)}</h3>
+            <strong>Total: $${this.getTotal().toFixed(2)}</strong>
           </div>
-          <div class="restaurant-cart-actions">
-            <button onclick="RestaurantMenu.cart.clearCart()" class="restaurant-button-secondary">Clear Cart</button>
-            <button onclick="RestaurantMenu.showCheckout()" class="restaurant-button-primary">Checkout</button>
-          </div>
+          <button onclick="RestaurantMenu.cart.showCheckout()" class="restaurant-button-primary">
+            Proceed to Checkout
+          </button>
         </div>
       `;
-    }
-  },
+    },
 
-  showCheckout: function() {
-    const checkoutContainer = document.createElement('div');
-    checkoutContainer.className = 'restaurant-checkout-modal';
-    
-    checkoutContainer.innerHTML = `
-      <div class="restaurant-checkout-content">
-        <h2>Checkout</h2>
-        <form id="restaurant-checkout-form">
-          <div class="form-group">
-            <label>Name</label>
-            <input type="text" id="customer-name" required>
-          </div>
-          <div class="form-group">
-            <label>Phone</label>
-            <input type="tel" id="customer-phone" required>
-          </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input type="email" id="customer-email" required>
-          </div>
-          <div class="form-group">
-            <label>Pickup Time</label>
-            <select id="pickup-time" required>
-              ${this.generatePickupTimes()}
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Order Type</label>
-            <div class="order-type-options">
-              <label class="order-type-option">
-                <input type="radio" name="order-type" value="pickup" checked>
-                Pickup
-              </label>
-              <label class="order-type-option disabled">
-                <input type="radio" name="order-type" value="delivery" disabled>
-                Delivery (Coming Soon)
-              </label>
+    showCheckout: function() {
+      const modal = document.createElement('div');
+      modal.className = 'restaurant-modal';
+      modal.innerHTML = `
+        <div class="restaurant-modal-content">
+          <button class="restaurant-modal-close" onclick="RestaurantMenu.cart.closeCheckout()">&times;</button>
+          <h2>Checkout</h2>
+          <form id="restaurant-checkout-form" class="restaurant-checkout-form" onsubmit="RestaurantMenu.cart.submitOrder(event)">
+            <div class="form-group">
+              <label for="name">Name</label>
+              <input type="text" id="name" required>
             </div>
-          </div>
-          <div class="form-group">
-            <label>Payment Method</label>
-            <div class="payment-method-options">
-              <label class="payment-method-option">
-                <input type="radio" name="payment-method" value="pay-at-restaurant" checked>
-                Pay at Restaurant
-              </label>
-              <label class="payment-method-option disabled">
-                <input type="radio" name="payment-method" value="online" disabled>
-                Online Payment (Coming Soon)
-              </label>
+            <div class="form-group">
+              <label for="phone">Phone</label>
+              <input type="tel" id="phone" required>
             </div>
-          </div>
-          <div class="order-summary">
-            <h3>Order Summary</h3>
-            ${this.cart.items.map(item => `
-              <div class="order-item">
-                <span>${item.quantity}x ${item.name}</span>
-                <span>$${(item.finalPrice * item.quantity).toFixed(2)}</span>
+            <div class="form-group">
+              <label for="email">Email</label>
+              <input type="email" id="email" required>
+            </div>
+            <div class="form-group">
+              <label for="pickupTime">Pickup Time</label>
+              <select id="pickupTime" required>
+                ${this.generatePickupTimes()}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Order Type</label>
+              <div>
+                <input type="radio" id="pickup" name="orderType" value="pickup" checked>
+                <label for="pickup">Pickup</label>
+                <input type="radio" id="delivery" name="orderType" value="delivery" disabled>
+                <label for="delivery">Delivery (Coming Soon)</label>
               </div>
-            `).join('')}
-            <div class="order-total">
-              <strong>Total:</strong>
-              <strong>$${this.cart.getTotal().toFixed(2)}</strong>
             </div>
-          </div>
-          <div class="checkout-actions">
-            <button type="button" onclick="RestaurantMenu.closeCheckout()" class="restaurant-button-secondary">Back</button>
-            <button type="submit" class="restaurant-button-primary">Place Order</button>
-          </div>
-        </form>
-      </div>
-    `;
+            <div class="form-group">
+              <label>Payment Method</label>
+              <div>
+                <input type="radio" id="payAtRestaurant" name="paymentMethod" value="payAtRestaurant" checked>
+                <label for="payAtRestaurant">Pay at Restaurant</label>
+                <input type="radio" id="onlinePayment" name="paymentMethod" value="onlinePayment" disabled>
+                <label for="onlinePayment">Online Payment (Coming Soon)</label>
+              </div>
+            </div>
+            <h3>Order Summary</h3>
+            ${this.generateOrderSummaryHTML()}
+            <button type="submit" class="restaurant-button-primary" id="place-order-button">
+              Place Order
+            </button>
+          </form>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    },
 
-    document.body.appendChild(checkoutContainer);
+    closeCheckout: function() {
+      const modal = document.querySelector('.restaurant-modal');
+      if (modal) {
+        modal.remove();
+      }
+    },
 
-    document.getElementById('restaurant-checkout-form').onsubmit = (e) => {
-      e.preventDefault();
-      this.submitOrder();
-    };
-  },
+    submitOrder: async function(event) {
+      event.preventDefault();
+      const form = event.target;
+      const button = form.querySelector('#place-order-button');
+      button.classList.add('restaurant-button-loading');
+      button.disabled = true;
 
-  closeCheckout: function() {
-    const modal = document.querySelector('.restaurant-checkout-modal');
-    if (modal) {
-      modal.remove();
-    }
-  },
+      try {
+        const orderData = {
+          restaurantId: RestaurantMenu.config.restaurantId,
+          customer: {
+            name: form.name.value,
+            phone: form.phone.value,
+            email: form.email.value
+          },
+          items: this.items,
+          total: this.calculateTotal(),
+          pickupTime: form.pickupTime.value,
+          orderType: form.orderType.value,
+          paymentMethod: form.paymentMethod.value
+        };
 
-  generatePickupTimes: function() {
-    const now = new Date();
-    const times = [];
-    const startTime = new Date(now.setMinutes(now.getMinutes() + 30));
-    startTime.setMinutes(Math.ceil(startTime.getMinutes() / 15) * 15);
+        const response = await fetch('https://us-central1-restaurant-portal-6b147.cloudfunctions.net/submitOrder', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(orderData)
+        });
 
-    for (let i = 0; i < 12; i++) {
-      const time = new Date(startTime.getTime() + i * 15 * 60000);
-      times.push(`
-        <option value="${time.toISOString()}">
-          ${time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-        </option>
-      `);
-    }
+        const result = await response.json();
 
-    return times.join('');
-  },
+        if (result.success) {
+          // Show confirmation message
+          const modalContent = document.querySelector('.restaurant-modal-content');
+          modalContent.innerHTML = `
+            <div class="restaurant-confirmation-message">
+              <h3>Order Placed Successfully!</h3>
+              <p>Your order number is: ${result.orderId}</p>
+              <p>We'll have your order ready for pickup at ${orderData.pickupTime}</p>
+              <button onclick="RestaurantMenu.cart.closeCheckout()" class="restaurant-button-primary">
+                Close
+              </button>
+            </div>
+          `;
+          
+          // Clear cart
+          this.items = [];
+          this.updateCart();
+        } else {
+          throw new Error(result.error || 'Failed to place order');
+        }
+      } catch (error) {
+        alert('Failed to place order: ' + error.message);
+        button.classList.remove('restaurant-button-loading');
+        button.disabled = false;
+      }
+    },
 
-  submitOrder: async function() {
-    const form = document.getElementById('restaurant-checkout-form');
-    const orderData = {
-      restaurantId: this.cart.restaurantId,
-      customerName: form.querySelector('#customer-name').value,
-      customerPhone: form.querySelector('#customer-phone').value,
-      customerEmail: form.querySelector('#customer-email').value,
-      pickupTime: form.querySelector('#pickup-time').value,
-      orderType: form.querySelector('input[name="order-type"]:checked').value,
-      paymentMethod: form.querySelector('input[name="payment-method"]:checked').value,
-      items: this.cart.items,
-      total: this.cart.getTotal(),
-      status: 'new',
-      createdAt: new Date().toISOString()
-    };
+    generatePickupTimes: function() {
+      const now = new Date();
+      const times = [];
+      const startTime = new Date(now.setMinutes(now.getMinutes() + 30));
+      startTime.setMinutes(Math.ceil(startTime.getMinutes() / 15) * 15);
 
-    try {
-      const response = await fetch('https://us-central1-restaurant-portal-6b147.cloudfunctions.net/submitOrder', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(orderData)
-      });
+      for (let i = 0; i < 12; i++) {
+        const time = new Date(startTime.getTime() + i * 15 * 60000);
+        times.push(`
+          <option value="${time.toISOString()}">
+            ${time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+          </option>
+        `);
+      }
 
-      if (!response.ok) throw new Error('Failed to submit order');
+      return times.join('');
+    },
 
-      const result = await response.json();
-      this.showOrderConfirmation(result.orderId);
-      this.cart.clearCart();
-    } catch (error) {
-      console.error('Error submitting order:', error);
-      alert('Failed to submit order. Please try again.');
-    }
-  },
+    generateOrderSummaryHTML: function() {
+      return this.items.map(item => `
+        <div class="order-item">
+          <span>${item.quantity}x ${item.name}</span>
+          <span>$${(item.finalPrice * item.quantity).toFixed(2)}</span>
+        </div>
+      `).join('');
+    },
 
-  showOrderConfirmation: function(orderId) {
-    const confirmationContainer = document.createElement('div');
-    confirmationContainer.className = 'restaurant-confirmation-modal';
-    
-    confirmationContainer.innerHTML = `
-      <div class="restaurant-confirmation-content">
-        <h2>Order Confirmed!</h2>
-        <p>Your order number is: #${orderId}</p>
-        <p>We'll notify you when your order is ready.</p>
-        <button onclick="RestaurantMenu.closeConfirmation()" class="restaurant-button-primary">
-          Close
-        </button>
-      </div>
-    `;
-
-    document.body.appendChild(confirmationContainer);
-  },
-
-  closeConfirmation: function() {
-    const modal = document.querySelector('.restaurant-confirmation-modal');
-    if (modal) {
-      modal.remove();
+    calculateTotal: function() {
+      return this.getTotal();
     }
   }
 }; 
