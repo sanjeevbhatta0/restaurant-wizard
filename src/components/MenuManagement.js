@@ -30,7 +30,8 @@ import {
   Spinner, 
   Alert, 
   FormControl,
-  InputGroup
+  InputGroup,
+  Collapse
 } from 'react-bootstrap';
 
 const MenuManagement = ({ user }) => {
@@ -67,6 +68,10 @@ const MenuManagement = ({ user }) => {
   const [imagePreview, setImagePreview] = useState(null);
   
   const history = useHistory();
+
+  // New state for embed code
+  const [showEmbedCode, setShowEmbedCode] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Fetch categories and items on load
   useEffect(() => {
@@ -395,6 +400,21 @@ const MenuManagement = ({ user }) => {
     return formatPrice(basePrice);
   };
 
+  const embedCode = `<div id="restaurant-menu-${user.uid}"></div>
+<script src="https://restaurant-portal-6b147.web.app/embed.js"></script>
+<script>
+  RestaurantMenu.init({
+    restaurantId: "${user.uid}",
+    container: "restaurant-menu-${user.uid}"
+  });
+</script>`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(embedCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   if (loading && categories.length === 0) {
     return (
       <Container className="mt-4">
@@ -410,6 +430,41 @@ const MenuManagement = ({ user }) => {
 
   return (
     <Container fluid className="mt-4">
+      <Alert 
+        variant="info" 
+        className="mb-4 cursor-pointer"
+        onClick={() => setShowEmbedCode(!showEmbedCode)}
+        style={{ cursor: 'pointer' }}
+      >
+        <div className="d-flex justify-content-between align-items-center">
+          <span>
+            <i className={`bi bi-chevron-${showEmbedCode ? 'down' : 'right'} me-2`}></i>
+            Want to integrate this menu on your website? Click here for the embed code.
+          </span>
+        </div>
+        <Collapse in={showEmbedCode}>
+          <div className="mt-3">
+            <p className="mb-3">Copy and paste this code into your website where you want the menu to appear:</p>
+            <div className="bg-light p-3 rounded position-relative">
+              <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <code>{embedCode}</code>
+              </pre>
+              <Button
+                variant="primary"
+                size="sm"
+                className="position-absolute top-0 end-0 m-3"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopy();
+                }}
+              >
+                {copied ? 'Copied!' : 'Copy Code'}
+              </Button>
+            </div>
+          </div>
+        </Collapse>
+      </Alert>
+
       <h2 className="mb-4">Menu Management</h2>
       
       {error && <Alert variant="danger">{error}</Alert>}

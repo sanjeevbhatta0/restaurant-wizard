@@ -11,6 +11,7 @@ import Signup from './components/Signup';
 import Home from './components/Home';
 import MenuManagement from './components/MenuManagement';
 import SeoSocialPosts from './components/SeoSocialPosts';
+import WebsiteIntegration from './components/WebsiteIntegration';
 import Navigation from './components/Navigation';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import AppIcon from './components/AppIcon';
@@ -67,6 +68,7 @@ function App() {
           <Route exact path="/data-deletion" component={DataDeletion} />
           <PrivateRoute exact path="/home" component={Home} />
           <PrivateRoute exact path="/menu-management" component={MenuManagement} />
+          <PrivateRoute exact path="/website-integration" component={WebsiteIntegration} />
           <PrivateRoute exact path="/seo-social-posts" component={SeoSocialPosts} />
           <Route exact path="/">
             <Redirect to="/login" />

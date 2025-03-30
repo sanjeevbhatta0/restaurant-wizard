@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const axios = require('axios');
+const cors = require('cors')({ origin: true });
 
 admin.initializeApp();
 
@@ -132,4 +133,53 @@ async function postToTwitter(postData, token) {
   // TODO: Implement actual Twitter API call
   console.log('Posting to Twitter:', postData);
   return Promise.resolve();
-} 
+}
+
+// Public API endpoint to get restaurant menu
+exports.getMenu = functions.https.onRequest((request, response) => {
+  cors(request, response, async () => {
+    try {
+      const restaurantId = request.path.split('/').pop();
+      if (!restaurantId) {
+        return response.status(400).json({ error: 'Restaurant ID is required' });
+      }
+
+      // Get all menu categories
+      const categoriesSnapshot = await admin.firestore()
+        .collection(`restaurants/${restaurantId}/menuCategories`)
+        .orderBy('name')
+        .get();
+
+      const categories = [];
+      
+      // Get items for each category
+      for (const categoryDoc of categoriesSnapshot.docs) {
+        const category = {
+          id: categoryDoc.id,
+          ...categoryDoc.data(),
+          items: []
+        };
+
+        const itemsSnapshot = await admin.firestore()
+          .collection(`restaurants/${restaurantId}/menuCategories/${categoryDoc.id}/items`)
+          .orderBy('name')
+          .get();
+
+        itemsSnapshot.forEach(itemDoc => {
+          category.items.push({
+            id: itemDoc.id,
+            ...itemDoc.data()
+          });
+        });
+
+        categories.push(category);
+      }
+
+      // Return the menu data
+      response.json({ categories });
+    } catch (error) {
+      console.error('Error getting menu:', error);
+      response.status(500).json({ error: 'Failed to get menu data' });
+    }
+  });
+}); 
