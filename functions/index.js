@@ -139,10 +139,12 @@ async function postToTwitter(postData, token) {
 exports.getMenu = functions.https.onRequest((request, response) => {
   cors(request, response, async () => {
     try {
-      const restaurantId = request.path.split('/').pop();
+      const restaurantId = request.query.restaurantId;
       if (!restaurantId) {
         return response.status(400).json({ error: 'Restaurant ID is required' });
       }
+
+      console.log('Fetching menu for restaurant:', restaurantId);
 
       // Get all menu categories
       const categoriesSnapshot = await admin.firestore()
@@ -175,11 +177,77 @@ exports.getMenu = functions.https.onRequest((request, response) => {
         categories.push(category);
       }
 
+      console.log('Returning menu data with categories:', categories.length);
+
       // Return the menu data
       response.json({ categories });
     } catch (error) {
       console.error('Error getting menu:', error);
-      response.status(500).json({ error: 'Failed to get menu data' });
+      response.status(500).json({ error: 'Failed to get menu data: ' + error.message });
+    }
+  });
+});
+
+// Handle order submissions
+exports.submitOrder = functions.https.onRequest((request, response) => {
+  cors(request, response, async () => {
+    try {
+      if (request.method !== 'POST') {
+        return response.status(405).json({ error: 'Method not allowed' });
+      }
+
+      const orderData = request.body;
+      console.log('Received order data:', orderData);
+      
+      // Validate required fields
+      if (!orderData.restaurantId || !orderData.customer || !orderData.items || orderData.items.length === 0) {
+        console.error('Missing required fields:', { 
+          hasRestaurantId: !!orderData.restaurantId,
+          hasCustomer: !!orderData.customer,
+          hasItems: !!orderData.items,
+          itemsLength: orderData.items?.length
+        });
+        return response.status(400).json({ error: 'Missing required order data' });
+      }
+
+      // Generate order number (timestamp + random digits)
+      const orderNumber = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      // Create the order document
+      const orderDoc = {
+        orderNumber,
+        restaurantId: orderData.restaurantId,
+        customer: orderData.customer,
+        items: orderData.items,
+        total: orderData.total,
+        pickupTime: orderData.pickupTime,
+        orderType: orderData.orderType,
+        paymentMethod: orderData.paymentMethod,
+        status: 'new',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Save order to Firestore
+      const orderRef = await admin.firestore()
+        .collection('orders')
+        .doc(orderNumber)
+        .set(orderDoc);
+
+      // Also save a reference in the restaurant's orders collection
+      await admin.firestore()
+        .collection(`restaurants/${orderData.restaurantId}/orders`)
+        .doc(orderNumber)
+        .set(orderDoc);
+
+      // Return success with order ID
+      response.json({ 
+        success: true, 
+        orderId: orderNumber,
+        message: 'Order submitted successfully'
+      });
+    } catch (error) {
+      console.error('Error submitting order:', error);
+      response.status(500).json({ error: 'Failed to submit order: ' + error.message });
     }
   });
 }); 

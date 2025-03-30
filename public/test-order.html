@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Restaurant - Online Ordering</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background-color: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .restaurant-info {
+            background-color: white;
+            border-radius: 10px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .restaurant-info h2 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
+
+        .restaurant-info p {
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+
+        .restaurant-info .hours {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #eee;
+        }
+
+        .hours-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .hours-item {
+            background-color: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .menu-section {
+            background-color: white;
+            border-radius: 10px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        /* Override some of the embed.js styles to match our design */
+        .restaurant-menu-container {
+            background-color: transparent !important;
+            box-shadow: none !important;
+        }
+
+        .restaurant-category {
+            background-color: white !important;
+            border: 1px solid #eee;
+            transition: all 0.3s ease;
+        }
+
+        .restaurant-category:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .restaurant-item-card {
+            border: 1px solid #eee;
+            transition: all 0.3s ease;
+        }
+
+        .restaurant-item-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+        }
+
+        .restaurant-cart {
+            background-color: white;
+            border: 1px solid #eee;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        /* Modal styles */
+        .restaurant-checkout-modal,
+        .restaurant-confirmation-modal {
+            background-color: rgba(0,0,0,0.8);
+        }
+
+        .restaurant-checkout-content,
+        .restaurant-confirmation-content {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .header {
+                padding: 1.5rem 0;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .container {
+                padding: 0 0.5rem;
+            }
+
+            .restaurant-info,
+            .menu-section {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>Test Restaurant</h1>
+            <p>Experience our delicious menu online</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="restaurant-info">
+            <h2>Welcome to Test Restaurant</h2>
+            <p>We pride ourselves in serving the finest cuisine with the freshest ingredients.</p>
+            <p><strong>📞 Phone:</strong> (555) 123-4567</p>
+            <p><strong>📍 Location:</strong> 123 Test Street, Testville, TS 12345</p>
+            
+            <div class="hours">
+                <h3>Hours of Operation</h3>
+                <div class="hours-grid">
+                    <div class="hours-item">
+                        <strong>Mon-Fri</strong><br>
+                        11:00 AM - 10:00 PM
+                    </div>
+                    <div class="hours-item">
+                        <strong>Saturday</strong><br>
+                        12:00 PM - 11:00 PM
+                    </div>
+                    <div class="hours-item">
+                        <strong>Sunday</strong><br>
+                        12:00 PM - 9:00 PM
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="menu-section">
+            <div id="restaurant-menu-eYhDSNYUlvZXDbgHYUhTQmTkVYa2"></div>
+        </div>
+    </div>
+
+    <script src="https://restaurant-portal-6b147.web.app/embed.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            RestaurantMenu.init({
+                restaurantId: "eYhDSNYUlvZXDbgHYUhTQmTkVYa2",
+                container: "restaurant-menu-eYhDSNYUlvZXDbgHYUhTQmTkVYa2"
+            });
+        });
+    </script>
+</body>
+</html> 

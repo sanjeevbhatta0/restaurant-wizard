@@ -5,9 +5,11 @@ import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import socialMediaService from '../services/socialMediaService';
 import { facebookService } from '../services/facebookService';
+import { useAuth } from '../contexts/AuthContext';
 import './SeoSocialPosts.css';
 
-const SeoSocialPosts = ({ user }) => {
+const SeoSocialPosts = () => {
+  const { currentUser } = useAuth();
   const [connectedAccounts, setConnectedAccounts] = useState({
     facebook: false,
     instagram: false,
@@ -30,15 +32,15 @@ const SeoSocialPosts = ({ user }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (user) {
+    if (currentUser) {
       loadSavedConnections();
     }
-  }, [user]);
+  }, [currentUser]);
 
   const loadSavedConnections = async () => {
     try {
-      console.log('Loading saved connections for user:', user.uid);
-      const connections = await socialMediaService.getConnections(user.uid);
+      console.log('Loading saved connections for user:', currentUser.uid);
+      const connections = await socialMediaService.getConnections(currentUser.uid);
       console.log('Loaded connections:', connections);
       
       if (connections?.facebook?.connected) {
@@ -105,12 +107,12 @@ const SeoSocialPosts = ({ user }) => {
           connected: true,
           connectedAt: new Date().toISOString()
         };
-        await socialMediaService.updateConnection(user.uid, 'facebook', connectionData);
+        await socialMediaService.updateConnection(currentUser.uid, 'facebook', connectionData);
       }
     } catch (error) {
       console.error('Error checking Facebook login status:', error);
     }
-  }, [user]);
+  }, [currentUser]);
 
   const handleFacebookLogin = async () => {
     try {
@@ -130,7 +132,7 @@ const SeoSocialPosts = ({ user }) => {
       };
 
       console.log('Storing Facebook connection data...');
-      await socialMediaService.updateConnection(user.uid, 'facebook', connectionData);
+      await socialMediaService.updateConnection(currentUser.uid, 'facebook', connectionData);
       
       setConnectedAccounts(prev => ({
         ...prev,
@@ -231,7 +233,7 @@ const SeoSocialPosts = ({ user }) => {
 
       // Upload image if selected
       if (selectedImage) {
-        const imageRef = ref(storage, `social-posts/${user.uid}/${Date.now()}-${selectedImage.name}`);
+        const imageRef = ref(storage, `social-posts/${currentUser.uid}/${Date.now()}-${selectedImage.name}`);
         const uploadResult = await uploadBytes(imageRef, selectedImage);
         imageUrl = await getDownloadURL(uploadResult.ref);
       }

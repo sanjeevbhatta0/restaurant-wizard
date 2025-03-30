@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Alert, Button } from 'react-bootstrap';
+import { useAuth } from '../contexts/AuthContext';
 
-const WebsiteIntegration = ({ user }) => {
+const WebsiteIntegration = () => {
   const [embedCode, setEmbedCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const { currentUser } = useAuth();
 
   useEffect(() => {
+    if (!currentUser) return;
+    
     // Generate the embed code using the user's restaurant ID
-    const code = `<div id="restaurant-menu-${user.uid}"></div>
+    const code = `<div id="restaurant-menu-${currentUser.uid}"></div>
 <script src="https://restaurant-portal-6b147.web.app/embed.js"></script>
 <script>
   RestaurantMenu.init({
-    restaurantId: "${user.uid}",
-    container: "restaurant-menu-${user.uid}"
+    restaurantId: "${currentUser.uid}",
+    container: "restaurant-menu-${currentUser.uid}"
   });
 </script>`;
     setEmbedCode(code);
-  }, [user]);
+  }, [currentUser]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(embedCode);
@@ -66,7 +70,7 @@ const WebsiteIntegration = ({ user }) => {
             This is how your menu will look on your website:
           </Card.Text>
           <div 
-            id={`restaurant-menu-${user.uid}`} 
+            id={`restaurant-menu-${currentUser?.uid}`} 
             className="border rounded p-3"
           >
             Loading preview...

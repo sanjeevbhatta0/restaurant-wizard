@@ -1,234 +1,135 @@
 import React, { useState, useEffect } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
   collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDocs, 
   query, 
-  where, 
-  orderBy 
+  orderBy, 
+  onSnapshot,
+  doc,
+  setDoc,
+  deleteDoc,
+  addDoc,
+  getDocs,
+  updateDoc
 } from 'firebase/firestore';
-import { 
-  ref, 
-  uploadBytes, 
-  getDownloadURL, 
-  deleteObject 
-} from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { 
-  Container, 
-  Card, 
-  Button, 
-  Row, 
-  Col, 
-  Modal, 
-  Form, 
-  Badge, 
-  Spinner, 
-  Alert, 
-  FormControl,
-  InputGroup,
-  Collapse
-} from 'react-bootstrap';
+import { useAuth } from '../contexts/AuthContext';
+import { Container, Row, Col, Card, Button, Form, Alert, Spinner, Modal } from 'react-bootstrap';
 
-const MenuManagement = ({ user }) => {
-  // State for categories and items
+const MenuManagement = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
 
-  // State for modals
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-
-  // State for current selections
   const [currentCategory, setCurrentCategory] = useState(null);
-  const [currentItem, setCurrentItem] = useState(null);
-  const [itemToDelete, setItemToDelete] = useState(null);
-  const [categoryToDelete, setCategoryToDelete] = useState(null);
-
-  // Form state
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
   const [itemForm, setItemForm] = useState({
     name: '',
     description: '',
     price: '',
-    discountType: 'none',
-    discountValue: '',
-    available: true,
+    discount: '',
+    discountType: 'amount', // 'amount' or 'percentage'
     image: null,
     imageUrl: ''
   });
-
-  // Image preview
+  const [editMode, setEditMode] = useState({
+    type: null, // 'category' or 'item'
+    id: null
+  });
   const [imagePreview, setImagePreview] = useState(null);
-  
-  const history = useHistory();
 
-  // New state for embed code
-  const [showEmbedCode, setShowEmbedCode] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  // Fetch categories and items on load
   useEffect(() => {
-    fetchCategories();
-  }, [user]);
+    if (!currentUser) return;
 
-  const fetchCategories = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const categoriesRef = collection(db, `restaurants/${user.uid}/menuCategories`);
-      const q = query(categoriesRef, orderBy('name'));
-      const querySnapshot = await getDocs(q);
+    const categoriesRef = collection(db, `restaurants/${currentUser.uid}/menuCategories`);
+    const q = query(categoriesRef, orderBy('name'));
+    
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const categoriesData = [];
       
-      let categoriesData = [];
-      
-      for (const categoryDoc of querySnapshot.docs) {
-        const categoryData = {
-          id: categoryDoc.id,
-          ...categoryDoc.data(),
-          items: []
-        };
+      for (const categoryDoc of snapshot.docs) {
+        const category = { id: categoryDoc.id, ...categoryDoc.data() };
         
         // Fetch items for this category
-        const itemsRef = collection(db, `restaurants/${user.uid}/menuCategories/${categoryDoc.id}/items`);
+        const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${category.id}/items`);
         const itemsQuery = query(itemsRef, orderBy('name'));
         const itemsSnapshot = await getDocs(itemsQuery);
         
-        itemsSnapshot.forEach(itemDoc => {
-          categoryData.items.push({
-            id: itemDoc.id,
-            ...itemDoc.data()
-          });
-        });
+        category.items = itemsSnapshot.docs.map(itemDoc => ({
+          id: itemDoc.id,
+          ...itemDoc.data()
+        }));
         
-        categoriesData.push(categoryData);
+        categoriesData.push(category);
       }
       
       setCategories(categoriesData);
-    } catch (err) {
-      console.error("Error fetching menu data:", err);
-      setError('Failed to load menu data. Please try again.');
-    } finally {
       setLoading(false);
-    }
-  };
+    });
 
-  // Category Modal Handlers
-  const openCategoryModal = (category = null) => {
-    if (category) {
-      setCurrentCategory(category);
-      setCategoryForm({
-        name: category.name,
-        description: category.description || ''
-      });
-    } else {
-      setCurrentCategory(null);
-      setCategoryForm({ name: '', description: '' });
-    }
-    setShowCategoryModal(true);
-  };
+    return () => unsubscribe();
+  }, [currentUser]);
 
-  const handleCategorySubmit = async (e) => {
+  const handleAddCategory = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    
+    const name = e.target.categoryName.value;
+    if (!name.trim()) return;
+
     try {
-      if (currentCategory) {
-        // Update existing category
-        const categoryRef = doc(db, `restaurants/${user.uid}/menuCategories`, currentCategory.id);
-        await updateDoc(categoryRef, categoryForm);
-      } else {
-        // Create new category
-        await addDoc(collection(db, `restaurants/${user.uid}/menuCategories`), {
-          ...categoryForm,
-          createdAt: new Date().toISOString()
-        });
-      }
-      
-      await fetchCategories();
-      setShowCategoryModal(false);
-    } catch (err) {
-      console.error("Error saving category:", err);
-      setError('Failed to save category. Please try again.');
-    } finally {
-      setLoading(false);
+      const categoryRef = doc(collection(db, `restaurants/${currentUser.uid}/menuCategories`));
+      await setDoc(categoryRef, {
+        name,
+        createdAt: new Date()
+      });
+      setSuccess('Category added successfully');
+      e.target.reset();
+    } catch (error) {
+      setError('Failed to add category: ' + error.message);
     }
   };
 
-  const openDeleteCategoryModal = (category) => {
-    setCategoryToDelete(category);
-    setShowDeleteModal(true);
-  };
+  const handleDeleteCategory = async (categoryId) => {
+    if (!window.confirm('Are you sure you want to delete this category and all its items?')) return;
 
-  const handleDeleteCategory = async () => {
-    if (!categoryToDelete) return;
-    
-    setLoading(true);
     try {
       // Delete all items in the category first
-      for (const item of categoryToDelete.items) {
-        // Delete item image if it exists
-        if (item.imageUrl) {
-          const imageRef = ref(storage, item.imageStoragePath);
+      const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`);
+      const itemsSnapshot = await getDocs(itemsRef);
+      
+      for (const itemDoc of itemsSnapshot.docs) {
+        const itemData = itemDoc.data();
+        if (itemData.imageStoragePath) {
+          const imageRef = ref(storage, itemData.imageStoragePath);
           await deleteObject(imageRef);
         }
-        
-        // Delete the item
-        await deleteDoc(doc(db, `restaurants/${user.uid}/menuCategories/${categoryToDelete.id}/items`, item.id));
+        await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemDoc.id}`));
       }
       
-      // Delete the category
-      await deleteDoc(doc(db, `restaurants/${user.uid}/menuCategories`, categoryToDelete.id));
-      
-      await fetchCategories();
-      setShowDeleteModal(false);
-      setCategoryToDelete(null);
-    } catch (err) {
-      console.error("Error deleting category:", err);
-      setError('Failed to delete category. Please try again.');
-    } finally {
-      setLoading(false);
+      // Then delete the category
+      await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}`));
+      setSuccess('Category and all its items deleted successfully');
+    } catch (error) {
+      setError('Failed to delete category: ' + error.message);
     }
   };
 
-  // Item Modal Handlers
-  const openItemModal = (category, item = null) => {
+  const handleAddItem = (category) => {
     setCurrentCategory(category);
-    
-    if (item) {
-      setCurrentItem(item);
-      setItemForm({
-        name: item.name,
-        description: item.description || '',
-        price: item.price,
-        discountType: item.discountType || 'none',
-        discountValue: item.discountValue || '',
-        available: item.available !== false, // Default to true if not set
-        image: null,
-        imageUrl: item.imageUrl || ''
-      });
-      setImagePreview(item.imageUrl || null);
-    } else {
-      setCurrentItem(null);
-      setItemForm({
-        name: '',
-        description: '',
-        price: '',
-        discountType: 'none',
-        discountValue: '',
-        available: true,
-        image: null,
-        imageUrl: ''
-      });
-      setImagePreview(null);
-    }
-    
+    setItemForm({
+      name: '',
+      description: '',
+      price: '',
+      discount: '',
+      discountType: 'amount',
+      image: null,
+      imageUrl: ''
+    });
+    setImagePreview(null);
     setShowItemModal(true);
   };
 
@@ -240,7 +141,6 @@ const MenuManagement = ({ user }) => {
         image: file
       });
       
-      // Create preview URL
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result);
@@ -249,615 +149,471 @@ const MenuManagement = ({ user }) => {
     }
   };
 
-  const handleItemSubmit = async (e) => {
+  const handleSubmitItem = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
-    
+    if (!currentCategory) return;
+
     try {
-      let imageUrl = itemForm.imageUrl;
-      let imageStoragePath = currentItem?.imageStoragePath || null;
-      
-      // Handle image upload if there's a new image
+      setLoading(true);
+      let imageUrl = '';
+      let imageStoragePath = '';
+
       if (itemForm.image) {
-        try {
-          console.log('Starting image upload...');
-          const fileName = `${Date.now()}-${itemForm.image.name}`;
-          imageStoragePath = `restaurants/${user.uid}/menuItems/${currentCategory.id}/${fileName}`;
-          const storageRef = ref(storage, imageStoragePath);
-          
-          // Upload the image
-          console.log('Uploading image to storage...');
-          const uploadResult = await uploadBytes(storageRef, itemForm.image);
-          console.log('Image uploaded successfully:', uploadResult);
-          
-          // Get the download URL
-          console.log('Getting download URL...');
-          imageUrl = await getDownloadURL(storageRef);
-          console.log('Got download URL:', imageUrl);
-          
-          // If updating an item and the old image is being replaced, delete old image
-          if (currentItem?.imageStoragePath && currentItem.imageStoragePath !== imageStoragePath) {
-            try {
-              console.log('Deleting old image...');
-              const oldImageRef = ref(storage, currentItem.imageStoragePath);
-              await deleteObject(oldImageRef);
-              console.log('Old image deleted successfully');
-            } catch (imgErr) {
-              console.warn("Could not delete old image:", imgErr);
-            }
-          }
-        } catch (uploadError) {
-          console.error('Error during image upload:', uploadError);
-          throw new Error(`Failed to upload image: ${uploadError.message}`);
-        }
+        const fileName = `${Date.now()}-${itemForm.image.name}`;
+        imageStoragePath = `restaurants/${currentUser.uid}/menuItems/${currentCategory.id}/${fileName}`;
+        const storageRef = ref(storage, imageStoragePath);
+        await uploadBytes(storageRef, itemForm.image);
+        imageUrl = await getDownloadURL(storageRef);
       }
-      
-      // Prepare item data
+
       const itemData = {
         name: itemForm.name,
         description: itemForm.description,
         price: parseFloat(itemForm.price),
+        discount: itemForm.discount ? parseFloat(itemForm.discount) : 0,
         discountType: itemForm.discountType,
-        discountValue: itemForm.discountType !== 'none' ? parseFloat(itemForm.discountValue) : null,
-        available: itemForm.available,
-        updatedAt: new Date().toISOString()
+        imageUrl,
+        imageStoragePath,
+        createdAt: new Date()
       };
-      
-      // Add image info if available
-      if (imageUrl) {
-        itemData.imageUrl = imageUrl;
-        itemData.imageStoragePath = imageStoragePath;
-      }
-      
-      // Calculate final price
-      if (itemForm.discountType === 'percentage' && itemForm.discountValue) {
-        const discount = parseFloat(itemForm.price) * (parseFloat(itemForm.discountValue) / 100);
-        itemData.finalPrice = parseFloat((parseFloat(itemForm.price) - discount).toFixed(2));
-      } else if (itemForm.discountType === 'amount' && itemForm.discountValue) {
-        itemData.finalPrice = parseFloat((parseFloat(itemForm.price) - parseFloat(itemForm.discountValue)).toFixed(2));
-      } else {
-        itemData.finalPrice = parseFloat(itemForm.price);
-      }
-      
-      console.log('Saving item data to Firestore:', itemData);
-      
-      if (currentItem) {
-        // Update existing item
-        const itemRef = doc(db, `restaurants/${user.uid}/menuCategories/${currentCategory.id}/items`, currentItem.id);
-        await updateDoc(itemRef, itemData);
-        console.log('Item updated successfully');
-      } else {
-        // Create new item
-        itemData.createdAt = new Date().toISOString();
-        const docRef = await addDoc(collection(db, `restaurants/${user.uid}/menuCategories/${currentCategory.id}/items`), itemData);
-        console.log('New item created successfully with ID:', docRef.id);
-      }
-      
-      await fetchCategories();
+
+      await addDoc(collection(db, `restaurants/${currentUser.uid}/menuCategories/${currentCategory.id}/items`), itemData);
+
+      setSuccess('Item added successfully');
       setShowItemModal(false);
-    } catch (err) {
-      console.error("Error saving menu item:", err);
-      setError(`Failed to save menu item: ${err.message}`);
+      
+      // Refresh the items for this category
+      const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${currentCategory.id}/items`);
+      const itemsQuery = query(itemsRef, orderBy('name'));
+      const itemsSnapshot = await getDocs(itemsQuery);
+      
+      const updatedCategories = categories.map(cat => {
+        if (cat.id === currentCategory.id) {
+          return {
+            ...cat,
+            items: itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+          };
+        }
+        return cat;
+      });
+      
+      setCategories(updatedCategories);
+    } catch (error) {
+      setError('Failed to add item: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const openDeleteItemModal = (category, item) => {
-    setCurrentCategory(category);
-    setItemToDelete(item);
-    setShowDeleteModal(true);
-  };
+  const handleDeleteItem = async (categoryId, itemId, imageStoragePath) => {
+    if (!window.confirm('Are you sure you want to delete this item?')) return;
 
-  const handleDeleteItem = async () => {
-    if (!itemToDelete || !currentCategory) return;
-    
-    setLoading(true);
     try {
-      // Delete image if it exists
-      if (itemToDelete.imageStoragePath) {
-        const imageRef = ref(storage, itemToDelete.imageStoragePath);
+      if (imageStoragePath) {
+        const imageRef = ref(storage, imageStoragePath);
         await deleteObject(imageRef);
       }
       
-      // Delete the item
-      await deleteDoc(doc(db, `restaurants/${user.uid}/menuCategories/${currentCategory.id}/items`, itemToDelete.id));
+      await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemId}`));
+      setSuccess('Item deleted successfully');
+    } catch (error) {
+      setError('Failed to delete item: ' + error.message);
+    }
+  };
+
+  const handleEditCategory = async (categoryId, newName) => {
+    try {
+      const categoryRef = doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}`);
+      await updateDoc(categoryRef, {
+        name: newName,
+        updatedAt: new Date()
+      });
+      setSuccess('Category updated successfully');
+    } catch (error) {
+      setError('Failed to update category: ' + error.message);
+    }
+  };
+
+  const handleEditItem = async (categoryId, itemId, formData) => {
+    try {
+      const itemRef = doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemId}`);
       
-      await fetchCategories();
-      setShowDeleteModal(false);
-      setItemToDelete(null);
-      setCurrentCategory(null);
-    } catch (err) {
-      console.error("Error deleting item:", err);
-      setError('Failed to delete item. Please try again.');
-    } finally {
-      setLoading(false);
+      // Get the current item data first
+      const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`);
+      const itemsQuery = query(itemsRef);
+      const itemsSnapshot = await getDocs(itemsQuery);
+      const currentItem = itemsSnapshot.docs.find(doc => doc.id === itemId)?.data() || {};
+
+      // Prepare update data, preserving existing fields
+      const updateData = {
+        name: formData.name,
+        description: formData.description || '',
+        price: parseFloat(formData.price) || 0,
+        discount: parseFloat(formData.discount) || 0,
+        discountType: formData.discountType || 'amount',
+        imageUrl: currentItem.imageUrl || '',
+        imageStoragePath: currentItem.imageStoragePath || '',
+        updatedAt: new Date()
+      };
+
+      await updateDoc(itemRef, updateData);
+
+      // Update the local state to reflect changes immediately
+      setCategories(prevCategories => 
+        prevCategories.map(category => {
+          if (category.id === categoryId) {
+            return {
+              ...category,
+              items: category.items.map(item => 
+                item.id === itemId 
+                  ? { ...item, ...updateData }
+                  : item
+              )
+            };
+          }
+          return category;
+        })
+      );
+
+      setSuccess('Item updated successfully');
+    } catch (error) {
+      setError('Failed to update item: ' + error.message);
     }
   };
 
-  // Utility function to format prices
-  const formatPrice = (price) => {
-    return `$${parseFloat(price).toFixed(2)}`;
-  };
-  
-  // Calculate final price based on discount
-  const calculateFinalPrice = () => {
-    if (!itemForm.price) return '';
-    
-    const basePrice = parseFloat(itemForm.price);
-    if (itemForm.discountType === 'none' || !itemForm.discountValue) {
-      return formatPrice(basePrice);
-    }
-    
-    if (itemForm.discountType === 'percentage') {
-      const discount = basePrice * (parseFloat(itemForm.discountValue) / 100);
-      return formatPrice(basePrice - discount);
-    } else if (itemForm.discountType === 'amount') {
-      return formatPrice(basePrice - parseFloat(itemForm.discountValue));
-    }
-    
-    return formatPrice(basePrice);
-  };
-
-  const embedCode = `<div id="restaurant-menu-${user.uid}"></div>
-<script src="https://restaurant-portal-6b147.web.app/embed.js"></script>
-<script>
-  RestaurantMenu.init({
-    restaurantId: "${user.uid}",
-    container: "restaurant-menu-${user.uid}"
-  });
-</script>`;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(embedCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (loading && categories.length === 0) {
+  if (loading) {
     return (
-      <Container className="mt-4">
-        <div className="text-center my-5">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </Spinner>
-          <p className="mt-2">Loading menu data...</p>
-        </div>
-      </Container>
+      <div className="loading-spinner">
+        <Spinner animation="border" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </Spinner>
+      </div>
     );
   }
 
   return (
-    <Container fluid className="mt-4">
-      <Alert 
-        variant="info" 
-        className="mb-4 cursor-pointer"
-        onClick={() => setShowEmbedCode(!showEmbedCode)}
-        style={{ cursor: 'pointer' }}
-      >
-        <div className="d-flex justify-content-between align-items-center">
-          <span>
-            <i className={`bi bi-chevron-${showEmbedCode ? 'down' : 'right'} me-2`}></i>
-            Want to integrate this menu on your website? Click here for the embed code.
-          </span>
-        </div>
-        <Collapse in={showEmbedCode}>
-          <div className="mt-3">
-            <p className="mb-3">Copy and paste this code into your website where you want the menu to appear:</p>
-            <div className="bg-light p-3 rounded position-relative">
-              <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                <code>{embedCode}</code>
-              </pre>
-              <Button
-                variant="primary"
-                size="sm"
-                className="position-absolute top-0 end-0 m-3"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopy();
-                }}
-              >
-                {copied ? 'Copied!' : 'Copy Code'}
-              </Button>
-            </div>
-          </div>
-        </Collapse>
-      </Alert>
-
+    <Container className="menu-container">
       <h2 className="mb-4">Menu Management</h2>
       
-      {error && <Alert variant="danger">{error}</Alert>}
-      
-      <div className="d-flex justify-content-between mb-4">
-        <Button 
-          variant="primary" 
-          onClick={() => openCategoryModal()}
-        >
-          Add New Category
-        </Button>
-        <Button 
-          variant="outline-secondary" 
-          onClick={() => history.push('/home')}
-        >
-          Back to Dashboard
-        </Button>
-      </div>
-      
-      {categories.length === 0 && !loading ? (
-        <Card className="text-center p-5">
-          <Card.Body>
-            <h4>No Menu Categories Yet</h4>
-            <p>Start by adding your first menu category like "Appetizers" or "Main Course".</p>
-            <Button 
-              variant="primary" 
-              onClick={() => openCategoryModal()}
-            >
-              Add First Category
-            </Button>
-          </Card.Body>
-        </Card>
-      ) : (
-        <Row>
-          {categories.map(category => (
-            <Col key={category.id} lg={6} className="mb-4">
-              <Card>
-                <Card.Header className="d-flex justify-content-between align-items-center">
-                  <h5 className="mb-0">{category.name}</h5>
-                  <div>
-                    <Button 
-                      variant="outline-primary" 
-                      size="sm" 
-                      className="me-2" 
-                      onClick={() => openCategoryModal(category)}
-                    >
-                      Edit
-                    </Button>
-                    <Button 
-                      variant="outline-danger" 
-                      size="sm" 
-                      onClick={() => openDeleteCategoryModal(category)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </Card.Header>
-                <Card.Body>
-                  {category.description && (
-                    <Card.Text className="mb-3">{category.description}</Card.Text>
-                  )}
-                  
-                  <div className="d-flex justify-content-between mb-3">
-                    <h6>Menu Items ({category.items.length})</h6>
-                    <Button 
-                      variant="success" 
-                      size="sm" 
-                      onClick={() => openItemModal(category)}
-                    >
-                      Add Item
-                    </Button>
-                  </div>
-                  
-                  {category.items.length === 0 ? (
-                    <p className="text-muted">No items in this category.</p>
-                  ) : (
-                    <div className="menu-items-container">
-                      {category.items.map(item => (
-                        <Card key={item.id} className="mb-2 menu-item">
-                          <Card.Body className="p-3">
-                            <Row>
-                              {item.imageUrl && (
-                                <Col xs={3} md={2}>
-                                  <img 
-                                    src={item.imageUrl} 
-                                    alt={item.name} 
-                                    className="img-fluid rounded"
-                                    style={{ maxHeight: '60px', objectFit: 'cover' }}
-                                  />
-                                </Col>
-                              )}
-                              <Col xs={item.imageUrl ? 9 : 12} md={item.imageUrl ? 10 : 12}>
-                                <div className="d-flex justify-content-between">
-                                  <h6 className="mb-1">
-                                    {item.name}
-                                    {!item.available && (
-                                      <Badge bg="secondary" className="ms-2">Unavailable</Badge>
-                                    )}
-                                  </h6>
-                                  <div>
-                                    {item.discountType !== 'none' && (
-                                      <span className="text-decoration-line-through me-2 text-muted small">
-                                        {formatPrice(item.price)}
-                                      </span>
-                                    )}
-                                    <span className="fw-bold">
-                                      {formatPrice(item.finalPrice)}
-                                    </span>
-                                  </div>
-                                </div>
-                                {item.description && (
-                                  <p className="text-muted small mb-1">{item.description}</p>
-                                )}
-                                <div className="d-flex mt-2">
-                                  <Button 
-                                    variant="outline-primary" 
-                                    size="sm" 
-                                    className="me-2 py-0"
-                                    onClick={() => openItemModal(category, item)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button 
-                                    variant="outline-danger" 
-                                    size="sm"
-                                    className="py-0"
-                                    onClick={() => openDeleteItemModal(category, item)}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </Col>
-                            </Row>
-                          </Card.Body>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </Card.Body>
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      )}
-      
-      {/* Category Modal */}
-      <Modal show={showCategoryModal} onHide={() => setShowCategoryModal(false)}>
-        <Form onSubmit={handleCategorySubmit}>
-          <Modal.Header closeButton>
-            <Modal.Title>
-              {currentCategory ? 'Edit Category' : 'Add New Category'}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
+      {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
+      {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
+
+      <Card className="mb-4">
+        <Card.Body>
+          <Card.Title>Add New Category</Card.Title>
+          <Form onSubmit={handleAddCategory}>
             <Form.Group className="mb-3">
-              <Form.Label>Category Name</Form.Label>
-              <Form.Control 
-                type="text" 
-                placeholder="e.g., Appetizers"
-                value={categoryForm.name}
-                onChange={(e) => setCategoryForm({...categoryForm, name: e.target.value})}
+              <Form.Control
+                type="text"
+                name="categoryName"
+                placeholder="Enter category name"
                 required
               />
             </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Description (optional)</Form.Label>
-              <Form.Control 
-                as="textarea" 
-                rows={3}
-                placeholder="e.g., Start your meal with these delicious options"
-                value={categoryForm.description}
-                onChange={(e) => setCategoryForm({...categoryForm, description: e.target.value})}
-              />
-            </Form.Group>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowCategoryModal(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="primary" 
-              type="submit"
-              disabled={loading || !categoryForm.name.trim()}
-            >
-              {loading ? (
-                <>
-                  <Spinner as="span" animation="border" size="sm" className="me-2" />
-                  Saving...
-                </>
-              ) : 'Save Category'}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
-      
-      {/* Item Modal */}
+            <Button type="submit">Add Category</Button>
+          </Form>
+        </Card.Body>
+      </Card>
+
+      <Row>
+        {categories.map(category => (
+          <Col key={category.id} xs={12} className="mb-4">
+            <Card className="category-card">
+              <Card.Body>
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  {editMode.type === 'category' && editMode.id === category.id ? (
+                    <Form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleEditCategory(category.id, e.target.categoryName.value);
+                        setEditMode({ type: null, id: null });
+                      }}
+                      className="d-flex gap-2 align-items-center"
+                    >
+                      <Form.Control
+                        type="text"
+                        name="categoryName"
+                        defaultValue={category.name}
+                        required
+                      />
+                      <Button type="submit" size="sm">Save</Button>
+                      <Button 
+                        variant="secondary" 
+                        size="sm"
+                        onClick={() => setEditMode({ type: null, id: null })}
+                      >
+                        Cancel
+                      </Button>
+                    </Form>
+                  ) : (
+                    <>
+                      <Card.Title>{category.name}</Card.Title>
+                      <div>
+                        <Button 
+                          variant="outline-primary"
+                          size="sm"
+                          className="me-2"
+                          onClick={() => setEditMode({ type: 'category', id: category.id })}
+                        >
+                          Edit
+                        </Button>
+                        <Button 
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleDeleteCategory(category.id)}
+                        >
+                          Delete Category
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                <Button 
+                  variant="primary" 
+                  className="mb-3"
+                  onClick={() => handleAddItem(category)}
+                >
+                  Add Item
+                </Button>
+
+                {category.items && category.items.map(item => (
+                  <Card key={item.id} className="mb-2 item-card">
+                    <Card.Body>
+                      <div className="d-flex justify-content-between align-items-start">
+                        {editMode.type === 'item' && editMode.id === item.id ? (
+                          <Form 
+                            className="w-100"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const formData = {
+                                name: e.target.itemName.value,
+                                description: e.target.itemDescription.value,
+                                price: parseFloat(e.target.itemPrice.value),
+                                discount: parseFloat(e.target.itemDiscount.value) || 0,
+                                discountType: e.target.discountType.value,
+                                imageUrl: item.imageUrl,
+                                imageStoragePath: item.imageStoragePath
+                              };
+                              handleEditItem(category.id, item.id, formData);
+                              setEditMode({ type: null, id: null });
+                            }}
+                          >
+                            <div className="mb-2">
+                              <Form.Control
+                                type="text"
+                                name="itemName"
+                                defaultValue={item.name}
+                                placeholder="Item name"
+                                required
+                              />
+                            </div>
+                            <div className="mb-2">
+                              <Form.Control
+                                as="textarea"
+                                name="itemDescription"
+                                defaultValue={item.description}
+                                placeholder="Description"
+                                rows={2}
+                              />
+                            </div>
+                            <div className="mb-2">
+                              <Form.Control
+                                type="number"
+                                name="itemPrice"
+                                defaultValue={item.price}
+                                placeholder="Price"
+                                step="0.01"
+                                required
+                              />
+                            </div>
+                            <div className="mb-2 d-flex gap-2">
+                              <Form.Control
+                                type="number"
+                                name="itemDiscount"
+                                defaultValue={item.discount}
+                                placeholder="Discount"
+                                step="0.01"
+                              />
+                              <Form.Select 
+                                name="discountType"
+                                defaultValue={item.discountType || 'amount'}
+                                style={{ width: '150px' }}
+                              >
+                                <option value="amount">Amount ($)</option>
+                                <option value="percentage">Percentage (%)</option>
+                              </Form.Select>
+                            </div>
+                            <div className="d-flex gap-2 justify-content-end">
+                              <Button type="submit" size="sm">Save</Button>
+                              <Button 
+                                variant="secondary" 
+                                size="sm"
+                                onClick={() => setEditMode({ type: null, id: null })}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </Form>
+                        ) : (
+                          <>
+                            <div>
+                              <h5>{item.name}</h5>
+                              <p className="text-muted mb-1">{item.description}</p>
+                              <p className="mb-0">
+                                ${item.price.toFixed(2)}
+                                {item.discount > 0 && (
+                                  <span className="text-danger ms-2">
+                                    {item.discountType === 'percentage' 
+                                      ? `${item.discount}% off`
+                                      : `$${item.discount.toFixed(2)} off`
+                                    }
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <div className="d-flex">
+                              {item.imageUrl && (
+                                <img 
+                                  src={item.imageUrl} 
+                                  alt={item.name} 
+                                  style={{ width: '50px', height: '50px', objectFit: 'cover', marginRight: '10px' }}
+                                />
+                              )}
+                              <div className="d-flex flex-column gap-2">
+                                <Button
+                                  variant="outline-primary"
+                                  size="sm"
+                                  onClick={() => setEditMode({ type: 'item', id: item.id })}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="outline-danger"
+                                  size="sm"
+                                  onClick={() => handleDeleteItem(category.id, item.id, item.imageStoragePath)}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                ))}
+
+                {(!category.items || category.items.length === 0) && (
+                  <Card.Text className="text-muted">No items in this category</Card.Text>
+                )}
+              </Card.Body>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      {categories.length === 0 && (
+        <Card className="text-center">
+          <Card.Body>
+            <Card.Text>No categories yet. Add your first category above!</Card.Text>
+          </Card.Body>
+        </Card>
+      )}
+
       <Modal show={showItemModal} onHide={() => setShowItemModal(false)}>
-        <Form onSubmit={handleItemSubmit}>
-          <Modal.Header closeButton>
-            <Modal.Title>
-              {currentItem ? 'Edit Menu Item' : 'Add New Menu Item'}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
+        <Modal.Header closeButton>
+          <Modal.Title>Add New Item to {currentCategory?.name}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form onSubmit={handleSubmitItem}>
             <Form.Group className="mb-3">
-              <Form.Label>Item Name</Form.Label>
-              <Form.Control 
-                type="text" 
-                placeholder="e.g., Caesar Salad"
+              <Form.Label>Name</Form.Label>
+              <Form.Control
+                type="text"
                 value={itemForm.name}
                 onChange={(e) => setItemForm({...itemForm, name: e.target.value})}
                 required
               />
             </Form.Group>
-            
+
             <Form.Group className="mb-3">
-              <Form.Label>Description (optional)</Form.Label>
-              <Form.Control 
-                as="textarea" 
-                rows={2}
-                placeholder="e.g., Fresh romaine lettuce with our house-made dressing"
+              <Form.Label>Description</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={3}
                 value={itemForm.description}
                 onChange={(e) => setItemForm({...itemForm, description: e.target.value})}
               />
             </Form.Group>
-            
-            <Row>
-              <Col xs={12} md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Price</Form.Label>
-                  <InputGroup>
-                    <InputGroup.Text>$</InputGroup.Text>
-                    <Form.Control 
-                      type="number" 
-                      step="0.01" 
-                      min="0"
-                      placeholder="0.00"
-                      value={itemForm.price}
-                      onChange={(e) => setItemForm({...itemForm, price: e.target.value})}
-                      required
-                    />
-                  </InputGroup>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Price</Form.Label>
+              <Form.Control
+                type="number"
+                step="0.01"
+                value={itemForm.price}
+                onChange={(e) => setItemForm({...itemForm, price: e.target.value})}
+                required
+              />
+            </Form.Group>
+
+            <Row className="mb-3">
+              <Col>
+                <Form.Group>
+                  <Form.Label>Discount</Form.Label>
+                  <Form.Control
+                    type="number"
+                    step="0.01"
+                    value={itemForm.discount}
+                    onChange={(e) => setItemForm({...itemForm, discount: e.target.value})}
+                    placeholder="Enter discount"
+                  />
                 </Form.Group>
               </Col>
-              
-              <Col xs={12} md={6}>
-                <Form.Group className="mb-3">
+              <Col>
+                <Form.Group>
                   <Form.Label>Discount Type</Form.Label>
                   <Form.Select
                     value={itemForm.discountType}
                     onChange={(e) => setItemForm({...itemForm, discountType: e.target.value})}
                   >
-                    <option value="none">No Discount</option>
-                    <option value="percentage">Percentage Off</option>
-                    <option value="amount">Amount Off</option>
+                    <option value="amount">Amount ($)</option>
+                    <option value="percentage">Percentage (%)</option>
                   </Form.Select>
                 </Form.Group>
               </Col>
             </Row>
-            
-            {itemForm.discountType !== 'none' && (
-              <Row>
-                <Col xs={12} md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>
-                      {itemForm.discountType === 'percentage' ? 'Discount Percentage' : 'Discount Amount'}
-                    </Form.Label>
-                    <InputGroup>
-                      <Form.Control 
-                        type="number" 
-                        step={itemForm.discountType === 'percentage' ? "1" : "0.01"}
-                        min="0"
-                        max={itemForm.discountType === 'percentage' ? "100" : itemForm.price}
-                        placeholder={itemForm.discountType === 'percentage' ? "10" : "5.00"}
-                        value={itemForm.discountValue}
-                        onChange={(e) => setItemForm({...itemForm, discountValue: e.target.value})}
-                        required={itemForm.discountType !== 'none'}
-                      />
-                      <InputGroup.Text>
-                        {itemForm.discountType === 'percentage' ? '%' : '$'}
-                      </InputGroup.Text>
-                    </InputGroup>
-                  </Form.Group>
-                </Col>
-                
-                <Col xs={12} md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Final Price</Form.Label>
-                    <Form.Control 
-                      type="text" 
-                      value={calculateFinalPrice()}
-                      disabled
-                      className="bg-light"
-                    />
-                  </Form.Group>
-                </Col>
-              </Row>
-            )}
-            
+
             <Form.Group className="mb-3">
-              <Form.Label>Item Image (optional)</Form.Label>
-              <Form.Control 
-                type="file" 
+              <Form.Label>Image</Form.Label>
+              <Form.Control
+                type="file"
                 accept="image/*"
                 onChange={handleImageChange}
               />
-              <Form.Text className="text-muted">
-                Recommended size: 500x300px. Max size: 2MB.
-              </Form.Text>
             </Form.Group>
-            
+
             {imagePreview && (
-              <div className="text-center mb-3">
-                <img 
-                  src={imagePreview} 
-                  alt="Preview" 
-                  className="img-thumbnail" 
-                  style={{ maxHeight: '150px' }}
+              <div className="mb-3">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{ maxWidth: '100%', height: 'auto' }}
                 />
               </div>
             )}
-            
-            <Form.Group className="mb-3">
-              <Form.Check 
-                type="checkbox"
-                id="item-available"
-                label="Item is available for ordering"
-                checked={itemForm.available}
-                onChange={(e) => setItemForm({...itemForm, available: e.target.checked})}
-              />
-            </Form.Group>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowItemModal(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="primary" 
-              type="submit"
-              disabled={loading || !itemForm.name.trim() || !itemForm.price}
-            >
-              {loading ? (
-                <>
-                  <Spinner as="span" animation="border" size="sm" className="me-2" />
-                  Saving...
-                </>
-              ) : 'Save Item'}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
-      
-      {/* Delete Confirmation Modal */}
-      <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>
-            {categoryToDelete ? 'Delete Category' : 'Delete Menu Item'}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {categoryToDelete ? (
-            <>
-              <p>Are you sure you want to delete the category <strong>{categoryToDelete.name}</strong>?</p>
-              <Alert variant="warning">
-                <strong>Warning:</strong> This will also delete all {categoryToDelete.items.length} items in this category! This action cannot be undone.
-              </Alert>
-            </>
-          ) : (
-            <>
-              <p>Are you sure you want to delete the menu item <strong>{itemToDelete?.name}</strong>?</p>
-              <Alert variant="warning">
-                <strong>Warning:</strong> This action cannot be undone.
-              </Alert>
-            </>
-          )}
+
+            <div className="d-flex justify-content-end">
+              <Button variant="secondary" className="me-2" onClick={() => setShowItemModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? 'Adding...' : 'Add Item'}
+              </Button>
+            </div>
+          </Form>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>
-            Cancel
-          </Button>
-          <Button 
-            variant="danger" 
-            onClick={categoryToDelete ? handleDeleteCategory : handleDeleteItem}
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <Spinner as="span" animation="border" size="sm" className="me-2" />
-                Deleting...
-              </>
-            ) : 'Delete'}
-          </Button>
-        </Modal.Footer>
       </Modal>
     </Container>
   );
