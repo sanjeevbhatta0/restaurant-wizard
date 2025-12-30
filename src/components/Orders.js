@@ -57,16 +57,37 @@ const Orders = () => {
     switch (status) {
       case 'new':
         return 'primary';
+      case 'sent_to_kitchen':
+        return 'info';
       case 'preparing':
         return 'warning';
       case 'ready':
         return 'success';
       case 'completed':
-        return 'info';
+        return 'dark';
       case 'cancelled':
         return 'danger';
       default:
         return 'secondary';
+    }
+  };
+
+  const formatStatus = (status) => {
+    switch (status) {
+      case 'sent_to_kitchen':
+        return 'Sent to Kitchen';
+      case 'new':
+        return 'New';
+      case 'preparing':
+        return 'Preparing';
+      case 'ready':
+        return 'Ready';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return status;
     }
   };
 
@@ -102,6 +123,7 @@ const Orders = () => {
             >
               <option value="all">All Orders</option>
               <option value="new">New Orders</option>
+              <option value="sent_to_kitchen">Sent to Kitchen</option>
               <option value="preparing">Preparing</option>
               <option value="ready">Ready for Pickup</option>
               <option value="completed">Completed</option>
@@ -127,7 +149,7 @@ const Orders = () => {
         <tbody>
           {filteredOrders.map(order => (
             <tr key={order.id}>
-              <td>{order.id}</td>
+              <td>{order.orderNumber || order.id.slice(0, 8)}</td>
               <td>{formatDate(order.createdAt)}</td>
               <td>
                 {order.customerName}<br />
@@ -144,8 +166,11 @@ const Orders = () => {
               <td>{order.pickupTime}</td>
               <td>
                 <Badge bg={getStatusBadgeVariant(order.status)}>
-                  {order.status}
+                  {formatStatus(order.status)}
                 </Badge>
+                {order.tableNumber && (
+                  <div><small className="text-muted">Table #{order.tableNumber}</small></div>
+                )}
               </td>
               <td>
                 <Dropdown>
@@ -155,6 +180,9 @@ const Orders = () => {
                   <Dropdown.Menu>
                     <Dropdown.Item onClick={() => handleStatusChange(order.id, 'new')}>
                       New
+                    </Dropdown.Item>
+                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'sent_to_kitchen')}>
+                      Sent to Kitchen
                     </Dropdown.Item>
                     <Dropdown.Item onClick={() => handleStatusChange(order.id, 'preparing')}>
                       Preparing

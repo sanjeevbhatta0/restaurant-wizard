@@ -7,6 +7,7 @@ import Home from './components/Home';
 import MenuManagement from './components/MenuManagement';
 import CategoryItems from './components/CategoryItems';
 import Orders from './components/Orders';
+import POS from './components/POS';
 import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
 import PrivacyPolicy from './components/PrivacyPolicy';
@@ -42,6 +43,11 @@ function App() {
             <Route path="orders" element={
               <PrivateRoute>
                 <Orders />
+              </PrivateRoute>
+            } />
+            <Route path="pos" element={
+              <PrivateRoute>
+                <POS />
               </PrivateRoute>
             } />
             <Route path="seo-social" element={

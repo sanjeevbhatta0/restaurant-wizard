@@ -37,6 +37,9 @@ const Layout = () => {
             <Nav.Link as={Link} to="/orders" className="sidebar-link">
               <i className="bi bi-bag"></i> Orders
             </Nav.Link>
+            <Nav.Link as={Link} to="/pos" className="sidebar-link">
+              <i className="bi bi-grid-3x3-gap"></i> POS
+            </Nav.Link>
             <Nav.Link as={Link} to="/seo-social" className="sidebar-link">
               <i className="bi bi-share"></i> SEO & Social
             </Nav.Link>
