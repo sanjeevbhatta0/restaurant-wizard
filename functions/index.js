@@ -135,57 +135,223 @@ async function postToTwitter(postData, token) {
   return Promise.resolve();
 }
 
-// Public API endpoint to get restaurant menu
-exports.getMenu = functions.https.onRequest((request, response) => {
-  cors(request, response, async () => {
-    try {
-      const restaurantId = request.query.restaurantId;
-      if (!restaurantId) {
-        return response.status(400).json({ error: 'Restaurant ID is required' });
-      }
-
-      console.log('Fetching menu for restaurant:', restaurantId);
-
-      // Get all menu categories
-      const categoriesSnapshot = await admin.firestore()
-        .collection(`restaurants/${restaurantId}/menuCategories`)
-        .orderBy('name')
+// Helper function to get restaurant by slug
+async function getRestaurantBySlug(slug) {
+    const snapshot = await admin.firestore()
+        .collection('restaurants')
+        .where('slug', '==', slug)
+        .limit(1)
         .get();
 
-      const categories = [];
-      
-      // Get items for each category
-      for (const categoryDoc of categoriesSnapshot.docs) {
-        const category = {
-          id: categoryDoc.id,
-          ...categoryDoc.data(),
-          items: []
-        };
-
-        const itemsSnapshot = await admin.firestore()
-          .collection(`restaurants/${restaurantId}/menuCategories/${categoryDoc.id}/items`)
-          .orderBy('name')
-          .get();
-
-        itemsSnapshot.forEach(itemDoc => {
-          category.items.push({
-            id: itemDoc.id,
-            ...itemDoc.data()
-          });
-        });
-
-        categories.push(category);
-      }
-
-      console.log('Returning menu data with categories:', categories.length);
-
-      // Return the menu data
-      response.json({ categories });
-    } catch (error) {
-      console.error('Error getting menu:', error);
-      response.status(500).json({ error: 'Failed to get menu data: ' + error.message });
+    if (snapshot.empty) {
+        return null;
     }
-  });
+
+    const doc = snapshot.docs[0];
+    return {
+        id: doc.id,
+        ...doc.data()
+    };
+}
+
+// Serve restaurant websites
+exports.serveWebsite = functions.https.onRequest(async (req, res) => {
+    return cors(req, res, async () => {
+        try {
+            // Get restaurant identifier from the host
+            const host = req.hostname;
+            console.log('Incoming request hostname:', host);
+
+            // Handle both subdomain.restaurant-portal-6b147.web.app and direct function URL cases
+            let restaurantId;
+            let restaurant;
+
+            if (host.includes('restaurant-portal-6b147.web.app')) {
+                const subdomain = host.split('.')[0];
+                // Try to find restaurant by slug first
+                restaurant = await getRestaurantBySlug(subdomain);
+                if (restaurant) {
+                    restaurantId = restaurant.id;
+                } else {
+                    // Fallback to using subdomain as ID
+                    restaurantId = subdomain;
+                }
+            } else {
+                // If accessed directly via function URL, try to get restaurant ID from query param
+                const slug = req.query.restaurant;
+                if (slug) {
+                    restaurant = await getRestaurantBySlug(slug);
+                    if (restaurant) {
+                        restaurantId = restaurant.id;
+                    }
+                }
+            }
+
+            if (!restaurantId) {
+                console.error('No restaurant found:', { host, query: req.query });
+                res.status(404).send(`
+                    <html>
+                        <head>
+                            <title>Restaurant Not Found</title>
+                            <style>
+                                body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+                                .error-container { max-width: 600px; margin: 40px auto; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="error-container">
+                                <h1>Restaurant Not Found</h1>
+                                <p>The restaurant you're looking for doesn't exist.</p>
+                            </div>
+                        </body>
+                    </html>
+                `);
+                return;
+            }
+
+            // Get the website HTML from storage
+            const bucket = admin.storage().bucket();
+            const file = bucket.file(`websites/${restaurantId}/index.html`);
+            
+            // Check if file exists
+            const [exists] = await file.exists();
+            if (!exists) {
+                console.error('Website file not found for restaurant:', restaurantId);
+                res.status(404).send(`
+                    <html>
+                        <head>
+                            <title>Website Not Found</title>
+                            <style>
+                                body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+                                .error-container { max-width: 600px; margin: 40px auto; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="error-container">
+                                <h1>Website Not Published</h1>
+                                <p>This restaurant's website hasn't been published yet.</p>
+                            </div>
+                        </body>
+                    </html>
+                `);
+                return;
+            }
+
+            // Set security headers
+            res.set({
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+                'X-Content-Type-Options': 'nosniff',
+                'X-Frame-Options': 'DENY',
+                'X-XSS-Protection': '1; mode=block',
+                'Content-Type': 'text/html; charset=utf-8',
+                'Content-Security-Policy': "default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval'; img-src 'self' https: data: blob:;",
+                'Access-Control-Allow-Origin': '*'
+            });
+
+            // Stream the file to the response
+            file.createReadStream()
+                .on('error', (error) => {
+                    console.error('Error streaming file:', error);
+                    res.status(500).send(`
+                        <html>
+                            <head>
+                                <title>Error</title>
+                                <style>
+                                    body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+                                    .error-container { max-width: 600px; margin: 40px auto; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="error-container">
+                                    <h1>Error</h1>
+                                    <p>An error occurred while loading the website. Please try again later.</p>
+                                </div>
+                            </body>
+                        </html>
+                    `);
+                })
+                .pipe(res);
+        } catch (error) {
+            console.error('Error serving website:', error);
+            res.status(500).send(`
+                <html>
+                    <head>
+                        <title>Error</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+                            .error-container { max-width: 600px; margin: 40px auto; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="error-container">
+                            <h1>Error</h1>
+                            <p>An error occurred while loading the website. Please try again later.</p>
+                        </div>
+                    </body>
+                </html>
+            `);
+        }
+    });
+});
+
+// Serve menu data
+exports.getMenu = functions.https.onRequest(async (req, res) => {
+    return cors(req, res, async () => {
+        try {
+            // Get restaurant ID from query parameter
+            const restaurantId = req.query.restaurantId;
+            console.log('Getting menu for restaurant:', restaurantId);
+            
+            if (!restaurantId) {
+                console.error('No restaurant ID provided');
+                return res.status(400).json({ error: 'Restaurant ID is required' });
+            }
+            
+            // Get menu categories from Firestore
+            const categoriesSnapshot = await admin.firestore()
+                .collection(`restaurants/${restaurantId}/menuCategories`)
+                .orderBy('name')
+                .get();
+
+            const categories = [];
+            
+            // For each category, get its items
+            for (const categoryDoc of categoriesSnapshot.docs) {
+                const categoryData = {
+                    id: categoryDoc.id,
+                    ...categoryDoc.data(),
+                    items: []
+                };
+                
+                // Get items for this category
+                const itemsSnapshot = await admin.firestore()
+                    .collection(`restaurants/${restaurantId}/menuCategories/${categoryDoc.id}/items`)
+                    .orderBy('name')
+                    .get();
+                
+                itemsSnapshot.forEach(itemDoc => {
+                    const itemData = itemDoc.data();
+                    // Ensure price and discount are numbers
+                    categoryData.items.push({
+                        id: itemDoc.id,
+                        ...itemData,
+                        price: typeof itemData.price === 'number' ? itemData.price : parseFloat(itemData.price) || 0,
+                        discount: typeof itemData.discount === 'number' ? itemData.discount : parseFloat(itemData.discount) || 0,
+                        discountType: itemData.discountType || 'amount'
+                    });
+                });
+                
+                categories.push(categoryData);
+            }
+
+            console.log('Menu data loaded successfully:', categories.length, 'categories');
+            res.json({ categories });
+        } catch (error) {
+            console.error('Error serving menu:', error);
+            res.status(500).json({ error: 'Error loading menu: ' + error.message });
+        }
+    });
 });
 
 // Handle order submissions
@@ -250,4 +416,52 @@ exports.submitOrder = functions.https.onRequest((request, response) => {
       response.status(500).json({ error: 'Failed to submit order: ' + error.message });
     }
   });
+});
+
+exports.updateWebsite = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const uid = context.auth.uid;
+    const { html, restaurantId, slug } = data;
+    
+    // Verify request data
+    if (!html || !restaurantId || uid !== restaurantId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid request data');
+    }
+
+    // Upload to Firebase Storage
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(`websites/${restaurantId}/index.html`);
+    
+    await file.save(html, {
+      metadata: {
+        contentType: 'text/html',
+        cacheControl: 'public, max-age=300',
+        customMetadata: {
+          restaurantId: restaurantId,
+          slug: slug || restaurantId
+        }
+      }
+    });
+
+    // Make the file publicly readable
+    await file.makePublic();
+
+    const websiteUrl = slug 
+      ? `https://${slug}.restaurant-portal-6b147.web.app`
+      : `https://${restaurantId}.restaurant-portal-6b147.web.app`;
+
+    return {
+      success: true,
+      websiteUrl: websiteUrl,
+      message: 'Website updated successfully'
+    };
+  } catch (error) {
+    console.error('Error in updateWebsite:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
 }); 

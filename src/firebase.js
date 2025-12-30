@@ -1,8 +1,9 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getStorage, connectStorageEmulator } from "firebase/storage";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
@@ -24,6 +25,15 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app);
 
-export { auth, db, storage };
+// Connect to emulators in development
+if (process.env.REACT_APP_USE_EMULATOR === 'true') {
+  connectAuthEmulator(auth, `http://${process.env.REACT_APP_EMULATOR_HOST}:${process.env.REACT_APP_AUTH_EMULATOR_PORT}`);
+  connectFirestoreEmulator(db, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_FIRESTORE_EMULATOR_PORT));
+  connectStorageEmulator(storage, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_STORAGE_EMULATOR_PORT));
+  connectFunctionsEmulator(functions, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_FUNCTIONS_EMULATOR_PORT));
+}
+
+export { auth, db, storage, functions };
 export default app;

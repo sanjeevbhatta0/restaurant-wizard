@@ -19,6 +19,15 @@ const Layout = () => {
     }
   };
 
+  const sidebarLinks = [
+    { to: '/dashboard', icon: 'bi-speedometer2', text: 'Dashboard' },
+    { to: '/menu-management', icon: 'bi-menu-button-wide', text: 'Menu Management' },
+    { to: '/orders', icon: 'bi-cart', text: 'Orders' },
+    { to: '/seo-social', icon: 'bi-share', text: 'SEO & Social' },
+    { to: '/website-integration', icon: 'bi-code-slash', text: 'Website Integration' },
+    { to: '/website-builder', icon: 'bi-brush', text: 'Website Builder' }
+  ];
+
   return (
     <div className="layout-container">
       <header className="header">
@@ -28,21 +37,11 @@ const Layout = () => {
       <div className="content-wrapper">
         <nav className="sidebar">
           <Nav className="flex-column">
-            <Nav.Link as={Link} to="/home" className="sidebar-link">
-              <i className="bi bi-speedometer2"></i> Dashboard
-            </Nav.Link>
-            <Nav.Link as={Link} to="/menu-management" className="sidebar-link">
-              <i className="bi bi-menu-button-wide"></i> Menu Management
-            </Nav.Link>
-            <Nav.Link as={Link} to="/orders" className="sidebar-link">
-              <i className="bi bi-bag"></i> Orders
-            </Nav.Link>
-            <Nav.Link as={Link} to="/seo-social" className="sidebar-link">
-              <i className="bi bi-share"></i> SEO & Social
-            </Nav.Link>
-            <Nav.Link as={Link} to="/website-integration" className="sidebar-link">
-              <i className="bi bi-code-slash"></i> Website Integration
-            </Nav.Link>
+            {sidebarLinks.map((link, index) => (
+              <Nav.Link key={index} as={Link} to={link.to} className="sidebar-link">
+                <i className={`bi bi-${link.icon}`}></i> {link.text}
+              </Nav.Link>
+            ))}
           </Nav>
         </nav>
         <main className="content">
