@@ -1,8 +1,8 @@
 [
   {
-    "origin": ["https://restaurant-portal-6b147.web.app", "http://localhost:3000"],
-    "method": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+    "origin": ["*"],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
     "maxAgeSeconds": 3600,
-    "responseHeader": ["Content-Type", "Authorization", "Content-Length", "User-Agent", "x-goog-resumable"]
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "Content-Encoding", "Content-Language", "Cache-Control", "Expires", "Last-Modified", "ETag"]
   }
 ] 

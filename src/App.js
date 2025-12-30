@@ -10,6 +10,7 @@ import Orders from './components/Orders';
 import POS from './components/POS';
 import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
+import WebsiteBuilder from './components/WebsiteBuilder';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
@@ -58,6 +59,11 @@ function App() {
             <Route path="website-integration" element={
               <PrivateRoute>
                 <WebsiteIntegration />
+              </PrivateRoute>
+            } />
+            <Route path="website-builder" element={
+              <PrivateRoute>
+                <WebsiteBuilder />
               </PrivateRoute>
             } />
           </Route>

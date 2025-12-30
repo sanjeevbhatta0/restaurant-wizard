@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+    <link href="https://fonts.googleapis.com/css2?family={{fontFamily}}:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: {{primaryColor}};
+            --secondary-color: {{secondaryColor}};
+            --font-family: '{{fontFamily}}', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .navbar {
+            background-color: var(--primary-color);
+            padding: 1rem 0;
+        }
+
+        .navbar-brand img {
+            max-height: 50px;
+        }
+
+        .nav-link {
+            color: white !important;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-link:hover {
+            color: var(--secondary-color) !important;
+        }
+
+        .hero {
+            background-image: url('{{heroImage}}');
+            background-size: cover;
+            background-position: center;
+            color: white;
+            text-align: center;
+            padding: 150px 0;
+            position: relative;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .section {
+            padding: 80px 0;
+        }
+
+        .section-title {
+            text-align: center;
+            margin-bottom: 50px;
+            color: var(--primary-color);
+        }
+
+        .menu-category {
+            margin-bottom: 40px;
+        }
+
+        .menu-category h3 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+        }
+
+        .menu-item {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            transition: transform 0.3s;
+        }
+
+        .menu-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .menu-item img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .menu-item h4 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .menu-item .price {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+        }
+
+        .contact-info {
+            background-color: #f8f9fa;
+            padding: 30px;
+            border-radius: 8px;
+        }
+
+        .contact-info i {
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            margin-right: 10px;
+        }
+
+        .social-links {
+            margin-top: 20px;
+        }
+
+        .social-links a {
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            margin-right: 15px;
+            transition: color 0.3s;
+        }
+
+        .social-links a:hover {
+            color: var(--secondary-color);
+        }
+
+        footer {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 40px 0;
+            margin-top: 80px;
+        }
+
+        .business-hours {
+            margin-top: 30px;
+        }
+
+        .business-hours .day {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero p {
+                font-size: 1.2rem;
+            }
+
+            .section {
+                padding: 40px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                {{#if logo}}
+                <img src="{{logo}}" alt="{{title}}">
+                {{else}}
+                {{title}}
+                {{/if}}
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#home">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#menu">Menu</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#contact">Contact</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#order">Order Online</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <section id="home" class="hero">
+        <div class="hero-content">
+            <div class="container">
+                <h1>{{title}}</h1>
+                <p>{{subtitle}}</p>
+                <a href="#order" class="btn btn-primary btn-lg">Order Now</a>
+            </div>
+        </div>
+    </section>
+
+    <section id="about" class="section">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    {{{content}}}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="menu" class="section">
+        <div class="container">
+            <h2 class="section-title">Our Menu</h2>
+            <div id="menu-container">
+                <!-- Menu content will be dynamically loaded -->
+            </div>
+        </div>
+    </section>
+
+    <section id="contact" class="section">
+        <div class="container">
+            <h2 class="section-title">Contact Us</h2>
+            <div class="row">
+                <div class="col-lg-6">
+                    <div class="contact-info">
+                        <h3>Get in Touch</h3>
+                        <p><i class="bi bi-telephone"></i> {{phone}}</p>
+                        <p><i class="bi bi-envelope"></i> {{email}}</p>
+                        <p><i class="bi bi-geo-alt"></i> {{address}}</p>
+                        
+                        <div class="business-hours">
+                            <h4>Business Hours</h4>
+                            {{#each hours}}
+                            <div class="day">
+                                <span>{{@key}}</span>
+                                <span>{{this.open}} - {{this.close}}</span>
+                            </div>
+                            {{/each}}
+                        </div>
+
+                        <div class="social-links">
+                            {{#if socialMedia.facebook}}
+                            <a href="{{socialMedia.facebook}}" target="_blank"><i class="bi bi-facebook"></i></a>
+                            {{/if}}
+                            {{#if socialMedia.instagram}}
+                            <a href="{{socialMedia.instagram}}" target="_blank"><i class="bi bi-instagram"></i></a>
+                            {{/if}}
+                            {{#if socialMedia.twitter}}
+                            <a href="{{socialMedia.twitter}}" target="_blank"><i class="bi bi-twitter"></i></a>
+                            {{/if}}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <iframe
+                        width="100%"
+                        height="450"
+                        style="border:0"
+                        loading="lazy"
+                        allowfullscreen
+                        src="https://www.google.com/maps/embed/v1/place?key=YOUR_GOOGLE_MAPS_API_KEY&q={{encodedAddress}}">
+                    </iframe>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="order" class="section">
+        <div class="container">
+            <h2 class="section-title">Order Online</h2>
+            <div id="order-container">
+                <!-- Order system will be dynamically loaded -->
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4">
+                    <h4>{{title}}</h4>
+                    <p>{{subtitle}}</p>
+                </div>
+                <div class="col-lg-4">
+                    <h4>Quick Links</h4>
+                    <ul class="list-unstyled">
+                        <li><a href="#home" class="text-white">Home</a></li>
+                        <li><a href="#menu" class="text-white">Menu</a></li>
+                        <li><a href="#contact" class="text-white">Contact</a></li>
+                        <li><a href="#order" class="text-white">Order Online</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-4">
+                    <h4>Contact Info</h4>
+                    <p><i class="bi bi-telephone"></i> {{phone}}</p>
+                    <p><i class="bi bi-envelope"></i> {{email}}</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Load menu data
+        fetch('/api/menu/{{restaurantId}}')
+            .then(response => response.json())
+            .then(data => {
+                const menuContainer = document.getElementById('menu-container');
+                data.categories.forEach(category => {
+                    const categoryHtml = `
+                        <div class="menu-category">
+                            <h3>${category.name}</h3>
+                            <div class="row">
+                                ${category.items.map(item => `
+                                    <div class="col-md-6 col-lg-4">
+                                        <div class="menu-item">
+                                            ${item.image ? `<img src="${item.image}" alt="${item.name}">` : ''}
+                                            <h4>${item.name}</h4>
+                                            <p>${item.description}</p>
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <span class="price">$${item.price.toFixed(2)}</span>
+                                                <button class="btn btn-primary btn-sm" onclick="addToCart(${JSON.stringify(item)})">
+                                                    Add to Cart
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    menuContainer.innerHTML += categoryHtml;
+                });
+            })
+            .catch(error => {
+                console.error('Error loading menu:', error);
+                document.getElementById('menu-container').innerHTML = '<p class="text-center">Failed to load menu. Please try again later.</p>';
+            });
+
+        // Load order system
+        const orderContainer = document.getElementById('order-container');
+        const orderFrame = document.createElement('iframe');
+        orderFrame.src = `/test-order.html?restaurantId={{restaurantId}}`;
+        orderFrame.style.width = '100%';
+        orderFrame.style.height = '800px';
+        orderFrame.style.border = 'none';
+        orderContainer.appendChild(orderFrame);
+    </script>
+</body>
+</html> 
