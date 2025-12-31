@@ -47,7 +47,7 @@ const activityService = {
    * Log order activity
    */
   logOrderActivity: async (restaurantId, action, orderData) => {
-    const { orderNumber, tableNumber, status, orderId } = orderData;
+    const { orderNumber, tableNumber, status, orderId, locationId } = orderData;
     
     let message = '';
     let type = 'order_' + action;
@@ -80,7 +80,8 @@ const activityService = {
         orderNumber: orderNumber || orderId,
         tableNumber,
         status,
-        orderId: orderId || orderNumber
+        orderId: orderId || orderNumber,
+        locationId // Pass locationId through
       }
     );
   },
@@ -89,7 +90,7 @@ const activityService = {
    * Log payment activity
    */
   logPaymentActivity: async (restaurantId, paymentData) => {
-    const { orderNumbers, tableNumbers, total, orderCount } = paymentData;
+    const { orderNumbers, tableNumbers, total, orderCount, locationId } = paymentData;
     
     const tableDisplay = Array.isArray(tableNumbers) 
       ? tableNumbers.length === 1 
@@ -111,7 +112,8 @@ const activityService = {
         orderNumbers: Array.isArray(orderNumbers) ? orderNumbers : [orderNumbers],
         tableNumbers: Array.isArray(tableNumbers) ? tableNumbers : [tableNumbers],
         total,
-        orderCount
+        orderCount,
+        locationId // Pass locationId through
       }
     );
   },
@@ -120,7 +122,7 @@ const activityService = {
    * Log reimbursement activity
    */
   logReimbursementActivity: async (restaurantId, reimbursementData) => {
-    const { orderNumber, tableNumber, refundAmount, refundType, orderId } = reimbursementData;
+    const { orderNumber, tableNumber, refundAmount, refundType, orderId, locationId } = reimbursementData;
     
     const tableDisplay = Array.isArray(tableNumber) 
       ? tableNumber.join(' and ')
@@ -138,7 +140,8 @@ const activityService = {
         orderId: orderId || orderNumber,
         tableNumber,
         refundAmount,
-        refundType
+        refundType,
+        locationId // Pass locationId through
       }
     );
   }

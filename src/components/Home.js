@@ -51,43 +51,14 @@ const Home = () => {
     fetchRestaurantData();
 
     // Listen to recent activities
+    // Use simple query without locationId filter for backward compatibility
+    // Then filter client-side to handle both old activities (no locationId) and new ones
     const activitiesRef = collection(db, `restaurants/${currentUser.uid}/activities`);
-    
-    // Build query - filter by locationId if multi-location
-    let activitiesQuery;
-    try {
-      if (isMultiLocation && selectedLocation) {
-        // Multi-location: filter by selected location
-        activitiesQuery = query(
-          activitiesRef,
-          where('locationId', '==', selectedLocation),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-      } else {
-        // Single-location: filter by currentUser.uid (matches what activityService sets)
-        activitiesQuery = query(
-          activitiesRef,
-          where('locationId', '==', currentUser.uid),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-      }
-    } catch (queryError) {
-      console.error('Error building activities query:', queryError);
-      // Fallback: query without locationId filter (for backward compatibility with old activities)
-      try {
-        activitiesQuery = query(
-          activitiesRef,
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-      } catch (fallbackError) {
-        console.error('Fallback activities query also failed:', fallbackError);
-        setRecentActivities([]);
-        return;
-      }
-    }
+    const activitiesQuery = query(
+      activitiesRef,
+      orderBy('createdAt', 'desc'),
+      limit(50) // Get more to filter client-side
+    );
 
     const unsubscribeActivities = onSnapshot(activitiesQuery, (snapshot) => {
       let activities = snapshot.docs.map(doc => ({
@@ -95,19 +66,26 @@ const Home = () => {
         ...doc.data()
       }));
 
-      // Additional client-side filtering for backward compatibility
-      // (in case some old activities don't have locationId)
+      // Client-side filtering by locationId for backward compatibility
+      // Old activities without locationId are included for single-location restaurants
       if (isMultiLocation && selectedLocation) {
+        // Multi-location: only show activities for selected location
+        // Include old activities without locationId (they're from before multi-location)
         activities = activities.filter(activity => {
-          // Include activities without locationId (old data) or matching locationId
-          return !activity.locationId || activity.locationId === selectedLocation;
+          // If activity has no locationId, it's old data - exclude it for multi-location
+          // Only include if it matches the selected location
+          return activity.locationId === selectedLocation;
         });
       } else {
-        // Single-location: include activities without locationId or matching currentUser.uid
+        // Single-location: include all activities (old ones without locationId + new ones with currentUser.uid)
         activities = activities.filter(activity => {
+          // Include if no locationId (old data) or if locationId matches currentUser.uid
           return !activity.locationId || activity.locationId === currentUser.uid;
         });
       }
+
+      // Limit to 10 after filtering
+      activities = activities.slice(0, 10);
 
       setRecentActivities(activities);
     }, (error) => {
@@ -115,25 +93,8 @@ const Home = () => {
       console.error('Error code:', error.code);
       console.error('Error message:', error.message);
       
-      // Check if it's an index error
-      if (error.code === 'failed-precondition') {
-        const indexLinkMatch = error.message?.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
-        const indexLink = indexLinkMatch ? indexLinkMatch[0] : null;
-        
-        if (indexLink) {
-          console.error('Missing Firestore index for activities. Click here to create it:', indexLink);
-        } else {
-          console.error('Missing Firestore index for activities. Create index with:', {
-            collection: `restaurants/${currentUser.uid}/activities`,
-            fields: [
-              { fieldPath: 'locationId', order: 'ASCENDING' },
-              { fieldPath: 'createdAt', order: 'DESCENDING' }
-            ]
-          });
-          console.error('To deploy via CLI, run: firebase deploy --only firestore:indexes');
-        }
-      }
       // Don't show error to user - activities are not critical
+      // Just set empty array so the page still loads
       setRecentActivities([]);
     });
 
