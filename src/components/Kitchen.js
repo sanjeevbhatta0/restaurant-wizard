@@ -63,10 +63,17 @@ const Kitchen = () => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
-      await updateDoc(orderRef, {
+      const updateData = {
         status: newStatus,
         updatedAt: new Date()
-      });
+      };
+      
+      // Set readyAt timestamp when marking as ready
+      if (newStatus === 'ready') {
+        updateData.readyAt = new Date();
+      }
+      
+      await updateDoc(orderRef, updateData);
     } catch (error) {
       console.error('Error updating order status:', error);
       alert('Failed to update order status: ' + error.message);

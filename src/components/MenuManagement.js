@@ -569,7 +569,16 @@ const MenuManagement = () => {
                 type="number"
                 step="0.01"
                 value={itemForm.price}
-                onChange={(e) => setItemForm({...itemForm, price: e.target.value})}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setItemForm({...itemForm, price: value === '' ? '' : value});
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    setItemForm({...itemForm, price: ''});
+                  }
+                }}
                 required
               />
             </Form.Group>
@@ -582,7 +591,16 @@ const MenuManagement = () => {
                     type="number"
                     step="0.01"
                     value={itemForm.discount}
-                    onChange={(e) => setItemForm({...itemForm, discount: e.target.value})}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setItemForm({...itemForm, discount: value === '' ? '' : value});
+                    }}
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      if (value === '') {
+                        setItemForm({...itemForm, discount: ''});
+                      }
+                    }}
                     placeholder="Enter discount"
                   />
                 </Form.Group>

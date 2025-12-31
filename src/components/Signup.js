@@ -4,6 +4,7 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Form, Button, Card, Alert } from 'react-bootstrap';
+import PasswordInput from './PasswordInput';
 import './Login.css';
 
 const Signup = () => {
@@ -133,8 +134,7 @@ const Signup = () => {
                 </Form.Group>
                 <Form.Group className="mb-3">
                   <Form.Label>Password</Form.Label>
-                  <Form.Control 
-                    type="password" 
+                  <PasswordInput
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required 
@@ -143,8 +143,7 @@ const Signup = () => {
                 </Form.Group>
                 <Form.Group className="mb-4">
                   <Form.Label>Confirm Password</Form.Label>
-                  <Form.Control 
-                    type="password" 
+                  <PasswordInput
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required 

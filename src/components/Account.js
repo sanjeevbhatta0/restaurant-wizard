@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
+import PasswordInput from './PasswordInput';
 import './Account.css';
 
 const Account = () => {
@@ -244,8 +245,7 @@ const Account = () => {
               <Form onSubmit={handleChangePassword}>
                 <Form.Group className="mb-3">
                   <Form.Label>Current Password</Form.Label>
-                  <Form.Control
-                    type="password"
+                  <PasswordInput
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     required
@@ -255,8 +255,7 @@ const Account = () => {
 
                 <Form.Group className="mb-3">
                   <Form.Label>New Password</Form.Label>
-                  <Form.Control
-                    type="password"
+                  <PasswordInput
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
@@ -267,8 +266,7 @@ const Account = () => {
 
                 <Form.Group className="mb-3">
                   <Form.Label>Confirm New Password</Form.Label>
-                  <Form.Control
-                    type="password"
+                  <PasswordInput
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required

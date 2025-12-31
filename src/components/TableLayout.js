@@ -479,7 +479,16 @@ const TableLayout = () => {
                 min="1"
                 max="20"
                 value={tableForm.capacity}
-                onChange={(e) => setTableForm({ ...tableForm, capacity: parseInt(e.target.value) || 4 })}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setTableForm({ ...tableForm, capacity: value === '' ? '' : parseInt(value) || 4 });
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    setTableForm({ ...tableForm, capacity: 4 });
+                  }
+                }}
                 required
               />
             </Form.Group>

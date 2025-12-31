@@ -250,7 +250,16 @@ const CategoryItems = () => {
                 type="number"
                 step="0.01"
                 value={itemForm.price}
-                onChange={(e) => setItemForm({...itemForm, price: e.target.value})}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setItemForm({...itemForm, price: value === '' ? '' : value});
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    setItemForm({...itemForm, price: ''});
+                  }
+                }}
                 required
               />
             </Form.Group>

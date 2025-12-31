@@ -1,0 +1,489 @@
+import React, { useState, useEffect } from 'react';
+import { Container, Card, Button, Badge, Alert, Spinner } from 'react-bootstrap';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
+import './PageHeader.css';
+import './Server.css';
+
+const Server = () => {
+  const { currentUser } = useAuth();
+  const { selectedLocation, isMultiLocation } = useLocation();
+  const [orders, setOrders] = useState([]);
+  const [claimedOrders, setClaimedOrders] = useState({}); // { orderId: serverId }
+  const [loading, setLoading] = useState(true);
+  const [updatingOrders, setUpdatingOrders] = useState(new Set());
+  const [notifications, setNotifications] = useState([]);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Timer that updates every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Load claimed orders from localStorage
+  useEffect(() => {
+    if (currentUser) {
+      const savedClaims = localStorage.getItem(`serverClaims_${currentUser.uid}`);
+      if (savedClaims) {
+        setClaimedOrders(JSON.parse(savedClaims));
+      }
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Query for orders that are preparing or ready
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    
+    let q;
+    if (isMultiLocation && selectedLocation) {
+      q = query(
+        ordersRef,
+        where('locationId', '==', selectedLocation),
+        where('status', 'in', ['preparing', 'ready']),
+        orderBy('createdAt', 'asc')
+      );
+    } else if (!isMultiLocation) {
+      q = query(
+        ordersRef,
+        where('status', 'in', ['preparing', 'ready']),
+        orderBy('createdAt', 'asc')
+      );
+    } else {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      setOrders(prevOrders => {
+        // Track status changes for notifications
+        ordersData.forEach(order => {
+          const existingOrder = prevOrders.find(o => o.id === order.id);
+          if (existingOrder && existingOrder.status !== order.status) {
+            // Status changed - add notification
+            if (order.status === 'preparing' && existingOrder.status !== 'preparing') {
+              addNotification(`Order #${order.orderNumber || order.id} for Table ${formatTableNumber(order.tableNumber)} is now being prepared`, 'info');
+            }
+            if (order.status === 'ready' && existingOrder.status !== 'ready') {
+              const savedClaims = localStorage.getItem(`serverClaims_${currentUser.uid}`);
+              const claims = savedClaims ? JSON.parse(savedClaims) : {};
+              const isClaimed = claims[order.id] === currentUser.uid;
+              if (isClaimed) {
+                addNotification(`Order #${order.orderNumber || order.id} for Table ${formatTableNumber(order.tableNumber)} is READY!`, 'success', true);
+              } else {
+                addNotification(`Order #${order.orderNumber || order.id} for Table ${formatTableNumber(order.tableNumber)} is ready`, 'warning');
+              }
+            }
+          }
+        });
+        return ordersData;
+      });
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching orders:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedLocation, isMultiLocation]);
+
+  const addNotification = (message, type = 'info', urgent = false) => {
+    const notification = {
+      id: Date.now(),
+      message,
+      type,
+      urgent,
+      timestamp: new Date()
+    };
+    setNotifications(prev => [notification, ...prev].slice(0, 5)); // Keep last 5
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== notification.id));
+    }, 5000);
+  };
+
+  const claimOrder = (orderId) => {
+    const newClaims = { ...claimedOrders, [orderId]: currentUser.uid };
+    setClaimedOrders(newClaims);
+    localStorage.setItem(`serverClaims_${currentUser.uid}`, JSON.stringify(newClaims));
+    addNotification('Order claimed successfully', 'success');
+  };
+
+  const unclaimOrder = (orderId) => {
+    const newClaims = { ...claimedOrders };
+    delete newClaims[orderId];
+    setClaimedOrders(newClaims);
+    localStorage.setItem(`serverClaims_${currentUser.uid}`, JSON.stringify(newClaims));
+    addNotification('Order unclaimed', 'info');
+  };
+
+  const markAsPicked = async (orderId) => {
+    setUpdatingOrders(prev => new Set(prev).add(orderId));
+    try {
+      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      await updateDoc(orderRef, {
+        status: 'served',
+        updatedAt: new Date(),
+        servedAt: new Date()
+      });
+      addNotification('Order marked as served', 'success');
+      
+      // Remove from claimed orders
+      const newClaims = { ...claimedOrders };
+      delete newClaims[orderId];
+      setClaimedOrders(newClaims);
+      localStorage.setItem(`serverClaims_${currentUser.uid}`, JSON.stringify(newClaims));
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      addNotification('Failed to update order: ' + error.message, 'danger');
+    } finally {
+      setUpdatingOrders(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(orderId);
+        return newSet;
+      });
+    }
+  };
+
+  const formatTableNumber = (tableNumber) => {
+    if (Array.isArray(tableNumber)) {
+      return tableNumber.join(', ');
+    }
+    return tableNumber || 'N/A';
+  };
+
+  const getTimeInStatus = (order) => {
+    let startTime;
+    if (order.status === 'ready' && order.readyAt) {
+      startTime = order.readyAt.toDate ? order.readyAt.toDate() : new Date(order.readyAt);
+    } else if (order.status === 'preparing') {
+      // For preparing, check if there's an updatedAt timestamp, otherwise use createdAt
+      if (order.updatedAt) {
+        startTime = order.updatedAt.toDate ? order.updatedAt.toDate() : new Date(order.updatedAt);
+      } else if (order.createdAt) {
+        startTime = order.createdAt.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+      } else {
+        return { minutes: 0, seconds: 0 };
+      }
+    } else if (order.createdAt) {
+      startTime = order.createdAt.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+    } else {
+      return { minutes: 0, seconds: 0 };
+    }
+
+    const diffMs = currentTime - startTime;
+    const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return { minutes, seconds };
+  };
+
+  // Separate orders into claimed and unclaimed
+  const myClaimedOrders = orders.filter(order => claimedOrders[order.id] === currentUser.uid);
+  const unclaimedOrders = orders.filter(order => !claimedOrders[order.id]);
+  const readyClaimedOrders = myClaimedOrders.filter(order => order.status === 'ready');
+
+  // Show warning if multi-location but no location selected
+  if (isMultiLocation && !selectedLocation && !loading) {
+    return (
+      <Container className="py-4">
+        <div className="page-header-gradient">
+          <div className="header-content">
+            <i className="bi bi-person-badge header-icon"></i>
+            <div>
+              <h2>Server</h2>
+              <p>Track and serve orders</p>
+            </div>
+          </div>
+        </div>
+        <Alert variant="warning" className="mt-4">
+          <i className="bi bi-exclamation-triangle"></i> Please select a location to view server orders.
+        </Alert>
+      </Container>
+    );
+  }
+
+  return (
+    <Container fluid className="server-container">
+      <div className="page-header-gradient">
+        <div className="header-content">
+          <i className="bi bi-person-badge header-icon"></i>
+          <div>
+            <h2>Server</h2>
+            <p>Track and serve orders</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications */}
+      {notifications.length > 0 && (
+        <div className="server-notifications">
+          {notifications.map(notification => (
+            <Alert 
+              key={notification.id} 
+              variant={notification.type}
+              className={`server-notification ${notification.urgent ? 'urgent' : ''}`}
+              dismissible
+              onClose={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
+            >
+              <i className={`bi bi-${notification.urgent ? 'bell-fill' : 'info-circle'}`}></i> {notification.message}
+            </Alert>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="server-loading">
+          <Spinner animation="border" variant="primary" />
+          <p>Loading orders...</p>
+        </div>
+      ) : (
+        <>
+          {/* Ready Orders - Claimed by Me (Red/Urgent) */}
+          {readyClaimedOrders.length > 0 && (
+            <div className="server-section">
+              <h3 className="section-title urgent-title">
+                <i className="bi bi-exclamation-triangle-fill"></i> Ready for Pickup
+              </h3>
+              <div className="server-orders-grid">
+                {readyClaimedOrders.map(order => {
+                  const isUpdating = updatingOrders.has(order.id);
+                  const timeInStatus = getTimeInStatus(order);
+                  
+                  return (
+                    <Card key={order.id} className="server-order-card urgent-card">
+                      <Card.Header className="server-order-header urgent-header">
+                        <div className="order-header-top">
+                          <div>
+                            <Badge bg="danger" className="order-status-badge">READY</Badge>
+                            <span className="order-number">#{order.orderNumber || order.id}</span>
+                          </div>
+                          <div className="order-timer urgent-timer">
+                            <i className="bi bi-clock"></i>
+                            <span>{String(timeInStatus.minutes).padStart(2, '0')}:{String(timeInStatus.seconds).padStart(2, '0')}</span>
+                          </div>
+                        </div>
+                        <div className="order-header-bottom">
+                          <span className="table-info">
+                            <i className="bi bi-table"></i>
+                            Table: {formatTableNumber(order.tableNumber)}
+                          </span>
+                        </div>
+                      </Card.Header>
+                      <Card.Body>
+                        <div className="order-items">
+                          <h6 className="items-title">Items:</h6>
+                          <ul className="items-list">
+                            {order.items && order.items.map((item, index) => (
+                              <li key={index} className="order-item">
+                                <span className="item-quantity">{item.quantity}x</span>
+                                <span className="item-name">{item.name}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="order-total">
+                          <strong>Total: ${order.total?.toFixed(2) || '0.00'}</strong>
+                        </div>
+                      </Card.Body>
+                      <Card.Footer className="server-order-footer">
+                        <Button
+                          variant="success"
+                          className="server-action-button"
+                          onClick={() => markAsPicked(order.id)}
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? (
+                            <>
+                              <Spinner animation="border" size="sm" /> Updating...
+                            </>
+                          ) : (
+                            <>
+                              <i className="bi bi-check-circle"></i> Mark as Served
+                            </>
+                          )}
+                        </Button>
+                      </Card.Footer>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* My Claimed Orders (Preparing) */}
+          {myClaimedOrders.filter(order => order.status === 'preparing').length > 0 && (
+            <div className="server-section">
+              <h3 className="section-title">
+                <i className="bi bi-person-check"></i> My Claimed Orders
+              </h3>
+              <div className="server-orders-grid">
+                {myClaimedOrders.filter(order => order.status === 'preparing').map(order => {
+                  const timeInStatus = getTimeInStatus(order);
+                  
+                  return (
+                    <Card key={order.id} className="server-order-card claimed-card">
+                      <Card.Header className="server-order-header">
+                        <div className="order-header-top">
+                          <div>
+                            <Badge bg="warning" className="order-status-badge">Preparing</Badge>
+                            <span className="order-number">#{order.orderNumber || order.id}</span>
+                          </div>
+                          <div className="order-timer">
+                            <i className="bi bi-clock"></i>
+                            <span>{String(timeInStatus.minutes).padStart(2, '0')}:{String(timeInStatus.seconds).padStart(2, '0')}</span>
+                          </div>
+                        </div>
+                        <div className="order-header-bottom">
+                          <span className="table-info">
+                            <i className="bi bi-table"></i>
+                            Table: {formatTableNumber(order.tableNumber)}
+                          </span>
+                          <Button
+                            variant="outline-secondary"
+                            size="sm"
+                            onClick={() => unclaimOrder(order.id)}
+                            className="unclaim-btn"
+                          >
+                            <i className="bi bi-x-circle"></i> Unclaim
+                          </Button>
+                        </div>
+                      </Card.Header>
+                      <Card.Body>
+                        <div className="order-items">
+                          <h6 className="items-title">Items:</h6>
+                          <ul className="items-list">
+                            {order.items && order.items.map((item, index) => (
+                              <li key={index} className="order-item">
+                                <span className="item-quantity">{item.quantity}x</span>
+                                <span className="item-name">{item.name}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="order-total">
+                          <strong>Total: ${order.total?.toFixed(2) || '0.00'}</strong>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Available Orders */}
+          {unclaimedOrders.length > 0 && (
+            <div className="server-section">
+              <h3 className="section-title">
+                <i className="bi bi-list-ul"></i> Available Orders
+              </h3>
+              <div className="server-orders-grid">
+                {unclaimedOrders.map(order => {
+                  const isClaimed = claimedOrders[order.id] === currentUser.uid;
+                  const timeInStatus = getTimeInStatus(order);
+                  
+                  return (
+                    <Card key={order.id} className={`server-order-card ${order.status === 'ready' ? 'ready-unclaimed' : ''}`}>
+                      <Card.Header className={`server-order-header ${order.status === 'ready' ? 'ready-header' : ''}`}>
+                        <div className="order-header-top">
+                          <div>
+                            <Badge bg={order.status === 'ready' ? 'success' : 'warning'} className="order-status-badge">
+                              {order.status === 'ready' ? 'Ready' : 'Preparing'}
+                            </Badge>
+                            <span className="order-number">#{order.orderNumber || order.id}</span>
+                          </div>
+                          <div className="order-timer">
+                            <i className="bi bi-clock"></i>
+                            <span>{String(timeInStatus.minutes).padStart(2, '0')}:{String(timeInStatus.seconds).padStart(2, '0')}</span>
+                          </div>
+                        </div>
+                        <div className="order-header-bottom">
+                          <span className="table-info">
+                            <i className="bi bi-table"></i>
+                            Table: {formatTableNumber(order.tableNumber)}
+                          </span>
+                        </div>
+                      </Card.Header>
+                      <Card.Body>
+                        <div className="order-items">
+                          <h6 className="items-title">Items:</h6>
+                          <ul className="items-list">
+                            {order.items && order.items.map((item, index) => (
+                              <li key={index} className="order-item">
+                                <span className="item-quantity">{item.quantity}x</span>
+                                <span className="item-name">{item.name}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="order-total">
+                          <strong>Total: ${order.total?.toFixed(2) || '0.00'}</strong>
+                        </div>
+                      </Card.Body>
+                      <Card.Footer className="server-order-footer">
+                        {order.status === 'ready' ? (
+                          <Button
+                            variant="success"
+                            className="server-action-button"
+                            onClick={() => {
+                              claimOrder(order.id);
+                              markAsPicked(order.id);
+                            }}
+                            disabled={updatingOrders.has(order.id)}
+                          >
+                            {updatingOrders.has(order.id) ? (
+                              <>
+                                <Spinner animation="border" size="sm" /> Updating...
+                              </>
+                            ) : (
+                              <>
+                                <i className="bi bi-check-circle"></i> Claim & Mark Served
+                              </>
+                            )}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            className="server-action-button"
+                            onClick={() => claimOrder(order.id)}
+                          >
+                            <i className="bi bi-hand-thumbs-up"></i> Claim Order
+                          </Button>
+                        )}
+                      </Card.Footer>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {orders.length === 0 && (
+            <div className="server-empty">
+              <i className="bi bi-inbox"></i>
+              <h3>No Active Orders</h3>
+              <p>Orders will appear here when kitchen starts preparing them</p>
+            </div>
+          )}
+        </>
+      )}
+    </Container>
+  );
+};
+
+export default Server;

@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row, Col } from 'react-bootstrap';
-import TableSelectionModal from './TableSelectionModal';
 import './PageHeader.css';
 import './Payments.css';
 
 const Payments = () => {
   const { currentUser } = useAuth();
   const [selectedTable, setSelectedTable] = useState(null);
-  const [showTableModal, setShowTableModal] = useState(false);
+  const [tablesWithOrders, setTablesWithOrders] = useState({}); // { tableNumber: [orders] }
   const [orders, setOrders] = useState([]);
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -31,14 +30,62 @@ const Payments = () => {
   const [total, setTotal] = useState(0);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
+  // Load all served orders grouped by table
   useEffect(() => {
-    if (selectedTable && currentUser) {
-      loadOrdersForTable();
-    } else {
+    if (!currentUser) return;
+
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    
+    let q = query(ordersRef, where('status', '==', 'served'));
+    
+    // Add location filter if multi-location
+    if (isMultiLocation && selectedLocation) {
+      q = query(q, where('locationId', '==', selectedLocation));
+    } else if (isMultiLocation && !selectedLocation) {
+      setTablesWithOrders({});
       setOrders([]);
       setSelectedOrders([]);
+      return;
     }
-  }, [selectedTable, currentUser, isMultiLocation, selectedLocation]);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Group orders by table number
+      const grouped = {};
+      ordersData.forEach(order => {
+        const tableNumbers = Array.isArray(order.tableNumber) 
+          ? order.tableNumber 
+          : [order.tableNumber];
+        
+        tableNumbers.forEach(tableNum => {
+          if (!grouped[tableNum]) {
+            grouped[tableNum] = [];
+          }
+          // Only add if not already added (for multi-table orders)
+          if (!grouped[tableNum].find(o => o.id === order.id)) {
+            grouped[tableNum].push(order);
+          }
+        });
+      });
+
+      setTablesWithOrders(grouped);
+      
+      // If a table is selected, update its orders
+      if (selectedTable) {
+        const tableKey = Array.isArray(selectedTable) ? selectedTable[0] : selectedTable;
+        setOrders(grouped[tableKey] || []);
+      }
+    }, (error) => {
+      console.error('Error loading orders:', error);
+      setError('Failed to load orders: ' + error.message);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedLocation, isMultiLocation, selectedTable]);
 
   useEffect(() => {
     calculateTotals();
@@ -54,13 +101,13 @@ const Payments = () => {
       // Get table numbers - handle both single table and array
       const tableNumbers = Array.isArray(selectedTable) ? selectedTable : [selectedTable];
       
-      // Query for orders with "ready" status and matching table number
+      // Query for orders with "served" status and matching table number
       const ordersData = [];
       
       for (const tableNum of tableNumbers) {
         let q = query(
           ordersRef,
-          where('status', '==', 'ready'),
+          where('status', '==', 'served'),
           where('tableNumber', '==', tableNum)
         );
 
@@ -80,7 +127,7 @@ const Payments = () => {
       }
 
       // Also check for orders where tableNumber is an array
-      let allOrdersQuery = query(ordersRef, where('status', '==', 'ready'));
+      let allOrdersQuery = query(ordersRef, where('status', '==', 'served'));
       
       // Add location filter if multi-location
       if (isMultiLocation && selectedLocation) {
@@ -105,7 +152,7 @@ const Payments = () => {
       setOrders(ordersData);
       
       if (ordersData.length === 0) {
-        setError(`No orders ready for payment at ${Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}`);
+        setError(`No orders served at ${Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}`);
       }
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -115,14 +162,17 @@ const Payments = () => {
     }
   };
 
-  const handleTableSelect = (tables) => {
-    if (tables.length === 1) {
-      setSelectedTable(tables[0]);
+  const handleTableSelect = (tableNumber) => {
+    if (selectedTable === tableNumber) {
+      // Deselect if clicking the same table
+      setSelectedTable(null);
+      setOrders([]);
+      setSelectedOrders([]);
     } else {
-      setSelectedTable(tables);
+      setSelectedTable(tableNumber);
+      setOrders(tablesWithOrders[tableNumber] || []);
+      setSelectedOrders([]);
     }
-    setShowTableModal(false);
-    setSelectedOrders([]);
   };
 
   const toggleOrderSelection = (orderId) => {
@@ -273,8 +323,7 @@ const Payments = () => {
       setDiscountAmount(0);
       setTipAmount(0);
       setTaxRate(8.5);
-      setSelectedTable(null);
-      setOrders([]);
+      // Don't reset selectedTable - let user see the updated state (orders will be removed from tablesWithOrders automatically)
     } catch (error) {
       console.error('Error processing payment:', error);
       setError('Failed to process payment: ' + error.message);
@@ -312,62 +361,71 @@ const Payments = () => {
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
 
-      {/* Table Selection */}
-      <Card className="mb-4">
-        <Card.Body>
-          <Row className="align-items-center">
-            <Col md={6}>
-              <Form.Label><strong>Select Table:</strong></Form.Label>
-              <div className="mt-2">
-                <Button
-                  variant={selectedTable ? "outline-primary" : "primary"}
-                  onClick={() => setShowTableModal(true)}
-                  size="lg"
-                >
-                  <i className="bi bi-grid-3x3-gap"></i>{' '}
-                  {selectedTable
-                    ? Array.isArray(selectedTable)
-                      ? `Tables ${selectedTable.join(', ')}`
-                      : `Table ${selectedTable}`
-                    : 'Select Table'}
-                </Button>
-                {selectedTable && (
-                  <Button
-                    variant="outline-secondary"
-                    className="ms-2"
-                    onClick={() => {
-                      setSelectedTable(null);
-                      setOrders([]);
-                      setSelectedOrders([]);
-                    }}
+      {/* Tables with Served Orders */}
+      {Object.keys(tablesWithOrders).length > 0 && (
+        <Card className="mb-4">
+          <Card.Header>
+            <h5><i className="bi bi-table"></i> Tables with Served Orders</h5>
+          </Card.Header>
+          <Card.Body>
+            <div className="payments-tables-grid">
+              {Object.entries(tablesWithOrders).map(([tableNumber, tableOrders]) => {
+                const isSelected = selectedTable === tableNumber;
+                const totalAmount = tableOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+                return (
+                  <Card
+                    key={tableNumber}
+                    className={`payments-table-card ${isSelected ? 'selected' : ''}`}
+                    onClick={() => handleTableSelect(tableNumber)}
+                    style={{ cursor: 'pointer' }}
                   >
-                    Clear
-                  </Button>
-                )}
-              </div>
-            </Col>
-            {selectedTable && (
-              <Col md={6}>
-                <div className="text-muted">
-                  <i className="bi bi-info-circle"></i> Showing orders ready for payment
-                </div>
-              </Col>
-            )}
-          </Row>
-        </Card.Body>
-      </Card>
+                    <Card.Body>
+                      <div className="table-card-header">
+                        <h4>
+                          <i className="bi bi-table"></i> Table {tableNumber}
+                        </h4>
+                        <Badge bg={isSelected ? 'primary' : 'secondary'}>
+                          {tableOrders.length} {tableOrders.length === 1 ? 'Order' : 'Orders'}
+                        </Badge>
+                      </div>
+                      <div className="table-card-info">
+                        <div className="table-card-total">
+                          <strong>Total: ${totalAmount.toFixed(2)}</strong>
+                        </div>
+                        <div className="table-card-orders">
+                          {tableOrders.slice(0, 2).map(order => (
+                            <div key={order.id} className="table-order-preview">
+                              <small>
+                                #{order.orderNumber || order.id.slice(0, 8)} - ${(order.total || 0).toFixed(2)}
+                              </small>
+                            </div>
+                          ))}
+                          {tableOrders.length > 2 && (
+                            <small className="text-muted">+{tableOrders.length - 2} more</small>
+                          )}
+                        </div>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                );
+              })}
+            </div>
+          </Card.Body>
+        </Card>
+      )}
 
-      {loading ? (
-        <div className="text-center py-5">
-          <Spinner animation="border" />
-          <p className="mt-3 text-muted">Loading orders...</p>
-        </div>
-      ) : selectedTable && orders.length > 0 ? (
+      {isMultiLocation && !selectedLocation && (
+        <Alert variant="warning" className="mt-4">
+          <i className="bi bi-exclamation-triangle"></i> Please select a location to view payments.
+        </Alert>
+      )}
+
+      {selectedTable && orders.length > 0 ? (
         <>
           {/* Orders List */}
           <Card className="mb-4">
             <Card.Header>
-              <h5>Ready Orders for {Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}</h5>
+              <h5>Served Orders for {Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}</h5>
             </Card.Header>
             <Card.Body>
               <Table responsive hover>
@@ -459,7 +517,16 @@ const Payments = () => {
                             type="number"
                             step="0.1"
                             value={taxRate}
-                            onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setTaxRate(value === '' ? '' : parseFloat(value) || 0);
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                setTaxRate(0);
+                              }
+                            }}
                             placeholder="Tax Rate %"
                           />
                         </Col>
@@ -478,7 +545,16 @@ const Payments = () => {
                             type="number"
                             step="0.01"
                             value={discountAmount}
-                            onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setDiscountAmount(value === '' ? '' : parseFloat(value) || 0);
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                setDiscountAmount(0);
+                              }
+                            }}
                             placeholder="Discount amount"
                           />
                         </Col>
@@ -503,7 +579,16 @@ const Payments = () => {
                             type="number"
                             step="0.01"
                             value={tipAmount}
-                            onChange={(e) => setTipAmount(parseFloat(e.target.value) || 0)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setTipAmount(value === '' ? '' : parseFloat(value) || 0);
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                setTipAmount(0);
+                              }
+                            }}
                             placeholder="Tip amount"
                           />
                         </Col>
@@ -569,26 +654,20 @@ const Payments = () => {
         <Card>
           <Card.Body className="text-center py-5">
             <i className="bi bi-inbox" style={{ fontSize: '3rem', color: '#ccc' }}></i>
-            <p className="mt-3 text-muted">No orders ready for payment at this table</p>
+            <p className="mt-3 text-muted">No orders served at this table</p>
           </Card.Body>
         </Card>
-      ) : (
-        <Card>
-          <Card.Body className="text-center py-5">
-            <i className="bi bi-grid-3x3-gap" style={{ fontSize: '3rem', color: '#ccc' }}></i>
-            <p className="mt-3 text-muted">Select a table to view orders ready for payment</p>
-          </Card.Body>
-        </Card>
-      )}
-
-      {/* Table Selection Modal */}
-      <TableSelectionModal
-        show={showTableModal}
-        onHide={() => setShowTableModal(false)}
-        onSelect={handleTableSelect}
-        selectedTables={Array.isArray(selectedTable) ? selectedTable : selectedTable ? [selectedTable] : []}
-        allowOccupied={true}
-      />
+      ) : !isMultiLocation || selectedLocation ? (
+        Object.keys(tablesWithOrders).length === 0 && (
+          <Card>
+            <Card.Body className="text-center py-5">
+              <i className="bi bi-inbox" style={{ fontSize: '3rem', color: '#ccc' }}></i>
+              <p className="mt-3 text-muted">No tables with served orders</p>
+              <p className="text-muted">Orders will appear here once they are marked as served</p>
+            </Card.Body>
+          </Card>
+        )
+      ) : null}
 
       {/* Payment Confirmation Modal */}
       <Modal show={showPaymentModal} onHide={() => !processing && setShowPaymentModal(false)}>

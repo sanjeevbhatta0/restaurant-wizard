@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Table, Badge, Dropdown, Form, Row, Col } from 'react-bootstrap';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { Container, Table, Badge, Form, Row, Col } from 'react-bootstrap';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -47,18 +47,6 @@ const Orders = () => {
     }
   };
 
-  const handleStatusChange = async (orderId, newStatus) => {
-    try {
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
-      await updateDoc(orderRef, {
-        status: newStatus,
-        updatedAt: new Date()
-      });
-    } catch (error) {
-      console.error('Error updating order status:', error);
-    }
-  };
-
   const handleFilterChange = (status) => {
     setStatusFilter(status);
     filterOrders(orders, status);
@@ -73,6 +61,8 @@ const Orders = () => {
       case 'preparing':
         return 'warning';
       case 'ready':
+        return 'success';
+      case 'served':
         return 'success';
       case 'completed':
         return 'dark';
@@ -93,6 +83,8 @@ const Orders = () => {
         return 'Preparing';
       case 'ready':
         return 'Ready';
+      case 'served':
+        return 'Served';
       case 'completed':
         return 'Completed';
       case 'cancelled':
@@ -142,7 +134,8 @@ const Orders = () => {
               <option value="new">New Orders</option>
               <option value="sent_to_kitchen">Sent to Kitchen</option>
               <option value="preparing">Preparing</option>
-              <option value="ready">Ready for Pickup</option>
+              <option value="ready">Ready</option>
+              <option value="served">Served</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </Form.Select>
@@ -160,7 +153,6 @@ const Orders = () => {
             <th>Total</th>
             <th>Pickup Time</th>
             <th>Status</th>
-            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -188,33 +180,6 @@ const Orders = () => {
                 {order.tableNumber && (
                   <div><small className="text-muted">Table #{order.tableNumber}</small></div>
                 )}
-              </td>
-              <td>
-                <Dropdown>
-                  <Dropdown.Toggle variant="outline-secondary" size="sm">
-                    Update Status
-                  </Dropdown.Toggle>
-                  <Dropdown.Menu>
-                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'new')}>
-                      New
-                    </Dropdown.Item>
-                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'sent_to_kitchen')}>
-                      Sent to Kitchen
-                    </Dropdown.Item>
-                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'preparing')}>
-                      Preparing
-                    </Dropdown.Item>
-                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'ready')}>
-                      Ready
-                    </Dropdown.Item>
-                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'completed')}>
-                      Completed
-                    </Dropdown.Item>
-                    <Dropdown.Item onClick={() => handleStatusChange(order.id, 'cancelled')}>
-                      Cancelled
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown>
               </td>
             </tr>
           ))}

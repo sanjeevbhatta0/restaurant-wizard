@@ -4,6 +4,7 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Container, Card, Form, Button, Alert } from 'react-bootstrap';
+import PasswordInput from './PasswordInput';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './Login.css';
 
@@ -108,8 +109,7 @@ const Login = () => {
                 </Form.Group>
                 <Form.Group className="mb-4">
                   <Form.Label>Password</Form.Label>
-                  <Form.Control 
-                    type="password" 
+                  <PasswordInput
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required 
