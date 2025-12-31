@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Restaurants collection - users can only access their own restaurant
+    match /restaurants/{restaurantId} {
+      // Allow users to read/write their own restaurant document
+      allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      
+      // Menu Categories subcollection (used by MenuManagement and POS)
+      match /menuCategories/{categoryId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        
+        // Items within each category
+        match /items/{itemId} {
+          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        }
+      }
+      
+      // Orders subcollection (used by POS and Orders components)
+      match /orders/{orderId} {
+        // Restaurant owner can read/write their orders
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        // Public can create orders (for customers ordering online)
+        allow create: if true;
+      }
+    }
+    
+    // Social media posts - users can only access their own
+    match /socialMediaPosts/{postId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Website settings - users can only access their own
+    match /websiteSettings/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Social connections - users can only access their own
+    match /socialConnections/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

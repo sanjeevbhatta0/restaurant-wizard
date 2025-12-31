@@ -351,6 +351,25 @@ firebase deploy
 
 ---
 
+## 🔐 Firestore Security Rules
+
+The project uses `firestore.rules` to secure data access. Key rules:
+
+| Path | Access |
+|------|--------|
+| `restaurants/{uid}` | Owner only (uid must match auth user) |
+| `restaurants/{uid}/menuCategories/**` | Owner only |
+| `restaurants/{uid}/orders/**` | Owner can read/write, public can create |
+| `socialMediaPosts/{postId}` | Owner only (based on userId field) |
+| `websiteSettings/{uid}` | Owner only |
+
+**Deploy rules after changes:**
+```bash
+firebase deploy --only firestore:rules
+```
+
+---
+
 ## 🧪 Testing Notes
 
 ### Automated Testing Limitation
