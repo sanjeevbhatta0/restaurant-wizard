@@ -1,15 +1,16 @@
-const functions = require('firebase-functions');
+const { onRequest, onCall } = require('firebase-functions/v2/https');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const cors = require('cors')({ origin: true });
 
 admin.initializeApp();
 
-exports.processSocialMediaPost = functions.firestore
-  .document('socialMediaPosts/{postId}')
-  .onCreate(async (snap, context) => {
+exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', async (event) => {
+    const snap = event.data;
+    if (!snap) return;
     const postData = snap.data();
-    const postId = context.params.postId;
+    const postId = event.params.postId;
     const db = admin.firestore();
 
     try {
@@ -155,7 +156,7 @@ async function getRestaurantBySlug(slug) {
 }
 
 // Serve restaurant websites
-exports.serveWebsite = functions.https.onRequest(async (req, res) => {
+exports.serveWebsite = onRequest(async (req, res) => {
     return cors(req, res, async () => {
         try {
             // Get restaurant identifier from the host
@@ -296,7 +297,7 @@ exports.serveWebsite = functions.https.onRequest(async (req, res) => {
 });
 
 // Serve menu data
-exports.getMenu = functions.https.onRequest(async (req, res) => {
+exports.getMenu = onRequest(async (req, res) => {
     return cors(req, res, async () => {
         try {
             // Get restaurant ID from query parameter
@@ -355,7 +356,7 @@ exports.getMenu = functions.https.onRequest(async (req, res) => {
 });
 
 // Handle order submissions
-exports.submitOrder = functions.https.onRequest((request, response) => {
+exports.submitOrder = onRequest((request, response) => {
   cors(request, response, async () => {
     try {
       if (request.method !== 'POST') {
@@ -418,19 +419,21 @@ exports.submitOrder = functions.https.onRequest((request, response) => {
   });
 });
 
-exports.updateWebsite = functions.https.onCall(async (data, context) => {
+const { HttpsError } = require('firebase-functions/v2/https');
+
+exports.updateWebsite = onCall(async (request) => {
   try {
     // Check if user is authenticated
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const uid = context.auth.uid;
-    const { html, restaurantId, slug } = data;
+    const uid = request.auth.uid;
+    const { html, restaurantId, slug } = request.data;
     
     // Verify request data
     if (!html || !restaurantId || uid !== restaurantId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid request data');
+      throw new HttpsError('invalid-argument', 'Invalid request data');
     }
 
     // Upload to Firebase Storage
@@ -462,6 +465,6 @@ exports.updateWebsite = functions.https.onCall(async (data, context) => {
     };
   } catch (error) {
     console.error('Error in updateWebsite:', error);
-    throw new functions.https.HttpsError('internal', error.message);
+    throw new HttpsError('internal', error.message);
   }
 }); 
