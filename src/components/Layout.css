@@ -98,28 +98,43 @@
   display: flex;
   align-items: center;
   color: white;
+  gap: 16px;
+  height: 100%;
 }
 
 .logo svg {
   flex-shrink: 0;
+  display: block;
+  align-self: center;
 }
 
 .logo-text {
   font-style: italic;
   font-weight: 500;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  padding-top: 3px;
+  transform: translateY(1px);
 }
 
 .logo-word-koda {
   color: #8b9aff;
   text-shadow: 0 2px 6px rgba(139, 154, 255, 0.5), 0 0 10px rgba(139, 154, 255, 0.3);
   font-weight: 600;
+  display: inline-block;
+  margin-right: 4px;
 }
 
 .logo-word-carte {
   color: #a78bfa;
   text-shadow: 0 2px 6px rgba(167, 139, 250, 0.5), 0 0 10px rgba(167, 139, 250, 0.3);
   font-weight: 600;
+  display: inline-block;
 }
 
 
@@ -186,6 +201,8 @@
 
 .sidebar.collapsed .sidebar-link i {
   margin: 0;
+  width: auto;
+  min-width: auto;
 }
 
 .sidebar.collapsed .sidebar-link:hover .sidebar-link-text {
@@ -297,18 +314,35 @@
 }
 
 
-.sidebar-link {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  color: #333;
+.sidebar-link,
+.sidebar .nav-link.sidebar-link {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 12px;
+  padding: 12px 15px !important;
+  color: #333 !important;
   text-decoration: none;
-  border-radius: 4px;
-  margin-bottom: 5px;
+  border-radius: 8px !important;
+  margin-bottom: 4px;
   transition: all 0.2s;
   position: relative;
   white-space: nowrap;
+  line-height: 1.4;
+  border-left: none !important;
+}
+
+.sidebar-link i,
+.sidebar .nav-link.sidebar-link i {
+  font-size: 1.1rem;
+  width: 24px;
+  min-width: 24px;
+  text-align: center;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .sidebar-link-text {
@@ -316,7 +350,10 @@
               width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
               transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  display: inline-block;
+  display: inline !important;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .sidebar-link:hover {
@@ -333,9 +370,6 @@
   padding-left: 6px;
 }
 
-.sidebar-link i {
-  font-size: 1.2rem;
-}
 
 .content {
   flex: 1;

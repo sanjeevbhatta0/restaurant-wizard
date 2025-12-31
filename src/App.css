@@ -100,30 +100,7 @@ body {
   }
 }
 
-/* Sidebar styles */
-.sidebar {
-  height: 100%;
-  margin-bottom: 20px;
-}
-
-.sidebar .nav-link {
-  color: #495057;
-  border-radius: 0;
-  cursor: pointer;
-  padding: 0.75rem 1.25rem;
-  border-left: 4px solid transparent;
-}
-
-.sidebar .nav-link:hover {
-  background-color: #f1f1f1;
-  border-left: 4px solid #ddd;
-}
-
-.sidebar .nav-link.active {
-  background-color: #4a6da7;
-  color: white;
-  border-left: 4px solid #3a5a8f;
-}
+/* Sidebar styles - moved to Layout.css */
 
 .sidebar .card-header {
   font-weight: bold;
