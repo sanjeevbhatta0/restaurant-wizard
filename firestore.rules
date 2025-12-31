@@ -25,6 +25,16 @@ service cloud.firestore {
         // Public can create orders (for customers ordering online)
         allow create: if true;
       }
+      
+      // Layout subcollection (used by TableLayout component)
+      match /layout/{layoutId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
+      
+      // Website subcollection (used by WebsiteBuilder)
+      match /website/{websiteId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
     }
     
     // Social media posts - users can only access their own
