@@ -20,12 +20,13 @@ const Layout = () => {
   };
 
   const sidebarLinks = [
-    { to: '/dashboard', icon: 'bi-speedometer2', text: 'Dashboard' },
-    { to: '/menu-management', icon: 'bi-menu-button-wide', text: 'Menu Management' },
-    { to: '/orders', icon: 'bi-cart', text: 'Orders' },
-    { to: '/seo-social', icon: 'bi-share', text: 'SEO & Social' },
-    { to: '/website-integration', icon: 'bi-code-slash', text: 'Website Integration' },
-    { to: '/website-builder', icon: 'bi-brush', text: 'Website Builder' }
+    { to: '/dashboard', icon: 'speedometer2', text: 'Dashboard' },
+    { to: '/menu-management', icon: 'menu-button-wide', text: 'Menu Management' },
+    { to: '/orders', icon: 'cart', text: 'Orders' },
+    { to: '/pos', icon: 'grid-3x3-gap', text: 'POS' },
+    { to: '/seo-social', icon: 'share', text: 'SEO & Social' },
+    { to: '/website-integration', icon: 'code-slash', text: 'Website Integration' },
+    { to: '/website-builder', icon: 'brush', text: 'Website Builder' }
   ];
 
   return (
@@ -52,4 +53,4 @@ const Layout = () => {
   );
 };
 
-export default Layout; 
+export default Layout;

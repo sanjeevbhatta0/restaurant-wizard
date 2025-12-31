@@ -17,6 +17,7 @@
 | **Website Builder** | Visual builder for creating a restaurant website with customizable theme, contact info, business hours, and social links | ✅ Implemented |
 | **Website Integration** | Embeddable script to add the menu to any external website | ✅ Implemented |
 | **Social Media Posting** | Post directly to Facebook Pages and Instagram Business accounts | ✅ Implemented (Twitter coming soon) |
+| **POS (Point of Sale)** | Tablet-friendly interface for in-restaurant order taking with table management | ✅ Implemented (New!) |
 | **Authentication** | User signup/login with Firebase Auth | ✅ Implemented |
 
 ### Tech Stack
