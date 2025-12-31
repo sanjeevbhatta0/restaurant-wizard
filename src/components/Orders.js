@@ -3,6 +3,7 @@ import { Container, Table, Badge, Dropdown, Form, Row, Col } from 'react-bootstr
 import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import './PageHeader.css';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -110,10 +111,16 @@ const Orders = () => {
 
   return (
     <Container className="py-4">
+      <div className="page-header-gradient">
+        <div className="header-content">
+          <i className="bi bi-cart header-icon"></i>
+          <div>
+            <h2>Orders</h2>
+            <p>Manage and track all customer orders</p>
+          </div>
+        </div>
+      </div>
       <Row className="mb-4 align-items-center">
-        <Col>
-          <h2 className="mb-0">Orders</h2>
-        </Col>
         <Col xs="auto">
           <Form.Group>
             <Form.Select 

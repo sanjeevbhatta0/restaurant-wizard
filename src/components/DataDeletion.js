@@ -13,14 +13,14 @@ const DataDeletion = () => {
         </Card.Header>
         <Card.Body>
           <p>
-            Restaurant Wizard values your privacy and makes it easy to delete your personal data
+            Koda Carte values your privacy and makes it easy to delete your personal data
             from our systems. You have multiple options to request data deletion:
           </p>
 
           <h3 className="h5 mt-4">Option 1: Through Your Account</h3>
           <ListGroup className="mb-4">
             <ListGroup.Item>
-              1. Log in to your Restaurant Wizard account
+              1. Log in to your Koda Carte account
             </ListGroup.Item>
             <ListGroup.Item>
               2. Go to Profile Settings

@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import './PageHeader.css';
 import './POS.css';
 
 const POS = () => {
@@ -200,9 +201,21 @@ const POS = () => {
   }
 
   return (
-    <div className="pos-container">
-      {/* Left Panel - Category Navigation */}
-      <div className="pos-categories">
+    <div className="pos-wrapper">
+      {/* Page Header */}
+      <div className="page-header-gradient">
+        <div className="header-content">
+          <i className="bi bi-cash-register header-icon"></i>
+          <div>
+            <h2>Point of Sale</h2>
+            <p>Process orders and manage your restaurant sales</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="pos-container">
+        {/* Left Panel - Category Navigation */}
+        <div className="pos-categories">
         <h5>Categories</h5>
         <ul className="category-nav">
           {categories.map(category => (
@@ -373,6 +386,7 @@ const POS = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

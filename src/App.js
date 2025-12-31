@@ -4,6 +4,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
+import Dashboard from './components/Dashboard';
+import Account from './components/Account';
 import MenuManagement from './components/MenuManagement';
 import CategoryItems from './components/CategoryItems';
 import Orders from './components/Orders';
@@ -29,6 +31,11 @@ function App() {
             <Route path="home" element={
               <PrivateRoute>
                 <Home />
+              </PrivateRoute>
+            } />
+            <Route path="analytics" element={
+              <PrivateRoute>
+                <Dashboard />
               </PrivateRoute>
             } />
             <Route path="menu-management" element={
@@ -64,6 +71,11 @@ function App() {
             <Route path="website-builder" element={
               <PrivateRoute>
                 <WebsiteBuilder />
+              </PrivateRoute>
+            } />
+            <Route path="account" element={
+              <PrivateRoute>
+                <Account />
               </PrivateRoute>
             } />
           </Route>
