@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, addDoc, deleteDoc, getDocs, setDoc } from 'firebase/firestore';
-import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useNavigate } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
 import PasswordInput from './PasswordInput';
+import activityService from '../services/activityService';
 import './Account.css';
 
 const Account = () => {
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, loadRestaurantData } = useLocation();
+  const navigate = useNavigate();
   const [restaurantData, setRestaurantData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -30,11 +33,21 @@ const Account = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
 
+  // Reimbursement PIN
+  const [showPinForm, setShowPinForm] = useState(false);
+  const [pinPassword, setPinPassword] = useState('');
+  const [reimbursementPin, setReimbursementPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [hasPin, setHasPin] = useState(false);
+
   // Location management
   const [locationList, setLocationList] = useState([]);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState(null);
   const [locationForm, setLocationForm] = useState({ name: '', address: '' });
+
+  // Sidebar navigation
+  const [activeSection, setActiveSection] = useState('account');
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -50,6 +63,7 @@ const Account = () => {
           setUsername(data.username || '');
           setRestaurantName(data.restaurantName || '');
           setAddress(data.address || '');
+          setHasPin(!!data.reimbursementPin);
         }
         
         if (currentUser.email) {
@@ -65,6 +79,15 @@ const Account = () => {
 
     fetchAccountData();
   }, [currentUser]);
+
+  // Sync locations from context
+  useEffect(() => {
+    if (isMultiLocation && locations) {
+      setLocationList(locations);
+    } else {
+      setLocationList([]);
+    }
+  }, [isMultiLocation, locations]);
 
   const handleSaveAccountDetails = async (e) => {
     e.preventDefault();
@@ -137,6 +160,60 @@ const Account = () => {
     }
   };
 
+  const handleSetReimbursementPin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (reimbursementPin !== confirmPin) {
+      setError('PINs do not match');
+      return;
+    }
+
+    if (reimbursementPin.length !== 4 || !/^\d{4}$/.test(reimbursementPin)) {
+      setError('PIN must be exactly 4 digits');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // Verify password first
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        pinPassword
+      );
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Store PIN in Firestore
+      const docRef = doc(db, "restaurants", currentUser.uid);
+      await updateDoc(docRef, {
+        reimbursementPin: reimbursementPin,
+        reimbursementPinUpdatedAt: new Date().toISOString()
+      });
+
+      setSuccess('Reimbursement PIN set successfully!');
+      setPinPassword('');
+      setReimbursementPin('');
+      setConfirmPin('');
+      setShowPinForm(false);
+      setHasPin(true);
+      
+      // Log activity
+      await activityService.logPinActivity(currentUser.uid, hasPin ? 'updated' : 'created');
+      
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      if (error.code === 'auth/wrong-password') {
+        setError('Password is incorrect');
+      } else {
+        setError('Failed to set PIN: ' + error.message);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="account-loading">
@@ -144,6 +221,360 @@ const Account = () => {
       </div>
     );
   }
+
+  const renderSectionContent = () => {
+    switch (activeSection) {
+      case 'account':
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-person-circle"></i> Account Details</h3>
+            </Card.Header>
+            <Card.Body>
+              <Form onSubmit={handleSaveAccountDetails}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Username</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Email</Form.Label>
+                  <Form.Control
+                    type="email"
+                    value={email}
+                    disabled
+                    className="disabled-field"
+                  />
+                  <Form.Text className="text-muted">Email cannot be changed</Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Restaurant Name</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={restaurantName}
+                    onChange={(e) => setRestaurantName(e.target.value)}
+                    required
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Restaurant Address</Form.Label>
+                  <AddressAutocomplete
+                    value={address}
+                    onChange={(value) => setAddress(value)}
+                    onSelect={(addressData) => {
+                      setAddress(addressData.fullAddress);
+                    }}
+                    placeholder="Start typing your restaurant address..."
+                  />
+                  <Form.Text className="text-muted">
+                    Start typing to see address suggestions. Select an address from the dropdown.
+                  </Form.Text>
+                </Form.Group>
+
+                <Button 
+                  type="submit" 
+                  disabled={saving}
+                  className="gradient-button"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </Form>
+              
+              <hr className="my-4" />
+              
+              <div className="logout-section">
+                <h5 className="mb-3">Session Management</h5>
+                <p className="text-muted mb-3">Sign out of your account to end your current session.</p>
+                <Button 
+                  variant="danger"
+                  onClick={async () => {
+                    try {
+                      await signOut(auth);
+                      navigate('/login');
+                    } catch (error) {
+                      console.error("Error signing out:", error);
+                      setError('Failed to sign out. Please try again.');
+                    }
+                  }}
+                  className="logout-account-button"
+                >
+                  <i className="bi bi-box-arrow-right"></i> Logout
+                </Button>
+              </div>
+            </Card.Body>
+          </Card>
+        );
+
+      case 'security':
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-shield-lock"></i> Security</h3>
+            </Card.Header>
+            <Card.Body>
+              {!showPasswordForm ? (
+                <div className="password-section">
+                  <p className="text-muted">Change your password to keep your account secure.</p>
+                  <Button 
+                    variant="outline-primary"
+                    onClick={() => setShowPasswordForm(true)}
+                    className="gradient-outline-button"
+                  >
+                    Change Password
+                  </Button>
+                </div>
+              ) : (
+                <Form onSubmit={handleChangePassword}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Current Password</Form.Label>
+                    <PasswordInput
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      required
+                      placeholder="Enter your current password"
+                    />
+                  </Form.Group>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label>New Password</Form.Label>
+                    <PasswordInput
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      placeholder="Enter new password (min 6 characters)"
+                      minLength={6}
+                    />
+                  </Form.Group>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label>Confirm New Password</Form.Label>
+                    <PasswordInput
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      placeholder="Confirm new password"
+                      minLength={6}
+                    />
+                  </Form.Group>
+
+                  <div className="password-actions">
+                    <Button 
+                      type="submit" 
+                      disabled={saving}
+                      className="gradient-button"
+                    >
+                      {saving ? 'Updating...' : 'Update Password'}
+                    </Button>
+                    <Button 
+                      variant="outline-secondary"
+                      onClick={() => {
+                        setShowPasswordForm(false);
+                        setCurrentPassword('');
+                        setNewPassword('');
+                        setConfirmPassword('');
+                        setError('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </Form>
+              )}
+            </Card.Body>
+          </Card>
+        );
+
+      case 'pin':
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-key"></i> Reimbursement PIN</h3>
+            </Card.Header>
+            <Card.Body>
+              {!showPinForm ? (
+                <div className="password-section">
+                  <p className="text-muted">
+                    {hasPin 
+                      ? 'Set a 4-digit PIN required for processing reimbursements. Update your PIN to change it.'
+                      : 'Set a 4-digit PIN required for processing reimbursements.'}
+                  </p>
+                  <Button 
+                    variant="outline-warning"
+                    onClick={() => {
+                      setShowPinForm(true);
+                      setPinPassword('');
+                      setReimbursementPin('');
+                      setConfirmPin('');
+                      setError('');
+                    }}
+                    className="gradient-outline-button"
+                  >
+                    {hasPin ? 'Update PIN' : 'Set PIN'}
+                  </Button>
+                </div>
+              ) : (
+                <Form onSubmit={handleSetReimbursementPin}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Current Password</Form.Label>
+                    <PasswordInput
+                      value={pinPassword}
+                      onChange={(e) => setPinPassword(e.target.value)}
+                      required
+                      placeholder="Enter your password to verify"
+                    />
+                    <Form.Text className="text-muted">
+                      Password required to set or update reimbursement PIN
+                    </Form.Text>
+                  </Form.Group>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label>Reimbursement PIN (4 digits)</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={reimbursementPin}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        setReimbursementPin(value);
+                      }}
+                      required
+                      placeholder="Enter 4-digit PIN"
+                      maxLength={4}
+                      pattern="\d{4}"
+                    />
+                    <Form.Text className="text-muted">
+                      Enter a 4-digit PIN (numbers only)
+                    </Form.Text>
+                  </Form.Group>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label>Confirm PIN</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={confirmPin}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        setConfirmPin(value);
+                      }}
+                      required
+                      placeholder="Confirm 4-digit PIN"
+                      maxLength={4}
+                      pattern="\d{4}"
+                    />
+                  </Form.Group>
+
+                  <div className="password-actions">
+                    <Button 
+                      type="submit" 
+                      disabled={saving}
+                      className="gradient-button"
+                    >
+                      {saving ? 'Saving...' : (hasPin ? 'Update PIN' : 'Set PIN')}
+                    </Button>
+                    <Button 
+                      variant="outline-secondary"
+                      onClick={() => {
+                        setShowPinForm(false);
+                        setPinPassword('');
+                        setReimbursementPin('');
+                        setConfirmPin('');
+                        setError('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </Form>
+              )}
+            </Card.Body>
+          </Card>
+        );
+
+      case 'locations':
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-geo-alt"></i> Locations</h3>
+            </Card.Header>
+            <Card.Body>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <p className="mb-0">Manage your restaurant locations</p>
+                <Button variant="primary" onClick={() => {
+                  setEditingLocation(null);
+                  setLocationForm({ name: '', address: '' });
+                  setShowLocationModal(true);
+                }}>
+                  <i className="bi bi-plus-circle"></i> Add Location
+                </Button>
+              </div>
+
+              {locationList.length > 0 ? (
+                <Table responsive>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Address</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {locationList.map(location => (
+                      <tr key={location.id}>
+                        <td>{location.name}</td>
+                        <td>{location.address || 'No address'}</td>
+                        <td>
+                          <Button
+                            variant="outline-primary"
+                            size="sm"
+                            className="me-2"
+                            onClick={() => {
+                              setEditingLocation(location);
+                              setLocationForm({ name: location.name, address: location.address || '' });
+                              setShowLocationModal(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={async () => {
+                              if (window.confirm(`Are you sure you want to delete ${location.name}?`)) {
+                                try {
+                                  await deleteDoc(doc(db, `restaurants/${currentUser.uid}/locations/${location.id}`));
+                                  setLocationList(locationList.filter(l => l.id !== location.id));
+                                  loadRestaurantData();
+                                  setSuccess('Location deleted successfully');
+                                } catch (error) {
+                                  setError('Failed to delete location: ' + error.message);
+                                }
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : (
+                <p className="text-muted text-center py-3">No locations added yet. Click "Add Location" to get started.</p>
+              )}
+            </Card.Body>
+          </Card>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <Container fluid className="account-container">
@@ -158,223 +589,48 @@ const Account = () => {
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
 
-      <div className="account-content-grid">
-        {/* Account Details Card */}
-        <Card className="account-card">
-          <Card.Header className="account-card-header">
-            <h3><i className="bi bi-person-circle"></i> Account Details</h3>
-          </Card.Header>
-          <Card.Body>
-            <Form onSubmit={handleSaveAccountDetails}>
-              <Form.Group className="mb-3">
-                <Form.Label>Username</Form.Label>
-                <Form.Control
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Email</Form.Label>
-                <Form.Control
-                  type="email"
-                  value={email}
-                  disabled
-                  className="disabled-field"
-                />
-                <Form.Text className="text-muted">Email cannot be changed</Form.Text>
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Restaurant Name</Form.Label>
-                <Form.Control
-                  type="text"
-                  value={restaurantName}
-                  onChange={(e) => setRestaurantName(e.target.value)}
-                  required
-                />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label>Restaurant Address</Form.Label>
-                <AddressAutocomplete
-                  value={address}
-                  onChange={(value) => setAddress(value)}
-                  onSelect={(addressData) => {
-                    // Optionally store structured address data
-                    setAddress(addressData.fullAddress);
-                  }}
-                  placeholder="Start typing your restaurant address..."
-                />
-                <Form.Text className="text-muted">
-                  Start typing to see address suggestions. Select an address from the dropdown.
-                </Form.Text>
-              </Form.Group>
-
-              <Button 
-                type="submit" 
-                disabled={saving}
-                className="gradient-button"
+      <div className="account-layout">
+        {/* Sidebar Navigation */}
+        <div className="account-sidebar">
+          <nav className="account-nav">
+            <button
+              className={`account-nav-item ${activeSection === 'account' ? 'active' : ''}`}
+              onClick={() => setActiveSection('account')}
+            >
+              <i className="bi bi-person-circle"></i>
+              <span>Account Details</span>
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'security' ? 'active' : ''}`}
+              onClick={() => setActiveSection('security')}
+            >
+              <i className="bi bi-shield-lock"></i>
+              <span>Security</span>
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'pin' ? 'active' : ''}`}
+              onClick={() => setActiveSection('pin')}
+            >
+              <i className="bi bi-key"></i>
+              <span>Reimbursement PIN</span>
+            </button>
+            {isMultiLocation && (
+              <button
+                className={`account-nav-item ${activeSection === 'locations' ? 'active' : ''}`}
+                onClick={() => setActiveSection('locations')}
               >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </Form>
-          </Card.Body>
-        </Card>
-
-        {/* Password Change Card */}
-        <Card className="account-card">
-          <Card.Header className="account-card-header">
-            <h3><i className="bi bi-shield-lock"></i> Security</h3>
-          </Card.Header>
-          <Card.Body>
-            {!showPasswordForm ? (
-              <div className="password-section">
-                <p className="text-muted">Change your password to keep your account secure.</p>
-                <Button 
-                  variant="outline-primary"
-                  onClick={() => setShowPasswordForm(true)}
-                  className="gradient-outline-button"
-                >
-                  Change Password
-                </Button>
-              </div>
-            ) : (
-              <Form onSubmit={handleChangePassword}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Current Password</Form.Label>
-                  <PasswordInput
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                    placeholder="Enter your current password"
-                  />
-                </Form.Group>
-
-                <Form.Group className="mb-3">
-                  <Form.Label>New Password</Form.Label>
-                  <PasswordInput
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    placeholder="Enter new password (min 6 characters)"
-                    minLength={6}
-                  />
-                </Form.Group>
-
-                <Form.Group className="mb-3">
-                  <Form.Label>Confirm New Password</Form.Label>
-                  <PasswordInput
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    placeholder="Confirm new password"
-                    minLength={6}
-                  />
-                </Form.Group>
-
-                <div className="password-actions">
-                  <Button 
-                    type="submit" 
-                    disabled={saving}
-                    className="gradient-button"
-                  >
-                    {saving ? 'Updating...' : 'Update Password'}
-                  </Button>
-                  <Button 
-                    variant="outline-secondary"
-                    onClick={() => {
-                      setShowPasswordForm(false);
-                      setCurrentPassword('');
-                      setNewPassword('');
-                      setConfirmPassword('');
-                      setError('');
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </Form>
+                <i className="bi bi-geo-alt"></i>
+                <span>Locations</span>
+              </button>
             )}
-          </Card.Body>
-        </Card>
+          </nav>
+        </div>
 
-        {/* Location Management Card - Only for Multi-Location */}
-        {isMultiLocation && (
-          <Card className="account-card">
-          <Card.Header className="account-card-header">
-            <h3><i className="bi bi-geo-alt"></i> Locations</h3>
-          </Card.Header>
-          <Card.Body>
-            <div className="d-flex justify-content-between align-items-center mb-3">
-              <p className="mb-0">Manage your restaurant locations</p>
-              <Button variant="primary" onClick={() => {
-                setEditingLocation(null);
-                setLocationForm({ name: '', address: '' });
-                setShowLocationModal(true);
-              }}>
-                <i className="bi bi-plus-circle"></i> Add Location
-              </Button>
-            </div>
-
-            {locationList.length > 0 ? (
-              <Table responsive>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Address</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locationList.map(location => (
-                    <tr key={location.id}>
-                      <td>{location.name}</td>
-                      <td>{location.address || 'No address'}</td>
-                      <td>
-                        <Button
-                          variant="outline-primary"
-                          size="sm"
-                          className="me-2"
-                          onClick={() => {
-                            setEditingLocation(location);
-                            setLocationForm({ name: location.name, address: location.address || '' });
-                            setShowLocationModal(true);
-                          }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline-danger"
-                          size="sm"
-                          onClick={async () => {
-                            if (window.confirm(`Are you sure you want to delete ${location.name}?`)) {
-                              try {
-                                await deleteDoc(doc(db, `restaurants/${currentUser.uid}/locations/${location.id}`));
-                                setLocationList(locationList.filter(l => l.id !== location.id));
-                                loadRestaurantData();
-                                setSuccess('Location deleted successfully');
-                              } catch (error) {
-                                setError('Failed to delete location: ' + error.message);
-                              }
-                            }
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            ) : (
-              <p className="text-muted text-center py-3">No locations added yet. Click "Add Location" to get started.</p>
-            )}
-          </Card.Body>
-          </Card>
-        )}
+        {/* Main Content Area */}
+        <div className="account-main-content">
+          {renderSectionContent()}
+        </div>
+      </div>
 
       {/* Location Modal */}
       <Modal show={showLocationModal} onHide={() => setShowLocationModal(false)}>
@@ -456,7 +712,6 @@ const Account = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-      </div>
     </Container>
   );
 };

@@ -242,6 +242,38 @@
   opacity: 0;
 }
 
+.activity-item-plain {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #667eea;
+  transition: all 0.3s;
+  animation: slideIn 0.5s ease forwards;
+  opacity: 0;
+}
+
+.activity-item-plain:hover {
+  background: #f0f2f5;
+  transform: translateX(3px);
+}
+
+.activity-text {
+  flex: 1;
+  color: #2c3e50;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.activity-time {
+  font-size: 0.8rem;
+  color: #8e8e93;
+  margin-left: 15px;
+  white-space: nowrap;
+}
+
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(-20px); }
   to { opacity: 1; transform: translateX(0); }
@@ -479,5 +511,46 @@
     bottom: 20px;
     right: 20px;
     padding: 12px 20px;
+    font-size: 0.9rem;
+  }
+
+  .recent-activity-card,
+  .tips-card {
+    margin-bottom: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .home-hero {
+    padding: 15px;
+    border-radius: 15px;
+  }
+
+  .greeting {
+    font-size: 1.3rem;
+  }
+
+  .stat-pill {
+    padding: 8px;
+    min-width: 70px;
+  }
+
+  .stat-number {
+    font-size: 1.2rem;
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+  }
+
+  .floating-pos-button {
+    bottom: 15px;
+    right: 15px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+  }
+
+  .floating-pos-button i {
+    font-size: 1rem;
   }
 }

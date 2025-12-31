@@ -47,3 +47,40 @@
 .status-item .progress-bar {
   transition: width 0.6s ease;
 }
+
+/* Responsive styles */
+@media (max-width: 1024px) {
+  .chart-svg {
+    min-width: 600px;
+    height: 250px;
+  }
+}
+
+@media (max-width: 768px) {
+  .chart-svg {
+    min-width: 100%;
+    height: 200px;
+  }
+
+  .stats-card {
+    margin-bottom: 15px;
+  }
+
+  .status-item {
+    margin-bottom: 12px;
+  }
+
+  .status-item .progress {
+    height: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-svg {
+    height: 180px;
+  }
+
+  .status-item .progress {
+    height: 16px;
+  }
+}

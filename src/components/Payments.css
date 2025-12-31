@@ -12,19 +12,44 @@
   border: 2px solid #e9ecef;
   border-radius: 12px;
   transition: all 0.3s ease;
-  background: white;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  box-shadow: 0 2px 8px rgba(25, 135, 84, 0.1);
 }
 
 .payments-table-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transform: translateY(-2px);
-  border-color: #667eea;
+  box-shadow: 0 4px 16px rgba(25, 135, 84, 0.25);
+  transform: translateY(-3px);
+  border-color: #198754;
+  background: linear-gradient(135deg, #c3e6cb 0%, #b1dfbb 100%);
 }
 
 .payments-table-card.selected {
-  border-color: #667eea;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
-  background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+  border-color: #198754;
+  box-shadow: 0 4px 20px rgba(25, 135, 84, 0.4);
+  background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+  color: white;
+}
+
+.payments-table-card.selected .table-card-header h4 {
+  color: white;
+}
+
+.payments-table-card.selected .table-card-header h4 i {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.payments-table-card.selected .table-card-total {
+  color: white;
+  border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+.payments-table-card.selected .table-order-preview {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.payments-table-card.selected .text-muted {
+  color: rgba(255, 255, 255, 0.8) !important;
 }
 
 .table-card-header {
@@ -44,7 +69,12 @@
 }
 
 .table-card-header h4 i {
-  color: #667eea;
+  color: #198754;
+  transition: color 0.3s ease;
+}
+
+.payments-table-card:hover .table-card-header h4 i {
+  color: #20c997;
 }
 
 .table-card-info {
@@ -138,4 +168,53 @@
 
 .payment-confirmation li:last-child {
   border-bottom: none;
+}
+
+/* Responsive styles */
+@media (max-width: 1024px) {
+  .payments-tables-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 15px;
+  }
+}
+
+@media (max-width: 768px) {
+  .payments-tables-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .table-card-header h4 {
+    font-size: 1.1rem;
+  }
+
+  .payment-total-card {
+    padding: 20px;
+  }
+
+  .breakdown-row.total-row {
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .payments-tables-grid {
+    gap: 12px;
+  }
+
+  .table-card-header h4 {
+    font-size: 1rem;
+  }
+
+  .payment-total-card {
+    padding: 15px;
+  }
+
+  .breakdown-row {
+    font-size: 0.9rem;
+  }
+
+  .breakdown-row.total-row {
+    font-size: 1rem;
+  }
 }

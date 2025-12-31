@@ -34,16 +34,95 @@
   margin: 10px 0 0;
 }
 
-/* Content Grid */
-.account-content-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+/* Sidebar Layout */
+.account-layout {
+  display: flex;
   gap: 30px;
+  margin-top: 20px;
+}
+
+.account-sidebar {
+  flex: 0 0 250px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  padding: 20px 0;
+  height: fit-content;
+  position: sticky;
+  top: 20px;
+}
+
+.account-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.account-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 20px;
+  border: none;
+  background: transparent;
+  color: #495057;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.3s;
+  border-left: 3px solid transparent;
+}
+
+.account-nav-item i {
+  font-size: 1.2rem;
+  width: 24px;
+  text-align: center;
+}
+
+.account-nav-item:hover {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+}
+
+.account-nav-item.active {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  color: #667eea;
+  border-left-color: #667eea;
+  font-weight: 600;
+}
+
+.account-main-content {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {
-  .account-content-grid {
-    grid-template-columns: 1fr;
+  .account-layout {
+    flex-direction: column;
+  }
+
+  .account-sidebar {
+    flex: 0 0 auto;
+    position: static;
+  }
+
+  .account-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 10px;
+  }
+
+  .account-nav-item {
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    padding: 12px 15px;
+  }
+
+  .account-nav-item.active {
+    border-left: none;
+    border-bottom-color: #667eea;
   }
 }
 
@@ -146,6 +225,32 @@
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border-color: transparent;
+}
+
+/* Logout Section */
+.logout-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #e9ecef;
+}
+
+.logout-section h5 {
+  color: #495057;
+  font-weight: 600;
+}
+
+.logout-account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.logout-account-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
 }
 
 .password-section {

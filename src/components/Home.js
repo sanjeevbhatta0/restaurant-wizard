@@ -9,7 +9,7 @@ import './Home.css';
 
 const Home = () => {
   const [restaurantData, setRestaurantData] = useState(null);
-  const [recentOrders, setRecentOrders] = useState([]);
+  const [recentActivities, setRecentActivities] = useState([]);
   const [todayStats, setTodayStats] = useState({ orders: 0, revenue: 0, pendingOrders: 0 });
   const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
@@ -50,11 +50,23 @@ const Home = () => {
 
     fetchRestaurantData();
 
-    // Listen to recent orders
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    const q = query(ordersRef, orderBy('createdAt', 'desc'), limit(5));
+    // Listen to recent activities
+    const activitiesRef = collection(db, `restaurants/${currentUser.uid}/activities`);
+    const activitiesQuery = query(activitiesRef, orderBy('createdAt', 'desc'), limit(10));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeActivities = onSnapshot(activitiesQuery, (snapshot) => {
+      const activities = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setRecentActivities(activities);
+    });
+
+    // Still listen to orders for stats calculation
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersQuery = query(ordersRef, orderBy('createdAt', 'desc'), limit(50));
+
+    const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
       let orders = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -66,8 +78,6 @@ const Home = () => {
           return order.locationId === selectedLocation;
         });
       }
-
-      setRecentOrders(orders);
 
       // Calculate today's stats
       const now = new Date();
@@ -91,7 +101,10 @@ const Home = () => {
       setTodayStats({ orders: todayOrders, revenue: todayRevenue, pendingOrders });
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeActivities();
+      unsubscribeOrders();
+    };
   }, [currentUser, isMultiLocation, selectedLocation]);
 
   const quickActions = [
@@ -137,28 +150,19 @@ const Home = () => {
     }
   ];
 
-  const getStatusColor = (status) => {
-    const colors = {
-      'new': '#667eea',
-      'sent_to_kitchen': '#4facfe',
-      'preparing': '#f5a623',
-      'ready': '#43e97b',
-      'completed': '#8e8e93'
-    };
-    return colors[status] || '#8e8e93';
-  };
-
   const getTimeAgo = (date) => {
     const now = new Date();
-    const orderDate = date?.toDate ? date.toDate() : new Date(date);
-    const diffMs = now - orderDate;
+    const activityDate = date?.toDate ? date.toDate() : new Date(date || date?.timestamp);
+    const diffMs = now - activityDate;
     const diffMins = Math.floor(diffMs / 60000);
     
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return orderDate.toLocaleDateString();
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return activityDate.toLocaleDateString();
   };
 
   if (loading) {
@@ -227,38 +231,24 @@ const Home = () => {
         <section className="recent-activity-section">
           <div className="section-header">
             <h2 className="section-title">Recent Activity</h2>
-            <Link to="/orders" className="view-all-link">View All <i className="bi bi-arrow-right"></i></Link>
           </div>
           <div className="activity-list">
-            {recentOrders.length > 0 ? (
-              recentOrders.map((order, index) => (
-                <div key={order.id} className="activity-item" style={{ animationDelay: `${index * 0.1}s` }}>
-                  <div className="activity-icon" style={{ background: getStatusColor(order.status) }}>
-                    <i className="bi bi-receipt"></i>
+            {recentActivities.length > 0 ? (
+              recentActivities.map((activity, index) => (
+                <div key={activity.id} className="activity-item-plain" style={{ animationDelay: `${index * 0.05}s` }}>
+                  <div className="activity-text">
+                    {activity.message}
                   </div>
-                  <div className="activity-details">
-                    <div className="activity-header">
-                      <span className="order-number">{order.orderNumber || `#${order.id.slice(0, 6)}`}</span>
-                      <span className="order-time">{getTimeAgo(order.createdAt)}</span>
-                    </div>
-                    <div className="activity-meta">
-                      <span className="order-table">
-                        <i className="bi bi-geo-alt"></i> Table {order.tableNumber || 'N/A'}
-                      </span>
-                      <span className="order-items">{order.items?.length || 0} items</span>
-                      <span className="order-total">${(order.total || 0).toFixed(2)}</span>
-                    </div>
-                    <span className="order-status" style={{ background: getStatusColor(order.status) }}>
-                      {order.status?.replace('_', ' ').toUpperCase() || 'NEW'}
-                    </span>
+                  <div className="activity-time">
+                    {getTimeAgo(activity.createdAt || activity.timestamp)}
                   </div>
                 </div>
               ))
             ) : (
               <div className="empty-activity">
                 <i className="bi bi-inbox"></i>
-                <p>No recent orders</p>
-                <span>Orders will appear here when customers start ordering</span>
+                <p>No recent activity</p>
+                <span>Activities will appear here as they happen</span>
               </div>
             )}
           </div>

@@ -4,6 +4,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'f
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import activityService from '../services/activityService';
 import './PageHeader.css';
 import './Kitchen.css';
 
@@ -63,6 +64,10 @@ const Kitchen = () => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      
+      // Get order data for activity logging
+      const order = orders.find(o => o.id === orderId);
+      
       const updateData = {
         status: newStatus,
         updatedAt: new Date()
@@ -74,6 +79,19 @@ const Kitchen = () => {
       }
       
       await updateDoc(orderRef, updateData);
+      
+      // Log activity
+      if (order) {
+        const tableNumber = Array.isArray(order.tableNumber) 
+          ? order.tableNumber.join(' and ') 
+          : order.tableNumber;
+        await activityService.logOrderActivity(currentUser.uid, 'status_changed', {
+          orderNumber: order.orderNumber || orderId,
+          orderId: orderId,
+          tableNumber: tableNumber || 'N/A',
+          status: newStatus
+        });
+      }
     } catch (error) {
       console.error('Error updating order status:', error);
       alert('Failed to update order status: ' + error.message);

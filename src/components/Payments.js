@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row, Col } from 'react-bootstrap';
+import activityService from '../services/activityService';
 import './PageHeader.css';
 import './Payments.css';
 
@@ -29,6 +30,17 @@ const Payments = () => {
   const [tipType, setTipType] = useState('amount'); // 'amount' or 'percentage'
   const [total, setTotal] = useState(0);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showReimbursementModal, setShowReimbursementModal] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [reimbursementPin, setReimbursementPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [reimbursementTable, setReimbursementTable] = useState('');
+  const [reimbursementOrder, setReimbursementOrder] = useState('');
+  const [reimbursementType, setReimbursementType] = useState('full'); // 'full' or 'partial'
+  const [partialRefundAmount, setPartialRefundAmount] = useState(0);
+  const [processingReimbursement, setProcessingReimbursement] = useState(false);
+  const [completedOrders, setCompletedOrders] = useState({}); // { tableNumber: [orders] }
+  const [restaurantData, setRestaurantData] = useState(null);
 
   // Load all served orders grouped by table
   useEffect(() => {
@@ -86,6 +98,53 @@ const Payments = () => {
 
     return () => unsubscribe();
   }, [currentUser, selectedLocation, isMultiLocation, selectedTable]);
+
+  // Load completed orders for reimbursement
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    
+    let q = query(ordersRef, where('status', '==', 'completed'));
+    
+    // Add location filter if multi-location
+    if (isMultiLocation && selectedLocation) {
+      q = query(q, where('locationId', '==', selectedLocation));
+    } else if (isMultiLocation && !selectedLocation) {
+      setCompletedOrders({});
+      return;
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Group orders by table number
+      const grouped = {};
+      ordersData.forEach(order => {
+        const tableNumbers = Array.isArray(order.tableNumber) 
+          ? order.tableNumber 
+          : [order.tableNumber];
+        
+        tableNumbers.forEach(tableNum => {
+          if (!grouped[tableNum]) {
+            grouped[tableNum] = [];
+          }
+          if (!grouped[tableNum].find(o => o.id === order.id)) {
+            grouped[tableNum].push(order);
+          }
+        });
+      });
+
+      setCompletedOrders(grouped);
+    }, (error) => {
+      console.error('Error loading completed orders:', error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedLocation, isMultiLocation]);
 
   useEffect(() => {
     calculateTotals();
@@ -283,6 +342,20 @@ const Payments = () => {
 
       await Promise.all(updatePromises);
 
+      // Get order numbers for activity logging
+      const orderNumbers = selectedOrders.map(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        return order?.orderNumber || orderId;
+      });
+
+      // Log payment activity
+      await activityService.logPaymentActivity(currentUser.uid, {
+        orderNumbers,
+        tableNumbers: Array.from(tableNumbers),
+        total,
+        orderCount: selectedOrders.length
+      });
+
       // Release tables by updating table status to 'available' in the layout
       if (tableNumbers.size > 0) {
         try {
@@ -343,7 +416,163 @@ const Payments = () => {
     });
   };
 
+  const calculateRefundAmount = (order) => {
+    if (!order) return 0;
+    
+    // Get payment details if available (for completed orders)
+    const paymentDetails = order.paymentDetails || {};
+    
+    // If payment was processed, use the final total minus tip
+    if (paymentDetails.total) {
+      const tipAmount = paymentDetails.tipAmount || 0;
+      // Refundable = final paid amount - tip (tips are non-refundable)
+      return Math.max(0, paymentDetails.total - tipAmount);
+    }
+    
+    // For orders without payment details, use original order total
+    // (no tip was added yet, so full amount is refundable)
+    return order.total || 0;
+  };
+
+  const handleReimbursement = async () => {
+    if (!reimbursementTable || !reimbursementOrder) {
+      setError('Please select a table and order');
+      return;
+    }
+
+    const selectedOrder = completedOrders[reimbursementTable]?.find(o => o.id === reimbursementOrder);
+    if (!selectedOrder) {
+      setError('Order not found');
+      return;
+    }
+
+    setProcessingReimbursement(true);
+    setError('');
+
+    try {
+      const refundAmount = reimbursementType === 'full' 
+        ? calculateRefundAmount(selectedOrder)
+        : Math.min(parseFloat(partialRefundAmount) || 0, calculateRefundAmount(selectedOrder));
+
+      if (refundAmount <= 0) {
+        setError('Invalid refund amount');
+        setProcessingReimbursement(false);
+        return;
+      }
+
+      // Update order with reimbursement
+      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${reimbursementOrder}`);
+      await updateDoc(orderRef, {
+        status: 'reimbursed',
+        reimbursement: {
+          amount: refundAmount,
+          type: reimbursementType,
+          processedAt: new Date(),
+          processedBy: currentUser.uid
+        },
+        updatedAt: new Date()
+      });
+
+      // Create reimbursement record for analytics
+      const reimbursementsRef = collection(db, `restaurants/${currentUser.uid}/reimbursements`);
+      await setDoc(doc(reimbursementsRef), {
+        orderId: reimbursementOrder,
+        orderNumber: selectedOrder.orderNumber || reimbursementOrder,
+        tableNumber: selectedOrder.tableNumber,
+        locationId: selectedLocation || currentUser.uid,
+        amount: refundAmount,
+        type: reimbursementType,
+        originalOrderTotal: selectedOrder.total || 0,
+        processedAt: new Date(),
+        processedBy: currentUser.uid
+      });
+
+      // Log reimbursement activity
+      await activityService.logReimbursementActivity(currentUser.uid, {
+        orderNumber: selectedOrder.orderNumber || reimbursementOrder,
+        orderId: reimbursementOrder,
+        tableNumber: selectedOrder.tableNumber,
+        refundAmount,
+        refundType: reimbursementType
+      });
+
+      setSuccess(`Reimbursement processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);
+      setShowReimbursementModal(false);
+      setReimbursementTable('');
+      setReimbursementOrder('');
+      setReimbursementType('full');
+      setPartialRefundAmount(0);
+    } catch (error) {
+      console.error('Error processing reimbursement:', error);
+      setError('Failed to process reimbursement: ' + error.message);
+    } finally {
+      setProcessingReimbursement(false);
+    }
+  };
+
+  // Load restaurant data to check for PIN
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const fetchRestaurantData = async () => {
+      try {
+        const docRef = doc(db, "restaurants", currentUser.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setRestaurantData(docSnap.data());
+        }
+      } catch (error) {
+        console.error('Error fetching restaurant data:', error);
+      }
+    };
+
+    fetchRestaurantData();
+  }, [currentUser]);
+
+  const handlePinVerification = () => {
+    setPinError('');
+    
+    if (!reimbursementPin || reimbursementPin.length !== 4) {
+      setPinError('Please enter a 4-digit PIN');
+      return;
+    }
+
+    const storedPin = restaurantData?.reimbursementPin;
+    if (!storedPin) {
+      setPinError('Reimbursement PIN not set. Please set it in Account settings first.');
+      return;
+    }
+
+    if (reimbursementPin !== storedPin) {
+      setPinError('Incorrect PIN. Please try again.');
+      setReimbursementPin('');
+      return;
+    }
+
+    // PIN is correct, proceed to reimbursement modal
+    setShowPinModal(false);
+    setReimbursementPin('');
+    setShowReimbursementModal(true);
+  };
+
+  const handleReimbursementClick = () => {
+    // Check if PIN is set
+    if (!restaurantData?.reimbursementPin) {
+      setError('Reimbursement PIN not set. Please set it in Account settings first.');
+      return;
+    }
+
+    // Show PIN entry modal first
+    setShowPinModal(true);
+    setReimbursementPin('');
+    setPinError('');
+  };
+
   const selectedOrdersData = orders.filter(o => selectedOrders.includes(o.id));
+  const reimbursementOrderData = reimbursementOrder && reimbursementTable 
+    ? completedOrders[reimbursementTable]?.find(o => o.id === reimbursementOrder)
+    : null;
+  const maxRefundAmount = reimbursementOrderData ? calculateRefundAmount(reimbursementOrderData) : 0;
 
   return (
     <Container fluid className="payments-container">
@@ -360,6 +589,17 @@ const Payments = () => {
 
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
+
+      {/* Action Buttons */}
+      <div className="mb-4 d-flex justify-content-end">
+        <Button
+          variant="outline-warning"
+          onClick={handleReimbursementClick}
+          className="me-2"
+        >
+          <i className="bi bi-arrow-counterclockwise"></i> Reimbursement
+        </Button>
+      </div>
 
       {/* Tables with Served Orders */}
       {Object.keys(tablesWithOrders).length > 0 && (
@@ -704,6 +944,253 @@ const Payments = () => {
               </>
             ) : (
               'Confirm Payment'
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* PIN Verification Modal */}
+      <Modal show={showPinModal} onHide={() => !processingReimbursement && setShowPinModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title><i className="bi bi-shield-lock"></i> Verify Reimbursement PIN</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Alert variant="warning">
+            <i className="bi bi-info-circle"></i> Enter your 4-digit reimbursement PIN to proceed with reimbursement.
+          </Alert>
+          
+          {pinError && <Alert variant="danger">{pinError}</Alert>}
+          
+          <Form.Group className="mb-3">
+            <Form.Label><strong>Reimbursement PIN</strong></Form.Label>
+            <Form.Control
+              type="text"
+              value={reimbursementPin}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setReimbursementPin(value);
+                setPinError('');
+              }}
+              placeholder="Enter 4-digit PIN"
+              maxLength={4}
+              pattern="\d{4}"
+              autoFocus
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handlePinVerification();
+                }
+              }}
+            />
+            <Form.Text className="text-muted">
+              Enter the 4-digit PIN set in Account settings
+            </Form.Text>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowPinModal(false)} disabled={processingReimbursement}>
+            Cancel
+          </Button>
+          <Button 
+            variant="warning" 
+            onClick={handlePinVerification}
+            disabled={processingReimbursement || reimbursementPin.length !== 4}
+          >
+            Verify & Continue
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Reimbursement Modal */}
+      <Modal show={showReimbursementModal} onHide={() => !processingReimbursement && setShowReimbursementModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title><i className="bi bi-arrow-counterclockwise"></i> Process Reimbursement</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Alert variant="warning">
+            <i className="bi bi-info-circle"></i> Tips are non-refundable. Refunds will include order amount, taxes, and discounts.
+          </Alert>
+          
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label><strong>Select Table</strong></Form.Label>
+              <Form.Select
+                value={reimbursementTable}
+                onChange={(e) => {
+                  setReimbursementTable(e.target.value);
+                  setReimbursementOrder('');
+                }}
+                required
+              >
+                <option value="">Choose a table...</option>
+                {Object.keys(completedOrders).map(tableNum => (
+                  <option key={tableNum} value={tableNum}>
+                    Table {tableNum} ({completedOrders[tableNum].length} {completedOrders[tableNum].length === 1 ? 'order' : 'orders'})
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+
+            {reimbursementTable && completedOrders[reimbursementTable] && (
+              <Form.Group className="mb-3">
+                <Form.Label><strong>Select Order</strong></Form.Label>
+                <Form.Select
+                  value={reimbursementOrder}
+                  onChange={(e) => setReimbursementOrder(e.target.value)}
+                  required
+                >
+                  <option value="">Choose an order...</option>
+                  {completedOrders[reimbursementTable].map(order => (
+                    <option key={order.id} value={order.id}>
+                      Order #{order.orderNumber || order.id.slice(0, 8)} - ${(order.total || 0).toFixed(2)} - {formatDate(order.createdAt)}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            )}
+
+            {reimbursementOrderData && (
+              <>
+                <div className="mb-3 p-3 bg-light rounded">
+                  <h6>Order Details:</h6>
+                  <div className="d-flex justify-content-between mb-2">
+                    <span>Order Total:</span>
+                    <strong>${(reimbursementOrderData.total || 0).toFixed(2)}</strong>
+                  </div>
+                  {reimbursementOrderData.paymentDetails?.tipAmount > 0 && (
+                    <div className="d-flex justify-content-between mb-2 text-muted">
+                      <span>Tip (Non-refundable):</span>
+                      <span>-${(reimbursementOrderData.paymentDetails.tipAmount || 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="d-flex justify-content-between mt-2 pt-2 border-top">
+                    <span><strong>Maximum Refundable:</strong></span>
+                    <strong className="text-success">${maxRefundAmount.toFixed(2)}</strong>
+                  </div>
+                </div>
+
+                <Form.Group className="mb-3">
+                  <Form.Label><strong>Refund Type</strong></Form.Label>
+                  <Form.Select
+                    value={reimbursementType}
+                    onChange={(e) => {
+                      setReimbursementType(e.target.value);
+                      if (e.target.value === 'full') {
+                        setPartialRefundAmount(maxRefundAmount);
+                      }
+                    }}
+                  >
+                    <option value="full">Full Refund (${maxRefundAmount.toFixed(2)})</option>
+                    <option value="partial">Partial Refund</option>
+                  </Form.Select>
+                </Form.Group>
+
+                {reimbursementType === 'partial' && (
+                  <Form.Group className="mb-3">
+                    <Form.Label><strong>Refund Amount</strong></Form.Label>
+                    <Form.Control
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={maxRefundAmount}
+                      value={partialRefundAmount}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPartialRefundAmount(value === '' ? '' : Math.min(parseFloat(value) || 0, maxRefundAmount));
+                      }}
+                      onBlur={(e) => {
+                        const value = e.target.value;
+                        if (value === '') {
+                          setPartialRefundAmount(0);
+                        }
+                      }}
+                      placeholder={`Enter amount (max: $${maxRefundAmount.toFixed(2)})`}
+                      required
+                    />
+                    <Form.Text className="text-muted">
+                      Maximum refundable: ${maxRefundAmount.toFixed(2)}
+                    </Form.Text>
+                  </Form.Group>
+                )}
+
+                <div className="alert alert-info">
+                  <strong>Refund Summary:</strong>
+                  <div className="mt-2">
+                    {/* Subtotal */}
+                    <div className="d-flex justify-content-between mb-2">
+                      <span>Subtotal:</span>
+                      <span>${(reimbursementOrderData.paymentDetails?.subtotal || reimbursementOrderData.total || 0).toFixed(2)}</span>
+                    </div>
+                    
+                    {/* Tax */}
+                    {reimbursementOrderData.paymentDetails?.taxAmount > 0 && (
+                      <div className="d-flex justify-content-between mb-2">
+                        <span>Tax ({reimbursementOrderData.paymentDetails?.taxRate || 0}%):</span>
+                        <span>${(reimbursementOrderData.paymentDetails.taxAmount || 0).toFixed(2)}</span>
+                      </div>
+                    )}
+                    
+                    {/* Discount */}
+                    {reimbursementOrderData.paymentDetails?.discountAmount > 0 && (
+                      <div className="d-flex justify-content-between mb-2 text-success">
+                        <span>Discount ({reimbursementOrderData.paymentDetails?.discountType === 'percentage' 
+                          ? `${reimbursementOrderData.paymentDetails.discountAmount}%` 
+                          : `$${reimbursementOrderData.paymentDetails.discountAmount.toFixed(2)}`}):</span>
+                        <span>
+                          -${(reimbursementOrderData.paymentDetails.discountType === 'percentage' 
+                            ? (reimbursementOrderData.paymentDetails.subtotal || reimbursementOrderData.total || 0) * (reimbursementOrderData.paymentDetails.discountAmount / 100)
+                            : reimbursementOrderData.paymentDetails.discountAmount).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Tip - Not refundable */}
+                    {reimbursementOrderData.paymentDetails?.tipAmount > 0 && (
+                      <div className="d-flex justify-content-between mb-2 text-muted">
+                        <span>
+                          Tip ({reimbursementOrderData.paymentDetails?.tipType === 'percentage' 
+                            ? `${reimbursementOrderData.paymentDetails.tipAmount}%` 
+                            : `$${reimbursementOrderData.paymentDetails.tipAmount.toFixed(2)}`}) 
+                          <small className="text-danger">(Not refundable)</small>:
+                        </span>
+                        <span>-${(reimbursementOrderData.paymentDetails.tipAmount || 0).toFixed(2)}</span>
+                      </div>
+                    )}
+                    
+                    {/* Divider */}
+                    <hr className="my-2" />
+                    
+                    {/* Total Refund Amount */}
+                    <div className="d-flex justify-content-between mt-2">
+                      <span><strong>Total Refund Amount:</strong></span>
+                      <strong className="text-success">
+                        ${(reimbursementType === 'full' ? maxRefundAmount : (parseFloat(partialRefundAmount) || 0)).toFixed(2)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowReimbursementModal(false)} disabled={processingReimbursement}>
+            Cancel
+          </Button>
+          <Button 
+            variant="warning" 
+            onClick={handleReimbursement} 
+            disabled={processingReimbursement || !reimbursementTable || !reimbursementOrder || (reimbursementType === 'partial' && (parseFloat(partialRefundAmount) || 0) <= 0)}
+          >
+            {processingReimbursement ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <i className="bi bi-arrow-counterclockwise"></i> Process Reimbursement
+              </>
             )}
           </Button>
         </Modal.Footer>

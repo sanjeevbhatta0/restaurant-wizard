@@ -4,6 +4,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'f
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import activityService from '../services/activityService';
 import './PageHeader.css';
 import './Server.css';
 
@@ -134,11 +135,29 @@ const Server = () => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      
+      // Get order data for activity logging
+      const order = orders.find(o => o.id === orderId);
+      
       await updateDoc(orderRef, {
         status: 'served',
         updatedAt: new Date(),
         servedAt: new Date()
       });
+      
+      // Log activity
+      if (order) {
+        const tableNumber = Array.isArray(order.tableNumber) 
+          ? order.tableNumber.join(' and ') 
+          : order.tableNumber;
+        await activityService.logOrderActivity(currentUser.uid, 'status_changed', {
+          orderNumber: order.orderNumber || orderId,
+          orderId: orderId,
+          tableNumber: tableNumber || 'N/A',
+          status: 'served'
+        });
+      }
+      
       addNotification('Order marked as served', 'success');
       
       // Remove from claimed orders

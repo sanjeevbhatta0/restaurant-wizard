@@ -12,6 +12,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import TableSelectionModal from './TableSelectionModal';
+import activityService from '../services/activityService';
 import './PageHeader.css';
 import './POS.css';
 
@@ -201,6 +202,13 @@ const POS = () => {
             }
             return a.localeCompare(b);
           }).join(' and ');
+
+      // Log activity
+      await activityService.logOrderActivity(currentUser.uid, 'received', {
+        orderNumber,
+        tableNumber: tableDisplay,
+        status: 'sent_to_kitchen'
+      });
 
       setOrderSuccess({
         orderNumber,
