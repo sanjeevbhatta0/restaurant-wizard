@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import TableSelectionModal from './TableSelectionModal';
 import './PageHeader.css';
 import './POS.css';
 
@@ -17,7 +18,8 @@ const POS = () => {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
-  const [tableNumber, setTableNumber] = useState('');
+  const [selectedTables, setSelectedTables] = useState([]);
+  const [showTableModal, setShowTableModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(null);
@@ -113,7 +115,7 @@ const POS = () => {
   // Clear entire order
   const clearOrder = () => {
     setOrderItems([]);
-    setTableNumber('');
+    setSelectedTables([]);
   };
 
   // Calculate order total
@@ -137,8 +139,8 @@ const POS = () => {
       setError('Please add items to the order');
       return;
     }
-    if (!tableNumber.trim()) {
-      setError('Please assign a table number');
+    if (selectedTables.length === 0) {
+      setError('Please assign at least one table');
       return;
     }
 
@@ -150,7 +152,7 @@ const POS = () => {
       
       const orderData = {
         orderNumber,
-        tableNumber: tableNumber.trim(),
+        tableNumber: selectedTables.length === 1 ? selectedTables[0] : selectedTables,
         items: orderItems.map(item => ({
           id: item.id,
           name: item.name,
@@ -172,19 +174,34 @@ const POS = () => {
         orderData
       );
 
+      const tableDisplay = selectedTables.length === 1 
+        ? selectedTables[0] 
+        : selectedTables.sort((a, b) => {
+            const numA = parseInt(a);
+            const numB = parseInt(b);
+            if (!isNaN(numA) && !isNaN(numB)) {
+              return numA - numB;
+            }
+            return a.localeCompare(b);
+          }).join(' and ');
+
       setOrderSuccess({
         orderNumber,
-        tableNumber: tableNumber.trim()
+        tableNumber: tableDisplay
       });
 
       // Clear the order after successful submission
       setOrderItems([]);
-      setTableNumber('');
+      setSelectedTables([]);
     } catch (err) {
       setError('Failed to send order: ' + err.message);
     } finally {
       setSendingOrder(false);
     }
+  };
+
+  const handleTableSelect = (tables) => {
+    setSelectedTables(tables);
   };
 
   // Get current category's items
@@ -335,21 +352,32 @@ const POS = () => {
             <span>${calculateTotal().toFixed(2)}</span>
           </div>
 
-          <div className="pos-table-input">
-            <label htmlFor="tableNumber">Table Number</label>
-            <input
-              id="tableNumber"
-              type="text"
-              placeholder="Enter table #"
-              value={tableNumber}
-              onChange={(e) => setTableNumber(e.target.value)}
-            />
+          <div className="pos-table-selection">
+            <label>Table(s)</label>
+            <button
+              className="pos-assign-table-btn"
+              onClick={() => setShowTableModal(true)}
+            >
+              <i className="bi bi-grid-3x3-gap"></i>
+              {selectedTables.length === 0 
+                ? 'Assign Table' 
+                : selectedTables.length === 1
+                  ? `Table ${selectedTables[0]}`
+                  : `Tables ${selectedTables.sort((a, b) => {
+                      const numA = parseInt(a);
+                      const numB = parseInt(b);
+                      if (!isNaN(numA) && !isNaN(numB)) {
+                        return numA - numB;
+                      }
+                      return a.localeCompare(b);
+                    }).join(' and ')}`}
+            </button>
           </div>
 
           <button
             className="pos-send-button"
             onClick={sendToKitchen}
-            disabled={orderItems.length === 0 || !tableNumber.trim() || sendingOrder}
+            disabled={orderItems.length === 0 || selectedTables.length === 0 || sendingOrder}
           >
             {sendingOrder ? (
               <>
@@ -386,6 +414,14 @@ const POS = () => {
           </div>
         </div>
       )}
+
+      {/* Table Selection Modal */}
+      <TableSelectionModal
+        show={showTableModal}
+        onHide={() => setShowTableModal(false)}
+        onSelect={handleTableSelect}
+        selectedTables={selectedTables}
+      />
       </div>
     </div>
   );

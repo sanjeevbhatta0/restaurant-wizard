@@ -10,6 +10,7 @@ import MenuManagement from './components/MenuManagement';
 import CategoryItems from './components/CategoryItems';
 import Orders from './components/Orders';
 import POS from './components/POS';
+import TableLayout from './components/TableLayout';
 import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
 import WebsiteBuilder from './components/WebsiteBuilder';
@@ -56,6 +57,11 @@ function App() {
             <Route path="pos" element={
               <PrivateRoute>
                 <POS />
+              </PrivateRoute>
+            } />
+            <Route path="table-layout" element={
+              <PrivateRoute>
+                <TableLayout />
               </PrivateRoute>
             } />
             <Route path="seo-social" element={

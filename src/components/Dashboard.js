@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Container, Row, Col, Card, Table, Badge, Spinner, ProgressBar } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Badge, Spinner, ProgressBar, Form, Button, ButtonGroup } from 'react-bootstrap';
 import './Dashboard.css';
 import './PageHeader.css';
 
 const Dashboard = () => {
   const [orders, setOrders] = useState([]);
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [dateRange, setDateRange] = useState('last7days'); // 'last10hours', 'last7days', 'custom'
+  const [customDate, setCustomDate] = useState('');
   const [stats, setStats] = useState({
     totalRevenue: 0,
     totalOrders: 0,
@@ -32,14 +35,62 @@ const Dashboard = () => {
         ...doc.data()
       }));
       setOrders(ordersData);
-      calculateStats(ordersData);
-      calculateRevenueChart(ordersData);
-      calculateOrderStatus(ordersData);
+      filterOrdersByDateRange(ordersData);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (orders.length > 0) {
+      filterOrdersByDateRange(orders);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, customDate]);
+
+  const filterOrdersByDateRange = (ordersData) => {
+    const now = new Date();
+    let startDate = null;
+
+    switch (dateRange) {
+      case 'last10hours':
+        startDate = new Date(now.getTime() - 10 * 60 * 60 * 1000);
+        break;
+      case 'last7days':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'custom':
+        if (customDate) {
+          const selectedDate = new Date(customDate);
+          startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + 1);
+          const filtered = ordersData.filter(order => {
+            const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+            return orderDate >= startDate && orderDate < endDate;
+          });
+          setFilteredOrders(filtered);
+          calculateStats(filtered);
+          calculateRevenueChart(filtered);
+          calculateOrderStatus(filtered);
+          return;
+        }
+        break;
+      default:
+        startDate = new Date(0); // All time
+    }
+
+    const filtered = ordersData.filter(order => {
+      const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+      return startDate ? orderDate >= startDate : true;
+    });
+
+    setFilteredOrders(filtered);
+    calculateStats(filtered);
+    calculateRevenueChart(filtered);
+    calculateOrderStatus(filtered);
+  };
 
   const calculateStats = (ordersData) => {
     const now = new Date();
@@ -63,26 +114,99 @@ const Dashboard = () => {
     });
   };
 
+  const getDateRangeLabel = () => {
+    switch (dateRange) {
+      case 'last10hours':
+        return 'Last 10 Hours';
+      case 'last7days':
+        return 'Last 7 Days';
+      case 'custom':
+        if (customDate) {
+          const date = new Date(customDate);
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        return 'Select Date';
+      default:
+        return 'All Time';
+    }
+  };
+
   const calculateRevenueChart = (ordersData) => {
-    // Group orders by hour for the last 24 hours
-    const hours = Array.from({ length: 24 }, (_, i) => ({
-      hour: `${i}:00`,
-      revenue: 0,
-      orders: 0
-    }));
+    if (ordersData.length === 0) {
+      setRevenueData([]);
+      return;
+    }
+
+    // Determine time buckets based on date range
+    let timeBuckets = [];
+    let bucketFormat = 'hour';
+
+    if (dateRange === 'last10hours') {
+      // Group by hour for last 10 hours
+      const now = new Date();
+      for (let i = 9; i >= 0; i--) {
+        const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
+        timeBuckets.push({
+          label: `${hour.getHours()}:00`,
+          time: hour.getHours(),
+          revenue: 0,
+          orders: 0
+        });
+      }
+      bucketFormat = 'hour';
+    } else if (dateRange === 'custom' && customDate) {
+      // Group by hour for custom date
+      for (let i = 0; i < 24; i++) {
+        timeBuckets.push({
+          label: `${i}:00`,
+          time: i,
+          revenue: 0,
+          orders: 0
+        });
+      }
+      bucketFormat = 'hour';
+    } else {
+      // Group by day for last 7 days
+      const now = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const day = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        timeBuckets.push({
+          label: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          time: day.getTime(),
+          revenue: 0,
+          orders: 0
+        });
+      }
+      bucketFormat = 'day';
+    }
 
     ordersData.forEach(order => {
       const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
-      const hour = orderDate.getHours();
-      if (hours[hour]) {
-        hours[hour].revenue += order.total || 0;
-        hours[hour].orders += 1;
+      
+      if (bucketFormat === 'hour') {
+        const hour = orderDate.getHours();
+        const bucket = timeBuckets.find(b => b.time === hour);
+        if (bucket) {
+          bucket.revenue += order.total || 0;
+          bucket.orders += 1;
+        }
+      } else {
+        const orderDay = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate()).getTime();
+        const bucket = timeBuckets.find(b => {
+          const bucketDay = new Date(b.time);
+          const bucketDayTime = new Date(bucketDay.getFullYear(), bucketDay.getMonth(), bucketDay.getDate()).getTime();
+          return bucketDayTime === orderDay;
+        });
+        if (bucket) {
+          bucket.revenue += order.total || 0;
+          bucket.orders += 1;
+        }
       }
     });
 
-    // Only show hours with data, or show last 12 hours
-    const filteredHours = hours.filter(h => h.revenue > 0 || h.orders > 0);
-    setRevenueData(filteredHours.length > 0 ? filteredHours : hours.slice(12, 24));
+    // Filter out empty buckets if needed, or show all
+    const filteredBuckets = timeBuckets.filter(b => b.revenue > 0 || b.orders > 0);
+    setRevenueData(filteredBuckets.length > 0 ? filteredBuckets : timeBuckets);
   };
 
   const calculateOrderStatus = (ordersData) => {
@@ -122,7 +246,7 @@ const Dashboard = () => {
     return <Badge bg={variants[status] || 'secondary'}>{status.replace('_', ' ').toUpperCase()}</Badge>;
   };
 
-  const latestOrders = orders.slice(0, 5);
+  const latestOrders = filteredOrders.slice(0, 5);
   const maxRevenue = revenueData.length > 0 ? Math.max(...revenueData.map(d => d.revenue)) : 1;
   const totalStatusOrders = orderStatusData.reduce((sum, item) => sum + item.value, 0);
 
@@ -145,6 +269,59 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Date Range Selector */}
+      <Card className="mb-4">
+        <Card.Body>
+          <Row className="align-items-center">
+            <Col md={6}>
+              <Form.Label className="mb-0"><strong>Date Range:</strong></Form.Label>
+              <ButtonGroup className="mt-2">
+                <Button
+                  variant={dateRange === 'last10hours' ? 'primary' : 'outline-primary'}
+                  onClick={() => setDateRange('last10hours')}
+                  size="sm"
+                >
+                  Last 10 Hours
+                </Button>
+                <Button
+                  variant={dateRange === 'last7days' ? 'primary' : 'outline-primary'}
+                  onClick={() => setDateRange('last7days')}
+                  size="sm"
+                >
+                  Last 7 Days
+                </Button>
+                <Button
+                  variant={dateRange === 'custom' ? 'primary' : 'outline-primary'}
+                  onClick={() => setDateRange('custom')}
+                  size="sm"
+                >
+                  Select Date
+                </Button>
+              </ButtonGroup>
+            </Col>
+            <Col md={6}>
+              {dateRange === 'custom' && (
+                <div>
+                  <Form.Label className="mb-0"><strong>Select Date:</strong></Form.Label>
+                  <Form.Control
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="mt-2"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              )}
+              {dateRange !== 'custom' && (
+                <div className="text-muted mt-2">
+                  <i className="bi bi-calendar3"></i> Showing: <strong>{getDateRangeLabel()}</strong>
+                </div>
+              )}
+            </Col>
+          </Row>
+        </Card.Body>
+      </Card>
 
       {/* Stats Cards */}
       <Row className="mb-4">
@@ -187,7 +364,7 @@ const Dashboard = () => {
         <Col md={8}>
           <Card>
             <Card.Header>
-              <h5>Revenue by Hour (Last 24 Hours)</h5>
+              <h5>Revenue {dateRange === 'last10hours' || (dateRange === 'custom' && customDate) ? 'by Hour' : 'by Day'} ({getDateRangeLabel()})</h5>
             </Card.Header>
             <Card.Body>
               {revenueData.length > 0 ? (
@@ -242,7 +419,7 @@ const Dashboard = () => {
                             fontSize="10"
                             fill="#666"
                           >
-                            {data.hour}
+                            {data.label || data.hour}
                           </text>
                         </g>
                       );

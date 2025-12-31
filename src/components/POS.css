@@ -295,29 +295,40 @@
   color: #2c3e50;
 }
 
-.pos-table-input {
+.pos-table-selection {
   margin-bottom: 15px;
 }
 
-.pos-table-input label {
+.pos-table-selection label {
   display: block;
   font-weight: 500;
   margin-bottom: 5px;
   color: #2c3e50;
 }
 
-.pos-table-input input {
+.pos-assign-table-btn {
   width: 100%;
-  padding: 10px;
-  border: 2px solid #ddd;
+  padding: 12px;
+  background-color: #3498db;
+  color: #fff;
+  border: none;
   border-radius: 8px;
   font-size: 1rem;
-  text-align: center;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.pos-table-input input:focus {
-  outline: none;
-  border-color: #3498db;
+.pos-assign-table-btn:hover {
+  background-color: #2980b9;
+}
+
+.pos-assign-table-btn:active {
+  transform: scale(0.98);
 }
 
 .pos-send-button {
