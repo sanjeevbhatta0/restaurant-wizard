@@ -167,10 +167,17 @@ const POS = () => {
     try {
       const orderNumber = generateOrderNumber();
       
+      // Ensure locationId is set correctly for both single and multi-location
+      // For single-location: use currentUser.uid (matches what Kitchen expects)
+      // For multi-location: use selectedLocation
+      const orderLocationId = isMultiLocation && selectedLocation 
+        ? selectedLocation 
+        : currentUser.uid;
+
       const orderData = {
         orderNumber,
         tableNumber: selectedTables.length === 1 ? selectedTables[0] : selectedTables,
-        locationId: selectedLocation || currentUser.uid, // Store location ID for filtering
+        locationId: orderLocationId, // Always set locationId for consistent filtering
         items: orderItems.map(item => ({
           id: item.id,
           name: item.name,

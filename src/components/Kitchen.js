@@ -19,29 +19,61 @@ const Kitchen = () => {
   useEffect(() => {
     if (!currentUser) return;
 
+    // Multi-location but no location selected
+    if (isMultiLocation && !selectedLocation) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
     // Query for orders that are sent to kitchen or being prepared
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
     
     // Build query based on location
+    // Note: For single-location, we still filter by locationId (currentUser.uid) to ensure consistency
     let q;
-    if (isMultiLocation && selectedLocation) {
-      q = query(
-        ordersRef,
-        where('locationId', '==', selectedLocation),
-        where('status', 'in', ['sent_to_kitchen', 'preparing']),
-        orderBy('createdAt', 'asc') // Oldest first (FIFO)
-      );
-    } else if (!isMultiLocation) {
-      q = query(
-        ordersRef,
-        where('status', 'in', ['sent_to_kitchen', 'preparing']),
-        orderBy('createdAt', 'asc')
-      );
-    } else {
-      // Multi-location but no location selected
-      setOrders([]);
-      setLoading(false);
-      return;
+    try {
+      if (isMultiLocation && selectedLocation) {
+        // Multi-location: filter by selected location
+        q = query(
+          ordersRef,
+          where('locationId', '==', selectedLocation),
+          where('status', 'in', ['sent_to_kitchen', 'preparing']),
+          orderBy('createdAt', 'asc') // Oldest first (FIFO)
+        );
+      } else {
+        // Single-location: filter by currentUser.uid (which is what POS sets as locationId)
+        // This ensures consistency between POS and Kitchen
+        q = query(
+          ordersRef,
+          where('locationId', '==', currentUser.uid),
+          where('status', 'in', ['sent_to_kitchen', 'preparing']),
+          orderBy('createdAt', 'asc')
+        );
+      }
+    } catch (queryError) {
+      console.error('Error building query:', queryError);
+      // Fallback: try query without orderBy if index is missing
+      try {
+        if (isMultiLocation && selectedLocation) {
+          q = query(
+            ordersRef,
+            where('locationId', '==', selectedLocation),
+            where('status', 'in', ['sent_to_kitchen', 'preparing'])
+          );
+        } else {
+          q = query(
+            ordersRef,
+            where('locationId', '==', currentUser.uid),
+            where('status', 'in', ['sent_to_kitchen', 'preparing'])
+          );
+        }
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        setError('Failed to load orders. Please check Firestore indexes.');
+        setLoading(false);
+        return;
+      }
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -49,11 +81,34 @@ const Kitchen = () => {
         id: doc.id,
         ...doc.data()
       }));
+      // Sort by createdAt manually if orderBy wasn't used
+      ordersData.sort((a, b) => {
+        const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return aTime - bTime; // Oldest first
+      });
       setOrders(ordersData);
       setLoading(false);
+      setError(''); // Clear any previous errors
     }, (error) => {
       console.error('Error fetching orders:', error);
-      setError('Failed to load orders. Please refresh the page.');
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      
+      // Check if it's an index error
+      if (error.code === 'failed-precondition') {
+        setError('Firestore index required. Please create the composite index for orders query. Check console for index link.');
+        console.error('Missing Firestore index. Create index with:', {
+          collection: `restaurants/${currentUser.uid}/orders`,
+          fields: [
+            { fieldPath: 'locationId', order: 'ASCENDING' },
+            { fieldPath: 'status', order: 'ASCENDING' },
+            { fieldPath: 'createdAt', order: 'ASCENDING' }
+          ]
+        });
+      } else {
+        setError('Failed to load orders: ' + error.message);
+      }
       setLoading(false);
     });
 

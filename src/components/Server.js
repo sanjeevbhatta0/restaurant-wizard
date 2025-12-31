@@ -39,27 +39,57 @@ const Server = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Query for orders that are preparing or ready
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    
-    let q;
-    if (isMultiLocation && selectedLocation) {
-      q = query(
-        ordersRef,
-        where('locationId', '==', selectedLocation),
-        where('status', 'in', ['preparing', 'ready']),
-        orderBy('createdAt', 'asc')
-      );
-    } else if (!isMultiLocation) {
-      q = query(
-        ordersRef,
-        where('status', 'in', ['preparing', 'ready']),
-        orderBy('createdAt', 'asc')
-      );
-    } else {
+    // Multi-location but no location selected
+    if (isMultiLocation && !selectedLocation) {
       setOrders([]);
       setLoading(false);
       return;
+    }
+
+    // Query for orders that are preparing or ready
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    
+    // Build query with consistent locationId filtering
+    let q;
+    try {
+      if (isMultiLocation && selectedLocation) {
+        q = query(
+          ordersRef,
+          where('locationId', '==', selectedLocation),
+          where('status', 'in', ['preparing', 'ready']),
+          orderBy('createdAt', 'asc')
+        );
+      } else {
+        // Single-location: filter by currentUser.uid (matches what POS sets)
+        q = query(
+          ordersRef,
+          where('locationId', '==', currentUser.uid),
+          where('status', 'in', ['preparing', 'ready']),
+          orderBy('createdAt', 'asc')
+        );
+      }
+    } catch (queryError) {
+      console.error('Error building query:', queryError);
+      // Fallback: try query without orderBy if index is missing
+      try {
+        if (isMultiLocation && selectedLocation) {
+          q = query(
+            ordersRef,
+            where('locationId', '==', selectedLocation),
+            where('status', 'in', ['preparing', 'ready'])
+          );
+        } else {
+          q = query(
+            ordersRef,
+            where('locationId', '==', currentUser.uid),
+            where('status', 'in', ['preparing', 'ready'])
+          );
+        }
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        setLoading(false);
+        return;
+      }
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -67,6 +97,13 @@ const Server = () => {
         id: doc.id,
         ...doc.data()
       }));
+
+      // Sort by createdAt manually if orderBy wasn't used in query
+      ordersData.sort((a, b) => {
+        const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return aTime - bTime; // Oldest first
+      });
 
       setOrders(prevOrders => {
         // Track status changes for notifications
@@ -94,6 +131,20 @@ const Server = () => {
       setLoading(false);
     }, (error) => {
       console.error('Error fetching orders:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      
+      // Check if it's an index error
+      if (error.code === 'failed-precondition') {
+        console.error('Missing Firestore index. Create index with:', {
+          collection: `restaurants/${currentUser.uid}/orders`,
+          fields: [
+            { fieldPath: 'locationId', order: 'ASCENDING' },
+            { fieldPath: 'status', order: 'ASCENDING' },
+            { fieldPath: 'createdAt', order: 'ASCENDING' }
+          ]
+        });
+      }
       setLoading(false);
     });
 
