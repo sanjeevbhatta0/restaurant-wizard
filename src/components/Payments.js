@@ -353,7 +353,8 @@ const Payments = () => {
         orderNumbers,
         tableNumbers: Array.from(tableNumbers),
         total,
-        orderCount: selectedOrders.length
+        orderCount: selectedOrders.length,
+        locationId: isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid
       });
 
       // Release tables by updating table status to 'available' in the layout
@@ -493,7 +494,8 @@ const Payments = () => {
         orderId: reimbursementOrder,
         tableNumber: selectedOrder.tableNumber,
         refundAmount,
-        refundType: reimbursementType
+        refundType: reimbursementType,
+        locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
       });
 
       setSuccess(`Reimbursement processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);

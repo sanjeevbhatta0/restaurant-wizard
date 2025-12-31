@@ -97,15 +97,25 @@ const Kitchen = () => {
       
       // Check if it's an index error
       if (error.code === 'failed-precondition') {
-        setError('Firestore index required. Please create the composite index for orders query. Check console for index link.');
-        console.error('Missing Firestore index. Create index with:', {
-          collection: `restaurants/${currentUser.uid}/orders`,
-          fields: [
-            { fieldPath: 'locationId', order: 'ASCENDING' },
-            { fieldPath: 'status', order: 'ASCENDING' },
-            { fieldPath: 'createdAt', order: 'ASCENDING' }
-          ]
-        });
+        // Extract index link from error message if available
+        const indexLinkMatch = error.message?.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
+        const indexLink = indexLinkMatch ? indexLinkMatch[0] : null;
+        
+        if (indexLink) {
+          console.error('Missing Firestore index. Click here to create it:', indexLink);
+          setError(`Firestore index required. Click this link to create it: ${indexLink} (Also check browser console)`);
+        } else {
+          setError('Firestore index required. Please create the composite index for orders query. Check console for details.');
+          console.error('Missing Firestore index. Create index with:', {
+            collection: `restaurants/${currentUser.uid}/orders`,
+            fields: [
+              { fieldPath: 'locationId', order: 'ASCENDING' },
+              { fieldPath: 'status', order: 'ASCENDING' },
+              { fieldPath: 'createdAt', order: 'ASCENDING' }
+            ]
+          });
+          console.error('To deploy via CLI, run: firebase deploy --only firestore:indexes');
+        }
       } else {
         setError('Failed to load orders: ' + error.message);
       }
@@ -144,7 +154,8 @@ const Kitchen = () => {
           orderNumber: order.orderNumber || orderId,
           orderId: orderId,
           tableNumber: tableNumber || 'N/A',
-          status: newStatus
+          status: newStatus,
+          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
         });
       }
     } catch (error) {

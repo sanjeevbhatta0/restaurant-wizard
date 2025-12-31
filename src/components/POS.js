@@ -214,7 +214,8 @@ const POS = () => {
       await activityService.logOrderActivity(currentUser.uid, 'received', {
         orderNumber,
         tableNumber: tableDisplay,
-        status: 'sent_to_kitchen'
+        status: 'sent_to_kitchen',
+        locationId: orderLocationId // Include locationId for filtering
       });
 
       setOrderSuccess({

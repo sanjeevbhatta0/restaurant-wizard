@@ -52,14 +52,89 @@ const Home = () => {
 
     // Listen to recent activities
     const activitiesRef = collection(db, `restaurants/${currentUser.uid}/activities`);
-    const activitiesQuery = query(activitiesRef, orderBy('createdAt', 'desc'), limit(10));
+    
+    // Build query - filter by locationId if multi-location
+    let activitiesQuery;
+    try {
+      if (isMultiLocation && selectedLocation) {
+        // Multi-location: filter by selected location
+        activitiesQuery = query(
+          activitiesRef,
+          where('locationId', '==', selectedLocation),
+          orderBy('createdAt', 'desc'),
+          limit(10)
+        );
+      } else {
+        // Single-location: filter by currentUser.uid (matches what activityService sets)
+        activitiesQuery = query(
+          activitiesRef,
+          where('locationId', '==', currentUser.uid),
+          orderBy('createdAt', 'desc'),
+          limit(10)
+        );
+      }
+    } catch (queryError) {
+      console.error('Error building activities query:', queryError);
+      // Fallback: query without locationId filter (for backward compatibility with old activities)
+      try {
+        activitiesQuery = query(
+          activitiesRef,
+          orderBy('createdAt', 'desc'),
+          limit(10)
+        );
+      } catch (fallbackError) {
+        console.error('Fallback activities query also failed:', fallbackError);
+        setRecentActivities([]);
+        return;
+      }
+    }
 
     const unsubscribeActivities = onSnapshot(activitiesQuery, (snapshot) => {
-      const activities = snapshot.docs.map(doc => ({
+      let activities = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Additional client-side filtering for backward compatibility
+      // (in case some old activities don't have locationId)
+      if (isMultiLocation && selectedLocation) {
+        activities = activities.filter(activity => {
+          // Include activities without locationId (old data) or matching locationId
+          return !activity.locationId || activity.locationId === selectedLocation;
+        });
+      } else {
+        // Single-location: include activities without locationId or matching currentUser.uid
+        activities = activities.filter(activity => {
+          return !activity.locationId || activity.locationId === currentUser.uid;
+        });
+      }
+
       setRecentActivities(activities);
+    }, (error) => {
+      console.error('Error fetching activities:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      
+      // Check if it's an index error
+      if (error.code === 'failed-precondition') {
+        const indexLinkMatch = error.message?.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
+        const indexLink = indexLinkMatch ? indexLinkMatch[0] : null;
+        
+        if (indexLink) {
+          console.error('Missing Firestore index for activities. Click here to create it:', indexLink);
+        } else {
+          console.error('Missing Firestore index for activities. Create index with:', {
+            collection: `restaurants/${currentUser.uid}/activities`,
+            fields: [
+              { fieldPath: 'locationId', order: 'ASCENDING' },
+              { fieldPath: 'createdAt', order: 'DESCENDING' }
+            ]
+          });
+          console.error('To deploy via CLI, run: firebase deploy --only firestore:indexes');
+        }
+      }
+      // Don't show error to user - activities are not critical
+      setRecentActivities([]);
     });
 
     // Still listen to orders for stats calculation

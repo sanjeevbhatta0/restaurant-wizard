@@ -205,7 +205,8 @@ const Server = () => {
           orderNumber: order.orderNumber || orderId,
           orderId: orderId,
           tableNumber: tableNumber || 'N/A',
-          status: 'served'
+          status: 'served',
+          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
         });
       }
       

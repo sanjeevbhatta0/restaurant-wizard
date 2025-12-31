@@ -7,7 +7,7 @@ const activityService = {
    * @param {string} restaurantId - Restaurant user ID
    * @param {string} type - Activity type (e.g., 'pin_created', 'order_received', 'order_status_changed')
    * @param {string} message - Activity message
-   * @param {object} metadata - Additional metadata (orderNumber, tableNumber, etc.)
+   * @param {object} metadata - Additional metadata (orderNumber, tableNumber, locationId, etc.)
    */
   logActivity: async (restaurantId, type, message, metadata = {}) => {
     try {
@@ -16,6 +16,8 @@ const activityService = {
         type,
         message,
         ...metadata,
+        // Ensure locationId is set (use restaurantId as fallback for single-location)
+        locationId: metadata.locationId || restaurantId,
         createdAt: serverTimestamp(),
         timestamp: new Date().toISOString()
       });
