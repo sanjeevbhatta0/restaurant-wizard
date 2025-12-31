@@ -11,6 +11,7 @@ import CategoryItems from './components/CategoryItems';
 import Orders from './components/Orders';
 import POS from './components/POS';
 import TableLayout from './components/TableLayout';
+import Payments from './components/Payments';
 import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
 import WebsiteBuilder from './components/WebsiteBuilder';
@@ -62,6 +63,11 @@ function App() {
             <Route path="table-layout" element={
               <PrivateRoute>
                 <TableLayout />
+              </PrivateRoute>
+            } />
+            <Route path="payments" element={
+              <PrivateRoute>
+                <Payments />
               </PrivateRoute>
             } />
             <Route path="seo-social" element={

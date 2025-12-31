@@ -26,6 +26,7 @@ const Layout = () => {
     { to: '/menu-management', icon: 'menu-button-wide', text: 'Menu Management' },
     { to: '/pos', icon: 'cash-coin', text: 'POS' },
     { to: '/table-layout', icon: 'grid-3x3-gap', text: 'Table Layout' },
+    { to: '/payments', icon: 'credit-card', text: 'Payments' },
     { to: '/orders', icon: 'cart', text: 'Orders' },
     { to: '/seo-social', icon: 'share', text: 'SEO & Social' },
     { to: '/website-integration', icon: 'code-slash', text: 'Website Integration' },

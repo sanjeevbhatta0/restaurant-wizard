@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Modal, Button, Alert } from 'react-bootstrap';
 import './TableSelectionModal.css';
 
-const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [] }) => {
+const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allowOccupied = false }) => {
   const { currentUser } = useAuth();
   const [layout, setLayout] = useState(null);
   const [tables, setTables] = useState([]);
@@ -183,12 +183,12 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [] }) =>
               {tables.map(table => {
                 const isSelected = isTableSelected(table.number);
                 const isOccupied = isTableOccupied(table.number);
-                const canSelect = !isOccupied || isSelected; // Can select if not occupied or already selected
+                const canSelect = allowOccupied || !isOccupied || isSelected; // Can select if allowedOccupied is true, or not occupied, or already selected
 
                 return (
                   <div
                     key={table.id}
-                    className={`table-selection-item ${isSelected ? 'selected' : ''} ${isOccupied && !isSelected ? 'occupied' : ''}`}
+                    className={`table-selection-item ${isSelected ? 'selected' : ''} ${isOccupied && !isSelected && !allowOccupied ? 'occupied' : ''}`}
                     style={{
                       left: `${table.x}%`,
                       top: `${table.y}%`,
@@ -198,7 +198,7 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [] }) =>
                       transform: 'translate(-50%, -50%)'
                     }}
                     onClick={() => canSelect && toggleTableSelection(table.number)}
-                    title={isOccupied && !isSelected ? 'This table is currently occupied' : `Table ${table.number} - ${table.capacity || 4} seats`}
+                    title={isOccupied && !isSelected && !allowOccupied ? 'This table is currently occupied' : `Table ${table.number} - ${table.capacity || 4} seats`}
                   >
                     <div className="table-selection-number">{table.number}</div>
                     <div className="table-selection-capacity">

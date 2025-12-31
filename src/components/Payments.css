@@ -1,0 +1,70 @@
+.payments-container {
+  padding: 0;
+}
+
+.payment-summary {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.summary-row:last-child {
+  border-bottom: none;
+}
+
+.payment-total-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.payment-breakdown {
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.breakdown-row:last-child {
+  border-bottom: none;
+}
+
+.breakdown-row.total-row {
+  margin-top: 10px;
+  padding-top: 15px;
+  border-top: 2px solid rgba(255, 255, 255, 0.3);
+  font-size: 1.2rem;
+}
+
+.table-selected {
+  background-color: #e7f3ff !important;
+}
+
+.payment-confirmation ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.payment-confirmation li {
+  padding: 5px 0;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.payment-confirmation li:last-child {
+  border-bottom: none;
+}
