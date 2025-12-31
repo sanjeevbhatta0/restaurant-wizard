@@ -111,6 +111,9 @@
   transition: transform 0.1s, box-shadow 0.2s;
   user-select: none;
   transform: translate(-50%, -50%);
+  touch-action: none; /* Prevents default touch behaviors for drag on mobile */
+  -webkit-touch-callout: none; /* Prevents iOS callout menu */
+  -webkit-user-select: none; /* Prevents selection on iOS */
 }
 
 .table-element:hover {
@@ -211,8 +214,8 @@
   }
 
   .table-element {
-    width: 60px;
-    height: 60px;
+    width: 70px;
+    height: 70px;
   }
 
   .table-number {
@@ -221,5 +224,32 @@
 
   .table-capacity {
     font-size: 0.65rem;
+  }
+
+  /* Always show table actions on mobile since hover doesn't work */
+  .table-actions {
+    opacity: 1;
+  }
+
+  /* Always show status badge on mobile */
+  .table-status-badge {
+    opacity: 1;
+  }
+
+  .table-floor-plan {
+    min-height: 400px;
+  }
+}
+
+/* iPad specific adjustments */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .table-element {
+    width: 75px;
+    height: 75px;
+  }
+
+  /* Show actions on iPad for easier access */
+  .table-actions {
+    opacity: 0.8;
   }
 }

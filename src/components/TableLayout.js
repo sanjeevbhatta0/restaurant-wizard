@@ -199,6 +199,20 @@ const TableLayout = () => {
     });
   };
 
+  // Touch event handler for mobile devices (iPad/iPhone)
+  const handleTouchStart = (e, table) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    setDraggedTable(table);
+    const rect = floorPlanRef.current.getBoundingClientRect();
+    const x = ((touch.clientX - rect.left) / rect.width) * 100;
+    const y = ((touch.clientY - rect.top) / rect.height) * 100;
+    setDragOffset({
+      x: x - table.x,
+      y: y - table.y
+    });
+  };
+
   const handleMouseMove = (e) => {
     if (!draggedTable || !floorPlanRef.current) return;
 
@@ -219,17 +233,53 @@ const TableLayout = () => {
     ));
   };
 
+  // Touch move handler for mobile devices
+  const handleTouchMove = (e) => {
+    if (!draggedTable || !floorPlanRef.current) return;
+    e.preventDefault(); // Prevent scrolling while dragging
+
+    const touch = e.touches[0];
+    const rect = floorPlanRef.current.getBoundingClientRect();
+    let x = ((touch.clientX - rect.left) / rect.width) * 100;
+    let y = ((touch.clientY - rect.top) / rect.height) * 100;
+
+    // Subtract offset to maintain relative position
+    x -= dragOffset.x;
+    y -= dragOffset.y;
+
+    // Constrain to floor plan bounds
+    x = Math.max(5, Math.min(95, x));
+    y = Math.max(5, Math.min(95, y));
+
+    setTables(tables.map(t =>
+      t.id === draggedTable.id ? { ...t, x, y } : t
+    ));
+  };
+
   const handleMouseUp = () => {
+    setDraggedTable(null);
+  };
+
+  // Touch end handler for mobile devices
+  const handleTouchEnd = () => {
     setDraggedTable(null);
   };
 
   useEffect(() => {
     if (draggedTable) {
+      // Mouse events for desktop
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
+      // Touch events for mobile devices (iPad/iPhone)
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+      document.addEventListener('touchcancel', handleTouchEnd);
       return () => {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+        document.removeEventListener('touchcancel', handleTouchEnd);
       };
     }
   }, [draggedTable, dragOffset]);
@@ -405,9 +455,11 @@ const TableLayout = () => {
                   left: `${table.x}%`,
                   top: `${table.y}%`,
                   backgroundColor: getTableStatusColor(table.status),
-                  cursor: draggedTable?.id === table.id ? 'grabbing' : 'grab'
+                  cursor: draggedTable?.id === table.id ? 'grabbing' : 'grab',
+                  touchAction: 'none' // Prevents default touch behaviors for better drag experience
                 }}
                 onMouseDown={(e) => handleMouseDown(e, table)}
+                onTouchStart={(e) => handleTouchStart(e, table)}
               >
                 <div className="table-number">{table.number}</div>
                 <div className="table-capacity">
