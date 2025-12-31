@@ -10,7 +10,7 @@ const PrivacyPolicy = () => {
       <section className="mb-4">
         <h2>1. Introduction</h2>
         <p>
-          Welcome to Restaurant Wizard. We respect your privacy and are committed to protecting your personal data.
+          Welcome to Koda Carte. We respect your privacy and are committed to protecting your personal data.
           This privacy policy will inform you about how we handle your personal data when you use our service and
           tell you about your privacy rights.
         </p>
