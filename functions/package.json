@@ -18,5 +18,6 @@
     "firebase-admin": "^11.11.1",
     "firebase-functions": "^6.4.0"
   },
+  
   "private": true
 }
