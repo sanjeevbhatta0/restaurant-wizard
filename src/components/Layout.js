@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Nav, Form } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,6 +10,10 @@ const Layout = () => {
   const { isMultiLocation, locations, selectedLocation, setSelectedLocation } = useLocationContext();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved === 'true';
+  });
 
 
   const toggleSidebar = () => {
@@ -24,6 +28,15 @@ const Layout = () => {
   useEffect(() => {
     closeSidebar();
   }, [location.pathname]);
+
+  // Save sidebar collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', isCollapsed.toString());
+  }, [isCollapsed]);
+
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed);
+  };
 
   const sidebarLinks = [
     { to: '/home', icon: 'house', text: 'Home' },
@@ -85,14 +98,16 @@ const Layout = () => {
       </header>
       {sidebarOpen && <div className="sidebar-overlay" onClick={closeSidebar}></div>}
       <div className="content-wrapper">
-        <nav className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+        <nav 
+          className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${isCollapsed ? 'collapsed' : ''}`}
+        >
           <div className="sidebar-header">
-            <span className="sidebar-title">Menu</span>
+            {!isCollapsed && <span className="sidebar-title">Menu</span>}
             <button className="sidebar-close" onClick={closeSidebar} aria-label="Close menu">
               <i className="bi bi-x-lg"></i>
             </button>
           </div>
-          <Nav className="flex-column">
+          <Nav className="flex-column sidebar-nav">
             {sidebarLinks.map((link, index) => {
               const isActive = location.pathname === link.to;
               return (
@@ -102,12 +117,24 @@ const Layout = () => {
                   to={link.to} 
                   className={`sidebar-link ${isActive ? 'active' : ''}`}
                   onClick={closeSidebar}
+                  title={isCollapsed ? link.text : ''}
                 >
-                  <i className={`bi bi-${link.icon}`}></i> <span className="sidebar-link-text">{link.text}</span>
+                  <i className={`bi bi-${link.icon}`}></i> 
+                  <span className="sidebar-link-text">{link.text}</span>
                 </Nav.Link>
               );
             })}
           </Nav>
+          <div className="sidebar-footer">
+            <button 
+              className="sidebar-collapse-btn"
+              onClick={toggleCollapse}
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <i className={`bi bi-chevron-${isCollapsed ? 'right' : 'left'}`}></i>
+              {!isCollapsed && <span>Collapse</span>}
+            </button>
+          </div>
         </nav>
         <main className="content">
           <Outlet />
