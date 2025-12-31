@@ -11,6 +11,7 @@ import MenuManagement from './components/MenuManagement';
 import CategoryItems from './components/CategoryItems';
 import Orders from './components/Orders';
 import POS from './components/POS';
+import Kitchen from './components/Kitchen';
 import TableLayout from './components/TableLayout';
 import Payments from './components/Payments';
 import SeoSocialPosts from './components/SeoSocialPosts';
@@ -60,6 +61,11 @@ function App() {
             <Route path="pos" element={
               <PrivateRoute>
                 <POS />
+              </PrivateRoute>
+            } />
+            <Route path="kitchen" element={
+              <PrivateRoute>
+                <Kitchen />
               </PrivateRoute>
             } />
             <Route path="table-layout" element={
