@@ -1,13 +1,15 @@
 import React from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Nav } from 'react-bootstrap';
+import { Nav, Form } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation as useLocationContext } from '../contexts/LocationContext';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import './Layout.css';
 
 const Layout = () => {
   const { currentUser } = useAuth();
+  const { isMultiLocation, locations, selectedLocation, setSelectedLocation } = useLocationContext();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -46,7 +48,29 @@ const Layout = () => {
           </svg>
           Koda Carte
         </div>
-        <button className="logout-button" onClick={handleLogout}>Logout</button>
+        <div className="header-actions">
+          {isMultiLocation && locations.length > 0 && (
+            <>
+              <Form.Select
+                value={selectedLocation || ''}
+                onChange={(e) => setSelectedLocation(e.target.value)}
+                className="location-selector"
+                style={{ marginRight: '15px', minWidth: '200px' }}
+              >
+                <option value="">Select Location</option>
+                {locations.map(loc => (
+                  <option key={loc.id} value={loc.id}>{loc.name}</option>
+                ))}
+              </Form.Select>
+              {!selectedLocation && (
+                <span className="location-warning" style={{ marginRight: '15px', color: '#ffc107', fontSize: '0.9rem' }}>
+                  <i className="bi bi-exclamation-triangle"></i> Please select a location
+                </span>
+              )}
+            </>
+          )}
+          <button className="logout-button" onClick={handleLogout}>Logout</button>
+        </div>
       </header>
       <div className="content-wrapper">
         <nav className="sidebar">

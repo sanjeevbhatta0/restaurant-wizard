@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row, Col } from 'react-bootstrap';
 import TableSelectionModal from './TableSelectionModal';
 import './PageHeader.css';
@@ -17,6 +18,7 @@ const Payments = () => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const { selectedLocation, isMultiLocation } = useLocation();
   
   // Payment details
   const [subtotal, setSubtotal] = useState(0);
@@ -36,7 +38,7 @@ const Payments = () => {
       setOrders([]);
       setSelectedOrders([]);
     }
-  }, [selectedTable, currentUser]);
+  }, [selectedTable, currentUser, isMultiLocation, selectedLocation]);
 
   useEffect(() => {
     calculateTotals();
@@ -56,11 +58,17 @@ const Payments = () => {
       const ordersData = [];
       
       for (const tableNum of tableNumbers) {
-        const q = query(
+        let q = query(
           ordersRef,
           where('status', '==', 'ready'),
           where('tableNumber', '==', tableNum)
         );
+
+        // Add location filter if multi-location
+        if (isMultiLocation && selectedLocation) {
+          q = query(q, where('locationId', '==', selectedLocation));
+        }
+
         const snapshot = await getDocs(q);
         
         snapshot.docs.forEach(doc => {
@@ -72,7 +80,13 @@ const Payments = () => {
       }
 
       // Also check for orders where tableNumber is an array
-      const allOrdersQuery = query(ordersRef, where('status', '==', 'ready'));
+      let allOrdersQuery = query(ordersRef, where('status', '==', 'ready'));
+      
+      // Add location filter if multi-location
+      if (isMultiLocation && selectedLocation) {
+        allOrdersQuery = query(allOrdersQuery, where('locationId', '==', selectedLocation));
+      }
+      
       const allOrdersSnapshot = await getDocs(allOrdersQuery);
       
       allOrdersSnapshot.docs.forEach(doc => {
@@ -222,7 +236,12 @@ const Payments = () => {
       // Release tables by updating table status to 'available' in the layout
       if (tableNumbers.size > 0) {
         try {
-          const layoutRef = doc(db, `restaurants/${currentUser.uid}/layout/floorPlan`);
+          // For multi-location, use location-specific layout path
+          const layoutPath = isMultiLocation && selectedLocation
+            ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
+            : `restaurants/${currentUser.uid}/layout/floorPlan`;
+          
+          const layoutRef = doc(db, layoutPath);
           const layoutSnap = await getDoc(layoutRef);
           
           if (layoutSnap.exists()) {

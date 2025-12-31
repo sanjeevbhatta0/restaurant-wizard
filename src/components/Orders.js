@@ -3,6 +3,7 @@ import { Container, Table, Badge, Dropdown, Form, Row, Col } from 'react-bootstr
 import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import './PageHeader.css';
 
 const Orders = () => {
@@ -10,6 +11,7 @@ const Orders = () => {
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const { currentUser } = useAuth();
+  const { selectedLocation, isMultiLocation } = useLocation();
 
   useEffect(() => {
     if (!currentUser) return;
@@ -18,16 +20,24 @@ const Orders = () => {
     const q = query(ordersRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
+      let ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Filter by location if multi-location
+      if (isMultiLocation && selectedLocation) {
+        ordersData = ordersData.filter(order => {
+          return order.locationId === selectedLocation;
+        });
+      }
+
       setOrders(ordersData);
       filterOrders(ordersData, statusFilter);
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, isMultiLocation, selectedLocation]);
 
   const filterOrders = (ordersData, status) => {
     if (status === 'all') {

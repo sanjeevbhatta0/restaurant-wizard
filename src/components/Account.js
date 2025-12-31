@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, deleteDoc, getDocs, setDoc } from 'firebase/firestore';
 import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Container, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
+import { useLocation } from '../contexts/LocationContext';
+import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
 import './Account.css';
 
 const Account = () => {
   const { currentUser } = useAuth();
+  const { isMultiLocation, locations, loadRestaurantData } = useLocation();
   const [restaurantData, setRestaurantData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,6 +28,12 @@ const Account = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+
+  // Location management
+  const [locationList, setLocationList] = useState([]);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [editingLocation, setEditingLocation] = useState(null);
+  const [locationForm, setLocationForm] = useState({ name: '', address: '' });
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -294,6 +302,162 @@ const Account = () => {
             )}
           </Card.Body>
         </Card>
+
+        {/* Location Management Card - Only for Multi-Location */}
+        {isMultiLocation && (
+          <Card className="account-card">
+          <Card.Header className="account-card-header">
+            <h3><i className="bi bi-geo-alt"></i> Locations</h3>
+          </Card.Header>
+          <Card.Body>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <p className="mb-0">Manage your restaurant locations</p>
+              <Button variant="primary" onClick={() => {
+                setEditingLocation(null);
+                setLocationForm({ name: '', address: '' });
+                setShowLocationModal(true);
+              }}>
+                <i className="bi bi-plus-circle"></i> Add Location
+              </Button>
+            </div>
+
+            {locationList.length > 0 ? (
+              <Table responsive>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Address</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {locationList.map(location => (
+                    <tr key={location.id}>
+                      <td>{location.name}</td>
+                      <td>{location.address || 'No address'}</td>
+                      <td>
+                        <Button
+                          variant="outline-primary"
+                          size="sm"
+                          className="me-2"
+                          onClick={() => {
+                            setEditingLocation(location);
+                            setLocationForm({ name: location.name, address: location.address || '' });
+                            setShowLocationModal(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={async () => {
+                            if (window.confirm(`Are you sure you want to delete ${location.name}?`)) {
+                              try {
+                                await deleteDoc(doc(db, `restaurants/${currentUser.uid}/locations/${location.id}`));
+                                setLocationList(locationList.filter(l => l.id !== location.id));
+                                loadRestaurantData();
+                                setSuccess('Location deleted successfully');
+                              } catch (error) {
+                                setError('Failed to delete location: ' + error.message);
+                              }
+                            }
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            ) : (
+              <p className="text-muted text-center py-3">No locations added yet. Click "Add Location" to get started.</p>
+            )}
+          </Card.Body>
+          </Card>
+        )}
+
+      {/* Location Modal */}
+      <Modal show={showLocationModal} onHide={() => setShowLocationModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>{editingLocation ? 'Edit Location' : 'Add New Location'}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Location Name</Form.Label>
+              <Form.Control
+                type="text"
+                value={locationForm.name}
+                onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })}
+                placeholder="e.g., Downtown Location, Airport Branch"
+                required
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Address</Form.Label>
+              <AddressAutocomplete
+                value={locationForm.address}
+                onChange={(value) => setLocationForm({ ...locationForm, address: value })}
+                onSelect={(addressData) => {
+                  setLocationForm({ ...locationForm, address: addressData.fullAddress });
+                }}
+                placeholder="Enter location address"
+              />
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowLocationModal(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              if (!locationForm.name.trim()) {
+                setError('Location name is required');
+                return;
+              }
+              try {
+                setSaving(true);
+                if (editingLocation) {
+                  await updateDoc(doc(db, `restaurants/${currentUser.uid}/locations/${editingLocation.id}`), {
+                    name: locationForm.name,
+                    address: locationForm.address,
+                    updatedAt: new Date().toISOString()
+                  });
+                  setSuccess('Location updated successfully');
+                } else {
+                  await addDoc(collection(db, `restaurants/${currentUser.uid}/locations`), {
+                    name: locationForm.name,
+                    address: locationForm.address,
+                    createdAt: new Date().toISOString()
+                  });
+                  setSuccess('Location added successfully');
+                }
+                setShowLocationModal(false);
+                loadRestaurantData();
+                // Reload locations
+                const locationsRef = collection(db, `restaurants/${currentUser.uid}/locations`);
+                const locationsSnap = await getDocs(locationsRef);
+                const locationsData = locationsSnap.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data()
+                }));
+                setLocationList(locationsData);
+              } catch (error) {
+                setError('Failed to save location: ' + error.message);
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : (editingLocation ? 'Update' : 'Add')} Location
+          </Button>
+        </Modal.Footer>
+      </Modal>
       </div>
     </Container>
   );

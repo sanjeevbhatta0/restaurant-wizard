@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc, collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { Container, Button, Modal, Form, Alert, Spinner } from 'react-bootstrap';
 import './PageHeader.css';
 import './TableLayout.css';
 
 const TableLayout = () => {
   const { currentUser } = useAuth();
+  const { selectedLocation, isMultiLocation } = useLocation();
   const [layout, setLayout] = useState(null);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,8 +25,14 @@ const TableLayout = () => {
 
   useEffect(() => {
     if (!currentUser) return;
+    if (isMultiLocation && !selectedLocation) {
+      setLayout(null);
+      setTables([]);
+      setLoading(false);
+      return;
+    }
     loadLayout();
-  }, [currentUser]);
+  }, [currentUser, isMultiLocation, selectedLocation]);
 
   useEffect(() => {
     if (!currentUser || tables.length === 0) return;
@@ -42,12 +50,17 @@ const TableLayout = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser, tables.length]);
+  }, [currentUser, tables.length, isMultiLocation, selectedLocation]);
 
   const loadLayout = async () => {
     try {
       setLoading(true);
-      const layoutRef = doc(db, `restaurants/${currentUser.uid}/layout/floorPlan`);
+      // For multi-location, use location-specific layout path
+      const layoutPath = isMultiLocation && selectedLocation
+        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+      
+      const layoutRef = doc(db, layoutPath);
       const layoutSnap = await getDoc(layoutRef);
       
       if (layoutSnap.exists()) {
@@ -76,10 +89,16 @@ const TableLayout = () => {
 
       // Get active orders
       const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-      const activeOrdersQuery = query(
+      let activeOrdersQuery = query(
         ordersRef,
         where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
       );
+
+      // Filter by location if multi-location
+      if (isMultiLocation && selectedLocation) {
+        activeOrdersQuery = query(activeOrdersQuery, where('locationId', '==', selectedLocation));
+      }
+
       const ordersSnapshot = await getDocs(activeOrdersQuery);
 
       // Create a map of occupied tables
@@ -230,7 +249,12 @@ const TableLayout = () => {
         updatedAt: new Date().toISOString()
       };
 
-      const layoutRef = doc(db, `restaurants/${currentUser.uid}/layout/floorPlan`);
+      // For multi-location, use location-specific layout path
+      const layoutPath = isMultiLocation && selectedLocation
+        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+      
+      const layoutRef = doc(db, layoutPath);
       await setDoc(layoutRef, layoutData, { merge: true });
 
       setLayout(layoutData);
@@ -277,6 +301,28 @@ const TableLayout = () => {
           <span className="visually-hidden">Loading...</span>
         </Spinner>
       </div>
+    );
+  }
+
+  // Show warning if multi-location but no location selected
+  if (isMultiLocation && !selectedLocation) {
+    return (
+      <Container fluid className="table-layout-container">
+        <div className="page-header-gradient">
+          <div className="header-content">
+            <i className="bi bi-grid-3x3-gap header-icon"></i>
+            <div>
+              <h2>Table Layout</h2>
+              <p>Design and manage your restaurant floor plan</p>
+            </div>
+          </div>
+        </div>
+        <div className="d-flex align-items-center justify-content-center" style={{ height: '400px', flexDirection: 'column' }}>
+          <i className="bi bi-exclamation-triangle" style={{ fontSize: '3rem', color: '#ffc107', marginBottom: '20px' }}></i>
+          <h4>Please Select a Location</h4>
+          <p className="text-muted">Select a location from the dropdown in the header to manage table layouts</p>
+        </div>
+      </Container>
     );
   }
 

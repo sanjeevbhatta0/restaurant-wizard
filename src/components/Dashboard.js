@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { Container, Row, Col, Card, Table, Badge, Spinner, ProgressBar, Form, Button, ButtonGroup } from 'react-bootstrap';
 import './Dashboard.css';
 import './PageHeader.css';
@@ -22,6 +23,7 @@ const Dashboard = () => {
   const [orderStatusData, setOrderStatusData] = useState([]);
   const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
+  const { selectedLocation, isMultiLocation } = useLocation();
 
   useEffect(() => {
     if (!currentUser) return;
@@ -30,17 +32,25 @@ const Dashboard = () => {
     const q = query(ordersRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
+      let ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Filter by location if multi-location
+      if (isMultiLocation && selectedLocation) {
+        ordersData = ordersData.filter(order => {
+          return order.locationId === selectedLocation;
+        });
+      }
+
       setOrders(ordersData);
       filterOrdersByDateRange(ordersData);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, isMultiLocation, selectedLocation]);
 
   useEffect(() => {
     if (orders.length > 0) {

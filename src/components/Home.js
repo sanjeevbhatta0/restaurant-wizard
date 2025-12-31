@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { doc, getDoc, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { Spinner } from 'react-bootstrap';
 import './Home.css';
 
@@ -12,6 +13,7 @@ const Home = () => {
   const [todayStats, setTodayStats] = useState({ orders: 0, revenue: 0, pendingOrders: 0 });
   const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
+  const { selectedLocation, isMultiLocation } = useLocation();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -53,10 +55,18 @@ const Home = () => {
     const q = query(ordersRef, orderBy('createdAt', 'desc'), limit(5));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const orders = snapshot.docs.map(doc => ({
+      let orders = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Filter by location if multi-location
+      if (isMultiLocation && selectedLocation) {
+        orders = orders.filter(order => {
+          return order.locationId === selectedLocation;
+        });
+      }
+
       setRecentOrders(orders);
 
       // Calculate today's stats
@@ -82,7 +92,7 @@ const Home = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, isMultiLocation, selectedLocation]);
 
   const quickActions = [
     {

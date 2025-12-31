@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import TableSelectionModal from './TableSelectionModal';
 import './PageHeader.css';
 import './POS.css';
@@ -25,6 +26,7 @@ const POS = () => {
   const [orderSuccess, setOrderSuccess] = useState(null);
   const [sendingOrder, setSendingOrder] = useState(false);
   const { currentUser } = useAuth();
+  const { selectedLocation, isMultiLocation } = useLocation();
 
   // Fetch categories and items
   useEffect(() => {
@@ -44,12 +46,26 @@ const POS = () => {
         const itemsQuery = query(itemsRef, orderBy('name'));
         const itemsSnapshot = await getDocs(itemsQuery);
         
-        category.items = itemsSnapshot.docs.map(itemDoc => ({
+        const allItems = itemsSnapshot.docs.map(itemDoc => ({
           id: itemDoc.id,
           categoryId: category.id,
           categoryName: category.name,
           ...itemDoc.data()
         }));
+
+        // Filter items by selected location if multi-location
+        if (isMultiLocation && selectedLocation) {
+          category.items = allItems.filter(item => {
+            // If item has no locations array or empty array, it applies to all locations
+            if (!item.locations || item.locations.length === 0) {
+              return true;
+            }
+            // Otherwise, check if selected location is in the item's locations
+            return item.locations.includes(selectedLocation);
+          });
+        } else {
+          category.items = allItems;
+        }
         
         categoriesData.push(category);
       }
@@ -62,7 +78,7 @@ const POS = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser, selectedCategory]);
+  }, [currentUser, selectedCategory, isMultiLocation, selectedLocation]);
 
   // Calculate item price after discount
   const calculateItemPrice = (item) => {
@@ -153,6 +169,7 @@ const POS = () => {
       const orderData = {
         orderNumber,
         tableNumber: selectedTables.length === 1 ? selectedTables[0] : selectedTables,
+        locationId: selectedLocation || currentUser.uid, // Store location ID for filtering
         items: orderItems.map(item => ({
           id: item.id,
           name: item.name,
@@ -206,6 +223,30 @@ const POS = () => {
 
   // Get current category's items
   const currentCategoryItems = categories.find(c => c.id === selectedCategory)?.items || [];
+
+  // Show warning if multi-location but no location selected
+  if (isMultiLocation && !selectedLocation && !loading) {
+    return (
+      <div className="pos-wrapper">
+        <div className="page-header-gradient">
+          <div className="header-content">
+            <i className="bi bi-cash-register header-icon"></i>
+            <div>
+              <h2>Point of Sale</h2>
+              <p>Process orders and manage your restaurant sales</p>
+            </div>
+          </div>
+        </div>
+        <div className="pos-container">
+          <div className="d-flex align-items-center justify-content-center" style={{ height: '100%', flexDirection: 'column' }}>
+            <i className="bi bi-exclamation-triangle" style={{ fontSize: '3rem', color: '#ffc107', marginBottom: '20px' }}></i>
+            <h4>Please Select a Location</h4>
+            <p className="text-muted">Select a location from the dropdown in the header to use POS</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

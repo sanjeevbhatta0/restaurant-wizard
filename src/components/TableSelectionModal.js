@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { Modal, Button, Alert } from 'react-bootstrap';
 import './TableSelectionModal.css';
 
@@ -14,6 +15,7 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
   const [error, setError] = useState('');
   const [localSelectedTables, setLocalSelectedTables] = useState(selectedTables);
   const floorPlanRef = useRef(null);
+  const { selectedLocation, isMultiLocation } = useLocation();
 
   useEffect(() => {
     setLocalSelectedTables(selectedTables);
@@ -21,17 +23,27 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
 
   useEffect(() => {
     if (show && currentUser) {
+      if (isMultiLocation && !selectedLocation) {
+        setError('Please select a location first');
+        setLoading(false);
+        setTables([]);
+        return;
+      }
       loadLayoutAndStatuses();
     }
-  }, [show, currentUser]);
+  }, [show, currentUser, isMultiLocation, selectedLocation]);
 
   const loadLayoutAndStatuses = async () => {
     try {
       setLoading(true);
       setError('');
 
-      // Load layout
-      const layoutRef = doc(db, `restaurants/${currentUser.uid}/layout/floorPlan`);
+      // Load layout - use location-specific path for multi-location
+      const layoutPath = isMultiLocation && selectedLocation
+        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+      
+      const layoutRef = doc(db, layoutPath);
       const layoutSnap = await getDoc(layoutRef);
 
       if (!layoutSnap.exists()) {
@@ -47,10 +59,16 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
 
       // Load active orders to determine table statuses
       const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-      const activeOrdersQuery = query(
+      let activeOrdersQuery = query(
         ordersRef,
         where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
       );
+
+      // Filter by location if multi-location
+      if (isMultiLocation && selectedLocation) {
+        activeOrdersQuery = query(activeOrdersQuery, where('locationId', '==', selectedLocation));
+      }
+
       const ordersSnapshot = await getDocs(activeOrdersQuery);
 
       const statuses = {};
@@ -76,7 +94,11 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
       setTableStatuses(statuses);
     } catch (error) {
       console.error('Error loading layout:', error);
-      setError('Failed to load table layout');
+      if (isMultiLocation && !selectedLocation) {
+        setError('Please select a location first');
+      } else {
+        setError('Failed to load table layout');
+      }
     } finally {
       setLoading(false);
     }

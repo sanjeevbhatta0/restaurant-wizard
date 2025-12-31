@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { LocationProvider } from './contexts/LocationContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
@@ -23,7 +24,8 @@ import './App.css';
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <LocationProvider>
+        <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
@@ -93,6 +95,7 @@ function App() {
           </Route>
         </Routes>
       </Router>
+      </LocationProvider>
     </AuthProvider>
   );
 }

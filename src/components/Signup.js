@@ -12,6 +12,7 @@ const Signup = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [restaurantName, setRestaurantName] = useState('');
   const [username, setUsername] = useState('');
+  const [locationType, setLocationType] = useState('single'); // 'single' or 'multi'
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -41,8 +42,19 @@ const Signup = () => {
         restaurantName: restaurantName,
         username: username,
         email: email,
+        isMultiLocation: locationType === 'multi',
         createdAt: new Date().toISOString()
       });
+
+      // If multi-location, create default location
+      if (locationType === 'multi') {
+        await setDoc(doc(db, `restaurants/${user.uid}/locations`, user.uid), {
+          name: restaurantName,
+          address: '',
+          isDefault: true,
+          createdAt: new Date().toISOString()
+        });
+      }
       
       navigate('/home');
     } catch (err) {
@@ -92,6 +104,22 @@ const Signup = () => {
                     required 
                     className="auth-input"
                   />
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Location Type</Form.Label>
+                  <Form.Select
+                    value={locationType}
+                    onChange={(e) => setLocationType(e.target.value)}
+                    className="auth-input"
+                  >
+                    <option value="single">Single Location</option>
+                    <option value="multi">Multi Location (Chain)</option>
+                  </Form.Select>
+                  <Form.Text className="text-muted">
+                    {locationType === 'multi' 
+                      ? 'You can manage multiple locations with one account'
+                      : 'Standard single restaurant location'}
+                  </Form.Text>
                 </Form.Group>
                 <Form.Group className="mb-3">
                   <Form.Label>Email</Form.Label>

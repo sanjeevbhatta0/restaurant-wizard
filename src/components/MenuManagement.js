@@ -14,7 +14,8 @@ import {
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { Button, Form, Alert, Spinner, Modal } from 'react-bootstrap';
+import { useLocation } from '../contexts/LocationContext';
+import { Button, Form, Alert, Spinner, Modal, Badge } from 'react-bootstrap';
 import './PageHeader.css';
 import './MenuManagement.css';
 
@@ -25,6 +26,7 @@ const MenuManagement = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const { currentUser } = useAuth();
+  const { isMultiLocation, locations, selectedLocation } = useLocation();
 
   // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
@@ -39,7 +41,8 @@ const MenuManagement = () => {
     discount: '',
     discountType: 'amount',
     image: null,
-    imageUrl: ''
+    imageUrl: '',
+    locations: [] // Empty array = all locations, otherwise specific location IDs
   });
   const [categoryForm, setCategoryForm] = useState({ name: '' });
   const [imagePreview, setImagePreview] = useState(null);
@@ -61,11 +64,25 @@ const MenuManagement = () => {
         const itemsQuery = query(itemsRef, orderBy('name'));
         const itemsSnapshot = await getDocs(itemsQuery);
         
-        category.items = itemsSnapshot.docs.map(itemDoc => ({
+        const allItems = itemsSnapshot.docs.map(itemDoc => ({
           id: itemDoc.id,
           categoryId: category.id,
           ...itemDoc.data()
         }));
+
+        // Filter items by selected location if multi-location
+        if (isMultiLocation && selectedLocation) {
+          category.items = allItems.filter(item => {
+            // If item has no locations array or empty array, it applies to all locations
+            if (!item.locations || item.locations.length === 0) {
+              return true;
+            }
+            // Otherwise, check if selected location is in the item's locations
+            return item.locations.includes(selectedLocation);
+          });
+        } else {
+          category.items = allItems;
+        }
         
         categoriesData.push(category);
       }
@@ -78,7 +95,7 @@ const MenuManagement = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser, selectedCategory]);
+  }, [currentUser, selectedCategory, isMultiLocation, selectedLocation]);
 
   // Calculate item price after discount
   const calculateItemPrice = (item) => {
@@ -159,7 +176,8 @@ const MenuManagement = () => {
       discount: '',
       discountType: 'amount',
       image: null,
-      imageUrl: ''
+      imageUrl: '',
+      locations: [] // Default: all locations
     });
     setImagePreview(null);
     setShowItemModal(true);
@@ -175,7 +193,8 @@ const MenuManagement = () => {
       discount: item.discount || '',
       discountType: item.discountType || 'amount',
       image: null,
-      imageUrl: item.imageUrl || ''
+      imageUrl: item.imageUrl || '',
+      locations: item.locations || [] // Preserve location assignments
     });
     setImagePreview(item.imageUrl || null);
     setShowEditItemModal(true);
@@ -233,6 +252,7 @@ const MenuManagement = () => {
         discountType: itemForm.discountType,
         imageUrl,
         imageStoragePath,
+        locations: itemForm.locations || [], // Empty array = all locations
         updatedAt: new Date()
       };
 
@@ -258,7 +278,8 @@ const MenuManagement = () => {
         discount: '',
         discountType: 'amount',
         image: null,
-        imageUrl: ''
+        imageUrl: '',
+        locations: []
       });
       setImagePreview(null);
       setTimeout(() => setSuccess(''), 3000);
@@ -316,6 +337,13 @@ const MenuManagement = () => {
       
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible className="menu-alert">{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible className="menu-alert">{success}</Alert>}
+
+      {isMultiLocation && selectedLocation && (
+        <Alert variant="info" className="menu-alert">
+          <i className="bi bi-info-circle"></i> Showing menu items for: <strong>{locations.find(l => l.id === selectedLocation)?.name || 'Selected Location'}</strong>. 
+          Items available at all locations are also shown. Use location assignment when adding/editing items to limit to specific locations.
+        </Alert>
+      )}
 
       <div className="menu-container">
         {/* Left Panel - Category Navigation */}
@@ -407,6 +435,13 @@ const MenuManagement = () => {
                   </div>
                 )}
                 <div className="menu-item-name">{item.name}</div>
+                {isMultiLocation && item.locations && item.locations.length > 0 && (
+                  <div className="menu-item-locations">
+                    <Badge bg="secondary" className="me-1">
+                      <i className="bi bi-geo-alt"></i> {item.locations.length} location{item.locations.length > 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                )}
                 <div className="menu-item-price">
                   ${calculateItemPrice(item).toFixed(2)}
                   {item.discount > 0 && (
@@ -493,7 +528,8 @@ const MenuManagement = () => {
             discount: '',
             discountType: 'amount',
             image: null,
-            imageUrl: ''
+            imageUrl: '',
+            locations: []
           });
           setImagePreview(null);
         }}
@@ -565,6 +601,54 @@ const MenuManagement = () => {
               </div>
             </div>
 
+            {/* Location Assignment - Only for Multi-Location */}
+            {isMultiLocation && locations.length > 0 && (
+              <Form.Group className="mb-3">
+                <Form.Label>Available at Locations</Form.Label>
+                <Form.Text className="d-block mb-2 text-muted">
+                  Leave unchecked to make this item available at all locations. Select specific locations to limit availability.
+                </Form.Text>
+                <div className="location-checkboxes">
+                  {locations.map(location => {
+                    const currentLocations = itemForm.locations || [];
+                    const isChecked = currentLocations.includes(location.id);
+                    return (
+                      <Form.Check
+                        key={location.id}
+                        type="checkbox"
+                        id={`location-${location.id}`}
+                        label={location.name}
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const locations = itemForm.locations || [];
+                          if (e.target.checked) {
+                            setItemForm({
+                              ...itemForm,
+                              locations: [...locations, location.id]
+                            });
+                          } else {
+                            setItemForm({
+                              ...itemForm,
+                              locations: locations.filter(id => id !== location.id)
+                            });
+                          }
+                        }}
+                        className="mb-2"
+                      />
+                    );
+                  })}
+                </div>
+                {itemForm.locations.length === 0 && (
+                  <Badge bg="info" className="mt-2">Available at all locations</Badge>
+                )}
+                {itemForm.locations.length > 0 && (
+                  <Badge bg="primary" className="mt-2">
+                    Available at {itemForm.locations.length} location{itemForm.locations.length > 1 ? 's' : ''}
+                  </Badge>
+                )}
+              </Form.Group>
+            )}
+
             <Form.Group className="mb-3">
               <Form.Label>Image</Form.Label>
               <Form.Control
@@ -599,7 +683,8 @@ const MenuManagement = () => {
                     discount: '',
                     discountType: 'amount',
                     image: null,
-                    imageUrl: ''
+                    imageUrl: '',
+                    locations: []
                   });
                   setImagePreview(null);
                 }}
