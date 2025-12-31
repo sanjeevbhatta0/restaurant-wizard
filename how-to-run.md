@@ -196,4 +196,41 @@ Current POS branch: `cursor/pos-interface-feature-enhancement-47eb`
 
 ---
 
+## 🚀 Deploying to Production
+
+### Step 1: Build the App
+
+```bash
+cd /Users/sanjeevbhatta/Documents/GitHub/restaurant-wizard
+npm run build
+```
+
+This creates an optimized production build in the `build/` folder.
+
+### Step 2: Deploy to Firebase Hosting
+
+```bash
+firebase deploy --only hosting:restaurant-portal-6b147
+```
+
+### All-in-One Command
+
+```bash
+cd /Users/sanjeevbhatta/Documents/GitHub/restaurant-wizard && npm run build && firebase deploy --only hosting:restaurant-portal-6b147
+```
+
+### Production URL
+
+After deployment, the app is live at:
+**https://restaurant-portal-6b147.web.app**
+
+### Verify Deployment
+
+```bash
+# Check hosting status
+firebase hosting:sites:list
+```
+
+---
+
 *Last Updated: December 30, 2025*
