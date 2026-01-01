@@ -58,15 +58,24 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
       setTables(layoutData.tables || []);
 
       // Load active orders to determine table statuses
+      // Tables remain occupied until order is 'completed' (payment received)
       const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-      let activeOrdersQuery = query(
-        ordersRef,
-        where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
-      );
-
-      // Filter by location if multi-location
+      
+      // Build query with proper status filtering - include 'served' since payment is still pending!
+      let activeOrdersQuery;
       if (isMultiLocation && selectedLocation) {
-        activeOrdersQuery = query(activeOrdersQuery, where('locationId', '==', selectedLocation));
+        // Multi-location: filter by locationId AND status
+        activeOrdersQuery = query(
+          ordersRef,
+          where('locationId', '==', selectedLocation),
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready', 'served'])
+        );
+      } else {
+        // Single-location: filter by status only
+        activeOrdersQuery = query(
+          ordersRef,
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready', 'served'])
+        );
       }
 
       const ordersSnapshot = await getDocs(activeOrdersQuery);

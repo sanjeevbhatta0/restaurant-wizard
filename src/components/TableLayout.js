@@ -38,11 +38,22 @@ const TableLayout = () => {
     if (!currentUser || tables.length === 0) return;
     
     // Subscribe to orders to update table statuses in real-time
+    // Include 'served' since table is still occupied until payment is completed
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    const activeOrdersQuery = query(
-      ordersRef,
-      where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
-    );
+    let activeOrdersQuery;
+    
+    if (isMultiLocation && selectedLocation) {
+      activeOrdersQuery = query(
+        ordersRef,
+        where('locationId', '==', selectedLocation),
+        where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready', 'served'])
+      );
+    } else {
+      activeOrdersQuery = query(
+        ordersRef,
+        where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready', 'served'])
+      );
+    }
     
     const unsubscribe = onSnapshot(activeOrdersQuery, () => {
       // Update table statuses based on active orders
@@ -98,16 +109,23 @@ const TableLayout = () => {
       const tablesToCheck = tablesToUpdate || tables;
       if (tablesToCheck.length === 0) return;
 
-      // Get active orders
+      // Get active orders - include 'served' since payment is still pending
       const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-      let activeOrdersQuery = query(
-        ordersRef,
-        where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
-      );
-
-      // Filter by location if multi-location
+      let activeOrdersQuery;
+      
       if (isMultiLocation && selectedLocation) {
-        activeOrdersQuery = query(activeOrdersQuery, where('locationId', '==', selectedLocation));
+        // Multi-location: filter by locationId AND status
+        activeOrdersQuery = query(
+          ordersRef,
+          where('locationId', '==', selectedLocation),
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready', 'served'])
+        );
+      } else {
+        // Single-location: filter by status only
+        activeOrdersQuery = query(
+          ordersRef,
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready', 'served'])
+        );
       }
 
       const ordersSnapshot = await getDocs(activeOrdersQuery);
