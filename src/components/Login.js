@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
 import { Container, Card, Form, Button, Alert } from 'react-bootstrap';
 import PasswordInput from './PasswordInput';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -20,17 +19,28 @@ const Login = () => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
   };
 
-  // Look up email by username in Firestore
+  // Look up email by username using Cloud Function
   const getEmailByUsername = async (username) => {
     try {
-      const restaurantsRef = collection(db, 'restaurants');
-      const q = query(restaurantsRef, where('username', '==', username));
-      const querySnapshot = await getDocs(q);
+      // Determine the correct function URL based on environment
+      const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
+      const functionUrl = isEmulator 
+        ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/lookupEmailByUsername'
+        : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/lookupEmailByUsername';
       
-      if (!querySnapshot.empty) {
-        const doc = querySnapshot.docs[0];
-        return doc.data().email;
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.email;
       }
+      
       return null;
     } catch (error) {
       console.error('Error looking up username:', error);

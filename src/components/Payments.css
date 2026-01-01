@@ -170,6 +170,163 @@
   border-bottom: none;
 }
 
+/* Payment Method Selection */
+.payment-method-selection {
+  border-bottom: 1px solid #e9ecef;
+  padding-bottom: 20px;
+}
+
+.payment-method-buttons {
+  display: flex;
+  gap: 15px;
+}
+
+.payment-method-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-size: 1.1rem;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.payment-method-btn i {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
+.payment-method-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.payment-method-btn.btn-success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  border: none;
+}
+
+.payment-method-btn.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+/* Stripe Card Element */
+.stripe-card-element {
+  margin-top: 10px;
+}
+
+.card-element-wrapper {
+  padding: 15px;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  background-color: #fff;
+  transition: all 0.3s ease;
+}
+
+.card-element-wrapper:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.payment-total-display {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.payment-total-display span {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+/* Order List in Modal */
+.order-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+}
+
+.order-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 15px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.order-list li:last-child {
+  margin-bottom: 0;
+}
+
+/* Payment Summary in Modal */
+.payment-summary-total {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 15px;
+}
+
+.payment-summary-total > div {
+  padding: 5px 0;
+}
+
+.payment-summary-total hr {
+  margin: 10px 0;
+  border-color: #dee2e6;
+}
+
+/* Cash Payment Section */
+.cash-payment-section {
+  text-align: center;
+  padding: 20px;
+}
+
+/* Card Payment Section */
+.card-payment-section {
+  padding: 10px 0;
+}
+
+/* Secure Payment Badge */
+.secure-payment-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 15px;
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.secure-payment-badge i {
+  color: #28a745;
+}
+
+/* Stripe branding */
+.stripe-powered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #e9ecef;
+  gap: 8px;
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.stripe-powered img {
+  height: 20px;
+}
+
+/* Refund indicators */
+.refund-method-badge {
+  margin-top: 10px;
+}
+
 /* Responsive styles */
 @media (max-width: 1024px) {
   .payments-tables-grid {
@@ -195,6 +352,23 @@
   .breakdown-row.total-row {
     font-size: 1.1rem;
   }
+
+  .payment-method-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .payment-method-btn {
+    flex-direction: row;
+    padding: 15px 20px;
+    justify-content: flex-start;
+    gap: 15px;
+  }
+
+  .payment-method-btn i {
+    font-size: 1.5rem;
+    margin-bottom: 0;
+  }
 }
 
 @media (max-width: 480px) {
@@ -217,4 +391,51 @@
   .breakdown-row.total-row {
     font-size: 1rem;
   }
+
+  .card-element-wrapper {
+    padding: 12px;
+  }
+}
+
+/* Animation for processing state */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.processing-payment {
+  animation: pulse 1.5s infinite;
+}
+
+/* Success state styling */
+.payment-success {
+  text-align: center;
+  padding: 30px;
+}
+
+.payment-success i {
+  font-size: 4rem;
+  color: #28a745;
+  margin-bottom: 20px;
+}
+
+.payment-success h4 {
+  color: #28a745;
+  margin-bottom: 15px;
+}
+
+/* Error state styling */
+.payment-error {
+  text-align: center;
+  padding: 20px;
+}
+
+.payment-error i {
+  font-size: 3rem;
+  color: #dc3545;
+  margin-bottom: 15px;
 }

@@ -1,10 +1,318 @@
-const { onRequest, onCall } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const axios = require('axios');
 const cors = require('cors')({ origin: true });
 
 admin.initializeApp();
+
+// Initialize Stripe with your secret key
+// For production, use Firebase Functions config or environment secrets
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51SkXC0KckjWrEVo26MbeTN0GKkdb14sF3deZsHZt1CrCMFK0PR0su3CKJoa1rMUC4n0fo2nQcXNYJfdpwzOoRKMx00jKjdD6yZ');
+
+// ============================================
+// AUTHENTICATION HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Look up email by username for login
+ * This allows unauthenticated users to find their email by username
+ */
+exports.lookupEmailByUsername = onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+      }
+
+      const { username } = req.body;
+
+      if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: 'Username is required' });
+      }
+
+      const db = admin.firestore();
+      const restaurantsRef = db.collection('restaurants');
+      
+      // Try exact match first
+      let snapshot = await restaurantsRef.where('username', '==', username).limit(1).get();
+      
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return res.json({ email: doc.data().email });
+      }
+      
+      // Try case-insensitive match using usernameLower field
+      snapshot = await restaurantsRef.where('usernameLower', '==', username.toLowerCase()).limit(1).get();
+      
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return res.json({ email: doc.data().email });
+      }
+      
+      // Try lowercase match on original username field (fallback for older accounts)
+      snapshot = await restaurantsRef.where('username', '==', username.toLowerCase()).limit(1).get();
+      
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return res.json({ email: doc.data().email });
+      }
+
+      return res.status(404).json({ error: 'Username not found' });
+    } catch (error) {
+      console.error('Error looking up username:', error);
+      return res.status(500).json({ error: 'Failed to lookup username' });
+    }
+  });
+});
+
+// ============================================
+// STRIPE PAYMENT FUNCTIONS
+// ============================================
+
+/**
+ * Create a Stripe PaymentIntent for card payments
+ * Called from the frontend when processing a card payment
+ */
+exports.createPaymentIntent = onCall(async (request) => {
+  try {
+    // Check if user is authenticated
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { amount, currency = 'usd', orderIds, tableNumbers, restaurantId, metadata = {} } = request.data;
+
+    // Validate amount
+    if (!amount || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'Invalid payment amount');
+    }
+
+    // Validate restaurant ownership
+    if (restaurantId !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Not authorized for this restaurant');
+    }
+
+    // Convert amount to cents (Stripe uses smallest currency unit)
+    const amountInCents = Math.round(amount * 100);
+
+    // Create a PaymentIntent with the order details
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountInCents,
+      currency: currency,
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      metadata: {
+        restaurantId: restaurantId,
+        orderIds: JSON.stringify(orderIds),
+        tableNumbers: JSON.stringify(tableNumbers),
+        ...metadata
+      }
+    });
+
+    // Return the client secret for the frontend
+    return {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id
+    };
+  } catch (error) {
+    console.error('Error creating payment intent:', error);
+    if (error.code) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Confirm payment and update order status
+ * Called after successful Stripe payment
+ */
+exports.confirmStripePayment = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { paymentIntentId, orderIds, paymentDetails, restaurantId } = request.data;
+
+    // Verify restaurant ownership
+    if (restaurantId !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Not authorized for this restaurant');
+    }
+
+    // Retrieve the payment intent to verify it's actually paid
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== 'succeeded') {
+      throw new HttpsError('failed-precondition', `Payment not completed. Status: ${paymentIntent.status}`);
+    }
+
+    // Update orders in Firestore with payment details
+    const db = admin.firestore();
+    const batch = db.batch();
+
+    for (const orderId of orderIds) {
+      const orderRef = db.doc(`restaurants/${restaurantId}/orders/${orderId}`);
+      batch.update(orderRef, {
+        status: 'completed',
+        paymentDate: FieldValue.serverTimestamp(),
+        paymentDetails: {
+          ...paymentDetails,
+          stripePaymentIntentId: paymentIntentId,
+          paymentMethod: 'card',
+          paidAt: new Date().toISOString()
+        },
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    }
+
+    await batch.commit();
+
+    return {
+      success: true,
+      message: 'Payment confirmed and orders updated'
+    };
+  } catch (error) {
+    console.error('Error confirming payment:', error);
+    if (error.code) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Process a Stripe refund for a completed order
+ */
+exports.processStripeRefund = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { 
+      orderId, 
+      restaurantId, 
+      refundAmount, 
+      refundType,
+      reason = 'requested_by_customer'
+    } = request.data;
+
+    // Verify restaurant ownership
+    if (restaurantId !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Not authorized for this restaurant');
+    }
+
+    // Get the order to find the payment intent ID
+    const db = admin.firestore();
+    const orderRef = db.doc(`restaurants/${restaurantId}/orders/${orderId}`);
+    const orderSnap = await orderRef.get();
+
+    if (!orderSnap.exists) {
+      throw new HttpsError('not-found', 'Order not found');
+    }
+
+    const orderData = orderSnap.data();
+    const paymentIntentId = orderData.paymentDetails?.stripePaymentIntentId;
+
+    if (!paymentIntentId) {
+      // Order was paid with cash, just update status without Stripe refund
+      await orderRef.update({
+        status: 'reimbursed',
+        reimbursement: {
+          amount: refundAmount,
+          type: refundType,
+          processedAt: FieldValue.serverTimestamp(),
+          processedBy: request.auth.uid,
+          paymentMethod: orderData.paymentDetails?.paymentMethod || 'cash'
+        },
+        updatedAt: FieldValue.serverTimestamp()
+      });
+
+      return {
+        success: true,
+        message: 'Refund recorded (cash payment)',
+        refundId: null
+      };
+    }
+
+    // Convert refund amount to cents
+    const refundAmountCents = Math.round(refundAmount * 100);
+
+    // Create Stripe refund
+    const refund = await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      amount: refundAmountCents,
+      reason: reason,
+      metadata: {
+        orderId: orderId,
+        restaurantId: restaurantId,
+        refundType: refundType
+      }
+    });
+
+    // Update order with refund details
+    await orderRef.update({
+      status: 'reimbursed',
+      reimbursement: {
+        amount: refundAmount,
+        type: refundType,
+        stripeRefundId: refund.id,
+        processedAt: FieldValue.serverTimestamp(),
+        processedBy: request.auth.uid,
+        paymentMethod: 'card'
+      },
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    // Create reimbursement record for analytics
+    await db.collection(`restaurants/${restaurantId}/reimbursements`).add({
+      orderId: orderId,
+      orderNumber: orderData.orderNumber || orderId,
+      tableNumber: orderData.tableNumber,
+      amount: refundAmount,
+      type: refundType,
+      originalOrderTotal: orderData.total || 0,
+      stripeRefundId: refund.id,
+      stripePaymentIntentId: paymentIntentId,
+      processedAt: FieldValue.serverTimestamp(),
+      processedBy: request.auth.uid
+    });
+
+    return {
+      success: true,
+      message: 'Refund processed successfully',
+      refundId: refund.id
+    };
+  } catch (error) {
+    console.error('Error processing refund:', error);
+    if (error.code) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Get Stripe publishable key for frontend
+ */
+exports.getStripeConfig = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    return {
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_YOUR_STRIPE_PUBLISHABLE_KEY'
+    };
+  } catch (error) {
+    console.error('Error getting Stripe config:', error);
+    throw new HttpsError('internal', error.message);
+  }
+});
 
 exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', async (event) => {
     const snap = event.data;
@@ -52,7 +360,7 @@ exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', 
       await snap.ref.update({
         status,
         errors: errors.length > 0 ? errors : [],
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        updatedAt: FieldValue.serverTimestamp()
       });
 
     } catch (error) {
@@ -60,7 +368,7 @@ exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', 
       await snap.ref.update({
         status: 'failed',
         error: error.message,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        updatedAt: FieldValue.serverTimestamp()
       });
     }
   });
@@ -391,7 +699,7 @@ exports.submitOrder = onRequest((request, response) => {
         orderType: orderData.orderType,
         paymentMethod: orderData.paymentMethod,
         status: 'new',
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
+        createdAt: FieldValue.serverTimestamp()
       };
 
       // Save order to Firestore
@@ -418,8 +726,6 @@ exports.submitOrder = onRequest((request, response) => {
     }
   });
 });
-
-const { HttpsError } = require('firebase-functions/v2/https');
 
 exports.updateWebsite = onCall(async (request) => {
   try {

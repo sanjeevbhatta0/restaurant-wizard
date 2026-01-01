@@ -42,6 +42,7 @@ const Signup = () => {
       await setDoc(doc(db, "restaurants", user.uid), {
         restaurantName: restaurantName,
         username: username,
+        usernameLower: username.toLowerCase(), // For case-insensitive login
         email: email,
         isMultiLocation: locationType === 'multi',
         createdAt: new Date().toISOString()

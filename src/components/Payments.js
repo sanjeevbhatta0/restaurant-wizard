@@ -4,9 +4,140 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row, Col } from 'react-bootstrap';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import activityService from '../services/activityService';
+import { getStripe, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
 import './PageHeader.css';
 import './Payments.css';
+
+// Stripe Card Element styling
+const CARD_ELEMENT_OPTIONS = {
+  style: {
+    base: {
+      color: '#32325d',
+      fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
+      fontSmoothing: 'antialiased',
+      fontSize: '16px',
+      '::placeholder': {
+        color: '#aab7c4'
+      }
+    },
+    invalid: {
+      color: '#fa755a',
+      iconColor: '#fa755a'
+    }
+  },
+  hidePostalCode: false
+};
+
+// Stripe Card Payment Form Component
+const CardPaymentForm = ({ 
+  total, 
+  onPaymentSuccess, 
+  onPaymentError, 
+  processing, 
+  setProcessing,
+  orderIds,
+  tableNumbers,
+  restaurantId,
+  paymentDetails
+}) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [cardError, setCardError] = useState(null);
+  const [cardComplete, setCardComplete] = useState(false);
+
+  const handleCardChange = (event) => {
+    setCardError(event.error ? event.error.message : null);
+    setCardComplete(event.complete);
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!stripe || !elements) {
+      return;
+    }
+
+    setProcessing(true);
+    setCardError(null);
+
+    try {
+      // 1. Create PaymentIntent on the backend
+      const { clientSecret, paymentIntentId } = await createPaymentIntent(
+        total,
+        orderIds,
+        tableNumbers,
+        restaurantId
+      );
+
+      // 2. Confirm the payment with Stripe
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: elements.getElement(CardElement),
+        }
+      });
+
+      if (error) {
+        setCardError(error.message);
+        onPaymentError(error.message);
+      } else if (paymentIntent.status === 'succeeded') {
+        // 3. Confirm payment on backend and update orders
+        await confirmPayment(paymentIntentId, orderIds, paymentDetails, restaurantId);
+        onPaymentSuccess(paymentIntentId);
+      } else {
+        setCardError('Payment was not completed. Please try again.');
+        onPaymentError('Payment was not completed');
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      setCardError(error.message || 'An error occurred during payment');
+      onPaymentError(error.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <Form onSubmit={handleSubmit}>
+      <div className="stripe-card-element">
+        <Form.Label><strong>Card Details</strong></Form.Label>
+        <div className="card-element-wrapper">
+          <CardElement options={CARD_ELEMENT_OPTIONS} onChange={handleCardChange} />
+        </div>
+        {cardError && (
+          <Alert variant="danger" className="mt-2 mb-0">
+            <i className="bi bi-exclamation-circle"></i> {cardError}
+          </Alert>
+        )}
+      </div>
+      
+      <div className="mt-4 d-flex justify-content-between align-items-center">
+        <div className="payment-total-display">
+          <span>Total to charge:</span>
+          <strong className="text-success fs-4">${total.toFixed(2)}</strong>
+        </div>
+        <Button 
+          type="submit" 
+          variant="success" 
+          size="lg" 
+          disabled={!stripe || !cardComplete || processing}
+        >
+          {processing ? (
+            <>
+              <Spinner animation="border" size="sm" className="me-2" />
+              Processing...
+            </>
+          ) : (
+            <>
+              <i className="bi bi-credit-card"></i> Pay ${total.toFixed(2)}
+            </>
+          )}
+        </Button>
+      </div>
+    </Form>
+  );
+};
 
 const Payments = () => {
   const { currentUser } = useAuth();
@@ -41,6 +172,23 @@ const Payments = () => {
   const [processingReimbursement, setProcessingReimbursement] = useState(false);
   const [completedOrders, setCompletedOrders] = useState({}); // { tableNumber: [orders] }
   const [restaurantData, setRestaurantData] = useState(null);
+  
+  // Payment method selection
+  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash' or 'card'
+  const [stripePromise, setStripePromise] = useState(null);
+
+  // Initialize Stripe
+  useEffect(() => {
+    const initStripe = async () => {
+      try {
+        const stripe = await getStripe();
+        setStripePromise(stripe);
+      } catch (error) {
+        console.error('Error initializing Stripe:', error);
+      }
+    };
+    initStripe();
+  }, []);
 
   // Load all served orders grouped by table
   useEffect(() => {
@@ -302,7 +450,8 @@ const Payments = () => {
     setShowPaymentModal(true);
   };
 
-  const confirmPayment = async () => {
+  // Handle cash payment
+  const confirmCashPayment = async () => {
     try {
       setProcessing(true);
       setError('');
@@ -334,7 +483,9 @@ const Payments = () => {
             discountType,
             tipAmount,
             tipType,
-            total
+            total,
+            paymentMethod: 'cash',
+            paidAt: new Date().toISOString()
           },
           updatedAt: new Date()
         });
@@ -354,56 +505,122 @@ const Payments = () => {
         tableNumbers: Array.from(tableNumbers),
         total,
         orderCount: selectedOrders.length,
+        paymentMethod: 'cash',
         locationId: isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid
       });
 
-      // Release tables by updating table status to 'available' in the layout
-      if (tableNumbers.size > 0) {
-        try {
-          // For multi-location, use location-specific layout path
-          const layoutPath = isMultiLocation && selectedLocation
-            ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
-            : `restaurants/${currentUser.uid}/layout/floorPlan`;
-          
-          const layoutRef = doc(db, layoutPath);
-          const layoutSnap = await getDoc(layoutRef);
-          
-          if (layoutSnap.exists()) {
-            const layoutData = layoutSnap.data();
-            const updatedTables = layoutData.tables.map(table => {
-              if (tableNumbers.has(String(table.number))) {
-                return { ...table, status: 'available' };
-              }
-              return table;
-            });
+      // Release tables
+      await releaseTableStatus(tableNumbers);
 
-            await setDoc(layoutRef, {
-              ...layoutData,
-              tables: updatedTables,
-              updatedAt: new Date().toISOString()
-            }, { merge: true });
-          }
-        } catch (layoutError) {
-          console.error('Error updating table status:', layoutError);
-          // Don't fail payment if table status update fails
-        }
-      }
-
-      setSuccess(`Payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
+      setSuccess(`Cash payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
       setShowPaymentModal(false);
       
       // Reset form
-      setSelectedOrders([]);
-      setDiscountAmount(0);
-      setTipAmount(0);
-      setTaxRate(8.5);
-      // Don't reset selectedTable - let user see the updated state (orders will be removed from tablesWithOrders automatically)
+      resetPaymentForm();
     } catch (error) {
-      console.error('Error processing payment:', error);
+      console.error('Error processing cash payment:', error);
       setError('Failed to process payment: ' + error.message);
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Handle successful card payment
+  const handleCardPaymentSuccess = async (paymentIntentId) => {
+    try {
+      // Get table numbers from selected orders
+      const tableNumbers = new Set();
+      selectedOrders.forEach(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        if (order) {
+          if (Array.isArray(order.tableNumber)) {
+            order.tableNumber.forEach(t => tableNumbers.add(String(t)));
+          } else if (order.tableNumber) {
+            tableNumbers.add(String(order.tableNumber));
+          }
+        }
+      });
+
+      // Get order numbers for activity logging
+      const orderNumbers = selectedOrders.map(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        return order?.orderNumber || orderId;
+      });
+
+      // Log payment activity
+      await activityService.logPaymentActivity(currentUser.uid, {
+        orderNumbers,
+        tableNumbers: Array.from(tableNumbers),
+        total,
+        orderCount: selectedOrders.length,
+        paymentMethod: 'card',
+        stripePaymentIntentId: paymentIntentId,
+        locationId: isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid
+      });
+
+      // Release tables
+      await releaseTableStatus(tableNumbers);
+
+      setSuccess(`Card payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
+      setShowPaymentModal(false);
+      
+      // Reset form
+      resetPaymentForm();
+    } catch (error) {
+      console.error('Error after card payment:', error);
+      // Payment was successful, but there was an error updating local state
+      setSuccess(`Payment processed! Total: $${total.toFixed(2)}. Note: ${error.message}`);
+      setShowPaymentModal(false);
+      resetPaymentForm();
+    }
+  };
+
+  // Handle card payment error
+  const handleCardPaymentError = (errorMessage) => {
+    setError('Card payment failed: ' + errorMessage);
+  };
+
+  // Release table status
+  const releaseTableStatus = async (tableNumbers) => {
+    if (tableNumbers.size === 0) return;
+    
+    try {
+      // For multi-location, use location-specific layout path
+      const layoutPath = isMultiLocation && selectedLocation
+        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+      
+      const layoutRef = doc(db, layoutPath);
+      const layoutSnap = await getDoc(layoutRef);
+      
+      if (layoutSnap.exists()) {
+        const layoutData = layoutSnap.data();
+        const updatedTables = layoutData.tables.map(table => {
+          if (tableNumbers.has(String(table.number))) {
+            return { ...table, status: 'available' };
+          }
+          return table;
+        });
+
+        await setDoc(layoutRef, {
+          ...layoutData,
+          tables: updatedTables,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+    } catch (layoutError) {
+      console.error('Error updating table status:', layoutError);
+      // Don't fail payment if table status update fails
+    }
+  };
+
+  // Reset payment form
+  const resetPaymentForm = () => {
+    setSelectedOrders([]);
+    setDiscountAmount(0);
+    setTipAmount(0);
+    setTaxRate(8.5);
+    setPaymentMethod('cash');
   };
 
   const formatDate = (timestamp) => {
@@ -461,44 +678,74 @@ const Payments = () => {
         return;
       }
 
-      // Update order with reimbursement
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${reimbursementOrder}`);
-      await updateDoc(orderRef, {
-        status: 'reimbursed',
-        reimbursement: {
+      // Check if order was paid with card (has Stripe payment intent)
+      const hasStripePayment = selectedOrder.paymentDetails?.stripePaymentIntentId;
+
+      if (hasStripePayment) {
+        // Process refund through Stripe
+        await stripeProcessRefund(
+          reimbursementOrder,
+          currentUser.uid,
+          refundAmount,
+          reimbursementType
+        );
+
+        // Log reimbursement activity
+        await activityService.logReimbursementActivity(currentUser.uid, {
+          orderNumber: selectedOrder.orderNumber || reimbursementOrder,
+          orderId: reimbursementOrder,
+          tableNumber: selectedOrder.tableNumber,
+          refundAmount,
+          refundType: reimbursementType,
+          paymentMethod: 'card',
+          locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        });
+
+        setSuccess(`Card refund processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);
+      } else {
+        // Cash refund - just update order status locally
+        const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${reimbursementOrder}`);
+        await updateDoc(orderRef, {
+          status: 'reimbursed',
+          reimbursement: {
+            amount: refundAmount,
+            type: reimbursementType,
+            processedAt: new Date(),
+            processedBy: currentUser.uid,
+            paymentMethod: 'cash'
+          },
+          updatedAt: new Date()
+        });
+
+        // Create reimbursement record for analytics
+        const reimbursementsRef = collection(db, `restaurants/${currentUser.uid}/reimbursements`);
+        await setDoc(doc(reimbursementsRef), {
+          orderId: reimbursementOrder,
+          orderNumber: selectedOrder.orderNumber || reimbursementOrder,
+          tableNumber: selectedOrder.tableNumber,
+          locationId: selectedLocation || currentUser.uid,
           amount: refundAmount,
           type: reimbursementType,
+          originalOrderTotal: selectedOrder.total || 0,
+          paymentMethod: 'cash',
           processedAt: new Date(),
           processedBy: currentUser.uid
-        },
-        updatedAt: new Date()
-      });
+        });
 
-      // Create reimbursement record for analytics
-      const reimbursementsRef = collection(db, `restaurants/${currentUser.uid}/reimbursements`);
-      await setDoc(doc(reimbursementsRef), {
-        orderId: reimbursementOrder,
-        orderNumber: selectedOrder.orderNumber || reimbursementOrder,
-        tableNumber: selectedOrder.tableNumber,
-        locationId: selectedLocation || currentUser.uid,
-        amount: refundAmount,
-        type: reimbursementType,
-        originalOrderTotal: selectedOrder.total || 0,
-        processedAt: new Date(),
-        processedBy: currentUser.uid
-      });
+        // Log reimbursement activity
+        await activityService.logReimbursementActivity(currentUser.uid, {
+          orderNumber: selectedOrder.orderNumber || reimbursementOrder,
+          orderId: reimbursementOrder,
+          tableNumber: selectedOrder.tableNumber,
+          refundAmount,
+          refundType: reimbursementType,
+          paymentMethod: 'cash',
+          locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        });
 
-      // Log reimbursement activity
-      await activityService.logReimbursementActivity(currentUser.uid, {
-        orderNumber: selectedOrder.orderNumber || reimbursementOrder,
-        orderId: reimbursementOrder,
-        tableNumber: selectedOrder.tableNumber,
-        refundAmount,
-        refundType: reimbursementType,
-        locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
-      });
+        setSuccess(`Cash refund recorded. Refund amount: $${refundAmount.toFixed(2)}`);
+      }
 
-      setSuccess(`Reimbursement processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);
       setShowReimbursementModal(false);
       setReimbursementTable('');
       setReimbursementOrder('');
@@ -575,6 +822,24 @@ const Payments = () => {
     ? completedOrders[reimbursementTable]?.find(o => o.id === reimbursementOrder)
     : null;
   const maxRefundAmount = reimbursementOrderData ? calculateRefundAmount(reimbursementOrderData) : 0;
+
+  // Get table numbers for card payment
+  const getTableNumbersForPayment = () => {
+    const tableNumbers = [];
+    selectedOrders.forEach(orderId => {
+      const order = orders.find(o => o.id === orderId);
+      if (order) {
+        if (Array.isArray(order.tableNumber)) {
+          order.tableNumber.forEach(t => {
+            if (!tableNumbers.includes(String(t))) tableNumbers.push(String(t));
+          });
+        } else if (order.tableNumber && !tableNumbers.includes(String(order.tableNumber))) {
+          tableNumbers.push(String(order.tableNumber));
+        }
+      }
+    });
+    return tableNumbers;
+  };
 
   return (
     <Container fluid className="payments-container">
@@ -911,44 +1176,137 @@ const Payments = () => {
         )
       ) : null}
 
-      {/* Payment Confirmation Modal */}
-      <Modal show={showPaymentModal} onHide={() => !processing && setShowPaymentModal(false)}>
+      {/* Payment Modal with Payment Method Selection */}
+      <Modal show={showPaymentModal} onHide={() => !processing && setShowPaymentModal(false)} size="lg">
         <Modal.Header closeButton>
-          <Modal.Title>Confirm Payment</Modal.Title>
+          <Modal.Title><i className="bi bi-credit-card"></i> Process Payment</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Alert variant="info">
-            <strong>Payment Method:</strong> Dummy Payment (Stripe integration coming soon)
-          </Alert>
-          <div className="payment-confirmation">
+          {/* Payment Method Selection */}
+          <div className="payment-method-selection mb-4">
+            <h6 className="mb-3">Select Payment Method</h6>
+            <div className="payment-method-buttons">
+              <Button
+                variant={paymentMethod === 'cash' ? 'success' : 'outline-secondary'}
+                className="payment-method-btn me-3"
+                onClick={() => setPaymentMethod('cash')}
+                disabled={processing}
+              >
+                <i className="bi bi-cash-coin"></i>
+                <span>Cash</span>
+              </Button>
+              <Button
+                variant={paymentMethod === 'card' ? 'primary' : 'outline-secondary'}
+                className="payment-method-btn"
+                onClick={() => setPaymentMethod('card')}
+                disabled={processing}
+              >
+                <i className="bi bi-credit-card-2-front"></i>
+                <span>Card</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Order Summary */}
+          <div className="payment-confirmation mb-4">
             <h6>Orders to be paid:</h6>
-            <ul>
+            <ul className="order-list">
               {selectedOrdersData.map(order => (
                 <li key={order.id}>
-                  Order {order.orderNumber || order.id.slice(0, 8)} - ${(order.total || 0).toFixed(2)}
+                  <span>Order #{order.orderNumber || order.id.slice(0, 8)}</span>
+                  <span>${(order.total || 0).toFixed(2)}</span>
                 </li>
               ))}
             </ul>
-            <div className="mt-3">
-              <strong>Total Amount: ${total.toFixed(2)}</strong>
+            <div className="payment-summary-total">
+              <div className="d-flex justify-content-between">
+                <span>Subtotal:</span>
+                <span>${subtotal.toFixed(2)}</span>
+              </div>
+              <div className="d-flex justify-content-between">
+                <span>Tax ({taxRate}%):</span>
+                <span>${taxAmount.toFixed(2)}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="d-flex justify-content-between text-success">
+                  <span>Discount:</span>
+                  <span>-${(discountType === 'percentage' ? subtotal * (discountAmount / 100) : discountAmount).toFixed(2)}</span>
+                </div>
+              )}
+              {tipAmount > 0 && (
+                <div className="d-flex justify-content-between">
+                  <span>Tip:</span>
+                  <span>${(tipType === 'percentage' ? (subtotal - (discountType === 'percentage' ? subtotal * (discountAmount / 100) : discountAmount) + taxAmount) * (tipAmount / 100) : tipAmount).toFixed(2)}</span>
+                </div>
+              )}
+              <hr />
+              <div className="d-flex justify-content-between fs-5">
+                <strong>Total:</strong>
+                <strong className="text-success">${total.toFixed(2)}</strong>
+              </div>
             </div>
           </div>
+
+          {/* Payment Form based on method */}
+          {paymentMethod === 'cash' ? (
+            <div className="cash-payment-section">
+              <Alert variant="info">
+                <i className="bi bi-cash"></i> Collect <strong>${total.toFixed(2)}</strong> in cash from the customer.
+              </Alert>
+            </div>
+          ) : (
+            <div className="card-payment-section">
+              {stripePromise ? (
+                <Elements stripe={stripePromise}>
+                  <CardPaymentForm
+                    total={total}
+                    onPaymentSuccess={handleCardPaymentSuccess}
+                    onPaymentError={handleCardPaymentError}
+                    processing={processing}
+                    setProcessing={setProcessing}
+                    orderIds={selectedOrders}
+                    tableNumbers={getTableNumbersForPayment()}
+                    restaurantId={currentUser.uid}
+                    paymentDetails={{
+                      subtotal,
+                      taxRate,
+                      taxAmount,
+                      discountAmount,
+                      discountType,
+                      tipAmount,
+                      tipType,
+                      total
+                    }}
+                  />
+                </Elements>
+              ) : (
+                <div className="text-center py-4">
+                  <Spinner animation="border" variant="primary" />
+                  <p className="mt-2 text-muted">Loading payment form...</p>
+                </div>
+              )}
+            </div>
+          )}
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowPaymentModal(false)} disabled={processing}>
-            Cancel
-          </Button>
-          <Button variant="success" onClick={confirmPayment} disabled={processing}>
-            {processing ? (
-              <>
-                <Spinner animation="border" size="sm" className="me-2" />
-                Processing...
-              </>
-            ) : (
-              'Confirm Payment'
-            )}
-          </Button>
-        </Modal.Footer>
+        {paymentMethod === 'cash' && (
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowPaymentModal(false)} disabled={processing}>
+              Cancel
+            </Button>
+            <Button variant="success" onClick={confirmCashPayment} disabled={processing}>
+              {processing ? (
+                <>
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-check-circle"></i> Confirm Cash Payment
+                </>
+              )}
+            </Button>
+          </Modal.Footer>
+        )}
       </Modal>
 
       {/* PIN Verification Modal */}
@@ -1011,6 +1369,11 @@ const Payments = () => {
         <Modal.Body>
           <Alert variant="warning">
             <i className="bi bi-info-circle"></i> Tips are non-refundable. Refunds will include order amount, taxes, and discounts.
+            {reimbursementOrderData?.paymentDetails?.stripePaymentIntentId && (
+              <div className="mt-2">
+                <Badge bg="primary"><i className="bi bi-credit-card"></i> This order was paid with card - refund will be processed through Stripe</Badge>
+              </div>
+            )}
           </Alert>
           
           <Form>
@@ -1045,6 +1408,7 @@ const Payments = () => {
                   {completedOrders[reimbursementTable].map(order => (
                     <option key={order.id} value={order.id}>
                       Order #{order.orderNumber || order.id.slice(0, 8)} - ${(order.total || 0).toFixed(2)} - {formatDate(order.createdAt)}
+                      {order.paymentDetails?.paymentMethod === 'card' ? ' (Card)' : ' (Cash)'}
                     </option>
                   ))}
                 </Form.Select>
@@ -1058,6 +1422,16 @@ const Payments = () => {
                   <div className="d-flex justify-content-between mb-2">
                     <span>Order Total:</span>
                     <strong>${(reimbursementOrderData.total || 0).toFixed(2)}</strong>
+                  </div>
+                  <div className="d-flex justify-content-between mb-2">
+                    <span>Payment Method:</span>
+                    <Badge bg={reimbursementOrderData.paymentDetails?.paymentMethod === 'card' ? 'primary' : 'secondary'}>
+                      {reimbursementOrderData.paymentDetails?.paymentMethod === 'card' ? (
+                        <><i className="bi bi-credit-card"></i> Card</>
+                      ) : (
+                        <><i className="bi bi-cash"></i> Cash</>
+                      )}
+                    </Badge>
                   </div>
                   {reimbursementOrderData.paymentDetails?.tipAmount > 0 && (
                     <div className="d-flex justify-content-between mb-2 text-muted">

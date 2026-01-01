@@ -55,10 +55,14 @@ const TableLayout = () => {
   const loadLayout = async () => {
     try {
       setLoading(true);
+      setError('');
+      
       // For multi-location, use location-specific layout path
       const layoutPath = isMultiLocation && selectedLocation
         ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
         : `restaurants/${currentUser.uid}/layout/floorPlan`;
+      
+      console.log('Loading layout from path:', layoutPath);
       
       const layoutRef = doc(db, layoutPath);
       const layoutSnap = await getDoc(layoutRef);
@@ -76,7 +80,14 @@ const TableLayout = () => {
       }
     } catch (error) {
       console.error('Error loading layout:', error);
-      setError('Failed to load layout');
+      console.error('Error details:', {
+        isMultiLocation,
+        selectedLocation,
+        uid: currentUser?.uid,
+        errorCode: error.code,
+        errorMessage: error.message
+      });
+      setError('Failed to load layout: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -299,10 +310,26 @@ const TableLayout = () => {
         updatedAt: new Date().toISOString()
       };
 
+      // For multi-location, ensure the location document exists first
+      if (isMultiLocation && selectedLocation) {
+        const locationRef = doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`);
+        const locationSnap = await getDoc(locationRef);
+        
+        if (!locationSnap.exists()) {
+          // Create the location document if it doesn't exist
+          await setDoc(locationRef, {
+            name: 'Location',
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+
       // For multi-location, use location-specific layout path
       const layoutPath = isMultiLocation && selectedLocation
         ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
         : `restaurants/${currentUser.uid}/layout/floorPlan`;
+      
+      console.log('Saving layout to path:', layoutPath);
       
       const layoutRef = doc(db, layoutPath);
       await setDoc(layoutRef, layoutData, { merge: true });
@@ -312,6 +339,13 @@ const TableLayout = () => {
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       console.error('Error saving layout:', error);
+      console.error('Error details:', {
+        isMultiLocation,
+        selectedLocation,
+        uid: currentUser?.uid,
+        errorCode: error.code,
+        errorMessage: error.message
+      });
       setError('Failed to save layout: ' + error.message);
     } finally {
       setSaving(false);

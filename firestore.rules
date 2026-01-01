@@ -44,6 +44,31 @@ service cloud.firestore {
         match /layout/{layoutId} {
           allow read, write: if request.auth != null && request.auth.uid == restaurantId;
         }
+        
+        // Menu Categories within each location (for multi-location)
+        match /menuCategories/{categoryId} {
+          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          
+          match /items/{itemId} {
+            allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          }
+        }
+        
+        // Orders within each location (for multi-location)
+        match /orders/{orderId} {
+          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          allow create: if true;
+        }
+      }
+      
+      // Reimbursements subcollection
+      match /reimbursements/{reimbursementId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
+      
+      // Activity logs subcollection
+      match /activity/{activityId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
       }
     }
     
