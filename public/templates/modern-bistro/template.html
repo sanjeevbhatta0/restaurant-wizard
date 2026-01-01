@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +8,8 @@
     <meta name="description" content="{{description}}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family={{fontFamily}}:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family={{fontFamily}}:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         :root {
@@ -18,8 +20,8 @@
             --text-light: #636e72;
             --bg-light: #f8f9fa;
             --white: #ffffff;
-            --shadow: 0 4px 20px rgba(0,0,0,0.08);
-            --shadow-lg: 0 10px 40px rgba(0,0,0,0.12);
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.12);
             --radius: 12px;
             --radius-lg: 20px;
             --font-family: '{{fontFamily}}', sans-serif;
@@ -109,7 +111,7 @@
         }
 
         .nav-links a:hover {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .navbar.scrolled .nav-links a:hover {
@@ -125,7 +127,7 @@
 
         .nav-order-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
         .cart-badge {
@@ -165,8 +167,8 @@
         /* Hero Section */
         .hero {
             min-height: 100vh;
-            background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 100%),
-                        url('{{heroImage}}') center/cover no-repeat;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.3) 100%),
+            url('{{heroImage}}') center/cover no-repeat;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -185,6 +187,7 @@
                 opacity: 0;
                 transform: translateY(30px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -193,7 +196,7 @@
 
         .hero-badge {
             display: inline-block;
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             backdrop-filter: blur(10px);
             padding: 0.5rem 1.5rem;
             border-radius: 50px;
@@ -248,7 +251,7 @@
 
         .btn-primary:hover {
             transform: translateY(-3px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
 
         .btn-outline {
@@ -626,7 +629,7 @@
 
         .footer-bottom {
             padding-top: 1.5rem;
-            border-top: 1px solid rgba(255,255,255,0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
             font-size: 0.9rem;
             opacity: 0.7;
         }
@@ -638,7 +641,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 1999;
             opacity: 0;
             visibility: hidden;
@@ -825,7 +828,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 2999;
             display: flex;
             align-items: center;
@@ -1132,6 +1135,7 @@
 
         /* Responsive Design */
         @media (max-width: 1024px) {
+
             .about-grid,
             .contact-grid {
                 grid-template-columns: 1fr;
@@ -1198,7 +1202,7 @@
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid rgba(255,255,255,0.3);
+            border: 4px solid rgba(255, 255, 255, 0.3);
             border-top-color: white;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
@@ -1206,10 +1210,13 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
+
 <body>
     <!-- Navigation -->
     <nav class="navbar" id="navbar">
@@ -1297,7 +1304,8 @@
             <div class="menu-grid" id="menuGrid">
                 <!-- Menu items will be loaded dynamically -->
                 <div style="grid-column: 1/-1; text-align: center; padding: 2rem;">
-                    <div class="spinner" style="border-color: var(--primary-color); border-top-color: var(--accent-color);"></div>
+                    <div class="spinner"
+                        style="border-color: var(--primary-color); border-top-color: var(--accent-color);"></div>
                     <p style="margin-top: 1rem; color: var(--text-light);">Loading menu...</p>
                 </div>
             </div>
@@ -1351,13 +1359,18 @@
                     </div>
                 </div>
                 <div class="social-links">
-                    {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i class="bi bi-facebook"></i></a>{{/if}}
-                    {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i class="bi bi-instagram"></i></a>{{/if}}
-                    {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i class="bi bi-twitter-x"></i></a>{{/if}}
+                    {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i
+                            class="bi bi-facebook"></i></a>{{/if}}
+                    {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i
+                            class="bi bi-instagram"></i></a>{{/if}}
+                    {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i
+                            class="bi bi-twitter-x"></i></a>{{/if}}
                 </div>
             </div>
             <div class="contact-map">
-                <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3022.9663095343008!2d-74.00425872418822!3d40.71277797139441!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c25a23e28c1191%3A0x49f75d3281df052a!2s{{address}}!5e0!3m2!1sen!2sus!4v1699000000000!5m2!1sen!2sus" allowfullscreen="" loading="lazy"></iframe>
+                <iframe
+                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3022.9663095343008!2d-74.00425872418822!3d40.71277797139441!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c25a23e28c1191%3A0x49f75d3281df052a!2s{{address}}!5e0!3m2!1sen!2sus!4v1699000000000!5m2!1sen!2sus"
+                    allowfullscreen="" loading="lazy"></iframe>
             </div>
         </div>
     </section>
@@ -1436,7 +1449,7 @@
             restaurantName: '{{restaurantName}}',
             apiBaseUrl: '{{apiBaseUrl}}',
             stripePublishableKey: '{{stripePublishableKey}}',
-            taxRate: 0.08
+            taxRate: {{taxRate}} / 100
         };
 
         const hours = {{hoursJson}};
@@ -1493,7 +1506,8 @@
         // Load menu from API
         async function loadMenu() {
             try {
-                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}`);
+                const locationParam = CONFIG.locationId ? `&locationId=${CONFIG.locationId}` : '';
+                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}${locationParam}`);
                 const data = await response.json();
                 
                 if (data.categories) {
@@ -2064,4 +2078,5 @@
         }
     </script>
 </body>
+
 </html>

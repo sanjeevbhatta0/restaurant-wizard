@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,8 +21,8 @@
             --text-color: #2d3436;
             --text-light: #636e72;
             --white: #ffffff;
-            --shadow: 0 8px 30px rgba(0,0,0,0.08);
-            --shadow-lg: 0 15px 50px rgba(0,0,0,0.12);
+            --shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 15px 50px rgba(0, 0, 0, 0.12);
             --radius: 20px;
             --radius-lg: 30px;
             --transition: all 0.3s ease;
@@ -33,7 +34,9 @@
             box-sizing: border-box;
         }
 
-        html { scroll-behavior: smooth; }
+        html {
+            scroll-behavior: smooth;
+        }
 
         body {
             font-family: 'Nunito', sans-serif;
@@ -77,7 +80,7 @@
             left: 50%;
             transform: translateX(-50%);
             z-index: 1000;
-            background: rgba(255,255,255,0.9);
+            background: rgba(255, 255, 255, 0.9);
             backdrop-filter: blur(20px);
             border-radius: 50px;
             padding: 0.75rem 2rem;
@@ -180,8 +183,15 @@
         }
 
         @keyframes slideInLeft {
-            from { opacity: 0; transform: translateX(-30px); }
-            to { opacity: 1; transform: translateX(0); }
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
 
         .hero-badge {
@@ -269,8 +279,15 @@
         }
 
         @keyframes slideInRight {
-            from { opacity: 0; transform: translateX(30px); }
-            to { opacity: 1; transform: translateX(0); }
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
 
         .hero-image img {
@@ -298,8 +315,15 @@
         }
 
         @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
         }
 
         /* Section Styles */
@@ -406,7 +430,7 @@
             border-radius: 50px;
             cursor: pointer;
             transition: var(--transition);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
         }
 
         .category-btn:hover,
@@ -624,7 +648,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.4);
+            background: rgba(0, 0, 0, 0.4);
             z-index: 1999;
             opacity: 0;
             visibility: hidden;
@@ -673,7 +697,7 @@
         }
 
         .cart-close {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             border: none;
             font-size: 1.25rem;
             cursor: pointer;
@@ -727,7 +751,9 @@
             object-fit: cover;
         }
 
-        .cart-item-details { flex: 1; }
+        .cart-item-details {
+            flex: 1;
+        }
 
         .cart-item-name {
             font-weight: 700;
@@ -816,7 +842,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 2999;
             display: flex;
             align-items: center;
@@ -851,10 +877,12 @@
             border-radius: var(--radius-lg) var(--radius-lg) 0 0;
         }
 
-        .modal-header h3 { font-size: 1.5rem; }
+        .modal-header h3 {
+            font-size: 1.5rem;
+        }
 
         .modal-close {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             border: none;
             font-size: 1.25rem;
             cursor: pointer;
@@ -864,9 +892,13 @@
             border-radius: 50%;
         }
 
-        .modal-body { padding: 1.5rem; }
+        .modal-body {
+            padding: 1.5rem;
+        }
 
-        .form-group { margin-bottom: 1.25rem; }
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
 
         .form-group label {
             display: block;
@@ -1018,9 +1050,17 @@
         }
 
         @keyframes bounceIn {
-            0% { transform: scale(0); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(0);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         .order-number {
@@ -1059,8 +1099,13 @@
             visibility: visible;
         }
 
-        .toast.success { background: #27ae60; }
-        .toast.error { background: var(--accent-color); }
+        .toast.success {
+            background: #27ae60;
+        }
+
+        .toast.error {
+            background: var(--accent-color);
+        }
 
         /* Stripe */
         #card-element {
@@ -1080,17 +1125,22 @@
         .spinner {
             width: 30px;
             height: 30px;
-            border: 3px solid rgba(255,255,255,0.3);
+            border: 3px solid rgba(255, 255, 255, 0.3);
             border-top-color: white;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             margin: 0 auto;
         }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
 
         /* Responsive */
         @media (max-width: 1024px) {
+
             .hero-container,
             .about-grid {
                 grid-template-columns: 1fr;
@@ -1140,7 +1190,9 @@
                 z-index: 1001;
             }
 
-            section { padding: 4rem 1rem; }
+            section {
+                padding: 4rem 1rem;
+            }
 
             .about,
             .contact {
@@ -1163,6 +1215,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="blob blob-1"></div>
     <div class="blob blob-2"></div>
@@ -1240,7 +1293,8 @@
             <div class="menu-categories" id="menuCategories"></div>
             <div class="menu-grid" id="menuGrid">
                 <div style="grid-column: 1/-1; text-align: center; padding: 3rem;">
-                    <div class="spinner" style="border-color: var(--primary-color); border-top-color: var(--accent-color);"></div>
+                    <div class="spinner"
+                        style="border-color: var(--primary-color); border-top-color: var(--accent-color);"></div>
                     <p style="margin-top: 1rem; color: var(--text-light);">Loading yummy items...</p>
                 </div>
             </div>
@@ -1271,9 +1325,12 @@
             </div>
         </div>
         <div class="social-links">
-            {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i class="bi bi-facebook"></i></a>{{/if}}
-            {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i class="bi bi-instagram"></i></a>{{/if}}
-            {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i class="bi bi-twitter-x"></i></a>{{/if}}
+            {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i
+                    class="bi bi-facebook"></i></a>{{/if}}
+            {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i
+                    class="bi bi-instagram"></i></a>{{/if}}
+            {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i
+                    class="bi bi-twitter-x"></i></a>{{/if}}
         </div>
     </section>
 
@@ -1292,7 +1349,9 @@
             <button class="cart-close" onclick="toggleCart()">&times;</button>
         </div>
         <div class="cart-items" id="cartItems">
-            <div class="cart-empty"><i class="bi bi-bag-x"></i><p>Your cart is empty</p></div>
+            <div class="cart-empty"><i class="bi bi-bag-x"></i>
+                <p>Your cart is empty</p>
+            </div>
         </div>
         <div class="cart-footer" id="cartFooter" style="display: none;">
             <div class="cart-totals">
@@ -1325,21 +1384,21 @@
             restaurantName: '{{restaurantName}}',
             apiBaseUrl: '{{apiBaseUrl}}',
             stripePublishableKey: '{{stripePublishableKey}}',
-            taxRate: 0.08
+            taxRate: {{ taxRate }} / 100
         };
 
-        const hours = {{hoursJson}};
+        const hours = {{ hoursJson }};
         let cart = [];
         let menuData = [];
         let selectedCategory = 'all';
         let stripe = null;
         let cardElement = null;
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             loadMenu();
             loadCart();
             renderHours();
-            
+
             // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
             console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
             if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
@@ -1430,7 +1489,7 @@
                             </div>
                         </div>
                         <p class="menu-item-description">${item.description || 'Delicious!'}</p>
-                        <button class="add-to-cart-btn" onclick='addToCart(${JSON.stringify({id:item.id,name:item.name,price:price,finalPrice:finalPrice,imageUrl:item.imageUrl||""}).replace(/'/g,"\\'")})'><i class="bi bi-plus-circle"></i> Add to Cart</button>
+                        <button class="add-to-cart-btn" onclick='addToCart(${JSON.stringify({ id: item.id, name: item.name, price: price, finalPrice: finalPrice, imageUrl: item.imageUrl || "" }).replace(/'/g, "\\'")})'><i class="bi bi-plus-circle"></i> Add to Cart</button>
                     </div>
                 </div>
             `;
@@ -1552,16 +1611,16 @@
                     setTimeout(() => {
                         if (!cardElement) {
                             const elements = stripe.elements();
-                            cardElement = elements.create('card', { 
-                                style: { 
-                                    base: { 
-                                        fontSize: '16px', 
+                            cardElement = elements.create('card', {
+                                style: {
+                                    base: {
+                                        fontSize: '16px',
                                         color: '#2d3436',
                                         fontFamily: 'var(--font-family)',
                                         '::placeholder': { color: '#aab7c4' }
                                     },
                                     invalid: { color: '#e74c3c' }
-                                } 
+                                }
                             });
                             console.log('Mounting card element...');
                             cardElement.mount('#card-element');
@@ -1678,4 +1737,5 @@
         }
     </script>
 </body>
+
 </html>

@@ -519,8 +519,9 @@ function renderTemplate(template, data) {
     '{{facebook}}': data.facebook || '',
     '{{instagram}}': data.instagram || '',
     '{{twitter}}': data.twitter || '',
+    '{{taxRate}}': data.taxRate !== undefined ? data.taxRate : 8.5,
     '{{year}}': new Date().getFullYear().toString(),
-    '{{apiBaseUrl}}': data.apiBaseUrl || 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
+    '{{apiBaseUrl}}': data.apiBaseUrl || 'https://restaurant-portal-6b147.web.app',
     '{{stripePublishableKey}}': data.stripePublishableKey || '',
     '{{hoursJson}}': JSON.stringify(data.hours || {
       monday: { open: '11:00', close: '22:00' },
@@ -787,11 +788,12 @@ exports.serveWebsite = onRequest(async (req, res) => {
           saturday: { open: '12:00', close: '23:00' },
           sunday: { open: '12:00', close: '21:00' }
         },
-        // Use emulator URL if running in emulator, otherwise production
+        // Use emulator URL if running in emulator, otherwise production Cloud Functions URL
         apiBaseUrl: process.env.FUNCTIONS_EMULATOR === 'true'
           ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
           : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
-        stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15'
+        stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
+        taxRate: restaurantData.taxRate !== undefined ? restaurantData.taxRate : 8.5
       };
 
       // ALWAYS load from local files first (they're included in the functions package and always up-to-date)

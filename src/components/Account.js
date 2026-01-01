@@ -20,13 +20,14 @@ const Account = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
+
   // Account details
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [restaurantName, setRestaurantName] = useState('');
   const [address, setAddress] = useState('');
-  
+  const [taxRate, setTaxRate] = useState(8); // Default 8%
+
   // Password change
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -56,16 +57,17 @@ const Account = () => {
       try {
         const docRef = doc(db, "restaurants", currentUser.uid);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const data = docSnap.data();
           setRestaurantData(data);
           setUsername(data.username || '');
           setRestaurantName(data.restaurantName || '');
           setAddress(data.address || '');
+          setTaxRate(data.taxRate !== undefined ? data.taxRate : 8);
           setHasPin(!!data.reimbursementPin);
         }
-        
+
         if (currentUser.email) {
           setEmail(currentUser.email);
         }
@@ -101,6 +103,7 @@ const Account = () => {
         username,
         restaurantName,
         address,
+        taxRate: parseFloat(taxRate),
         updatedAt: new Date().toISOString()
       });
 
@@ -198,10 +201,10 @@ const Account = () => {
       setConfirmPin('');
       setShowPinForm(false);
       setHasPin(true);
-      
+
       // Log activity
       await activityService.logPinActivity(currentUser.uid, hasPin ? 'updated' : 'created');
-      
+
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       if (error.code === 'auth/wrong-password') {
@@ -278,21 +281,37 @@ const Account = () => {
                   </Form.Text>
                 </Form.Group>
 
-                <Button 
-                  type="submit" 
+                <Form.Group className="mb-3">
+                  <Form.Label>Tax Rate (%)</Form.Label>
+                  <Form.Control
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(e.target.value)}
+                    required
+                  />
+                  <Form.Text className="text-muted">
+                    This tax rate will be applied to all orders (POS and Website).
+                  </Form.Text>
+                </Form.Group>
+
+                <Button
+                  type="submit"
                   disabled={saving}
                   className="gradient-button"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </Button>
               </Form>
-              
+
               <hr className="my-4" />
-              
+
               <div className="logout-section">
                 <h5 className="mb-3">Session Management</h5>
                 <p className="text-muted mb-3">Sign out of your account to end your current session.</p>
-                <Button 
+                <Button
                   variant="danger"
                   onClick={async () => {
                     try {
@@ -322,7 +341,7 @@ const Account = () => {
               {!showPasswordForm ? (
                 <div className="password-section">
                   <p className="text-muted">Change your password to keep your account secure.</p>
-                  <Button 
+                  <Button
                     variant="outline-primary"
                     onClick={() => setShowPasswordForm(true)}
                     className="gradient-outline-button"
@@ -365,14 +384,14 @@ const Account = () => {
                   </Form.Group>
 
                   <div className="password-actions">
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       disabled={saving}
                       className="gradient-button"
                     >
                       {saving ? 'Updating...' : 'Update Password'}
                     </Button>
-                    <Button 
+                    <Button
                       variant="outline-secondary"
                       onClick={() => {
                         setShowPasswordForm(false);
@@ -401,11 +420,11 @@ const Account = () => {
               {!showPinForm ? (
                 <div className="password-section">
                   <p className="text-muted">
-                    {hasPin 
+                    {hasPin
                       ? 'Set a 4-digit PIN required for processing reimbursements. Update your PIN to change it.'
                       : 'Set a 4-digit PIN required for processing reimbursements.'}
                   </p>
-                  <Button 
+                  <Button
                     variant="outline-warning"
                     onClick={() => {
                       setShowPinForm(true);
@@ -470,14 +489,14 @@ const Account = () => {
                   </Form.Group>
 
                   <div className="password-actions">
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       disabled={saving}
                       className="gradient-button"
                     >
                       {saving ? 'Saving...' : (hasPin ? 'Update PIN' : 'Set PIN')}
                     </Button>
-                    <Button 
+                    <Button
                       variant="outline-secondary"
                       onClick={() => {
                         setShowPinForm(false);

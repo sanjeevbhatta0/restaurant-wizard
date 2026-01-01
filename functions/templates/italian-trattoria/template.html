@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +8,9 @@
     <meta name="description" content="{{description}}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Lora:wght@400;500;600&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Lora:wght@400;500;600&display=swap"
+        rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         :root {
@@ -19,8 +22,8 @@
             --gold: #c9a962;
             --text-color: #2d2d2d;
             --text-light: #6b6b6b;
-            --shadow: 0 4px 20px rgba(0,0,0,0.1);
-            --shadow-lg: 0 15px 50px rgba(0,0,0,0.15);
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 15px 50px rgba(0, 0, 0, 0.15);
             --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -72,7 +75,7 @@
         .navbar.scrolled {
             background: rgba(26, 26, 26, 0.98);
             padding: 1rem 3rem;
-            box-shadow: 0 2px 30px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 30px rgba(0, 0, 0, 0.2);
         }
 
         .nav-container {
@@ -102,7 +105,7 @@
         .nav-links a {
             font-family: 'Lora', serif;
             text-decoration: none;
-            color: rgba(255,255,255,0.9);
+            color: rgba(255, 255, 255, 0.9);
             font-size: 0.95rem;
             letter-spacing: 1px;
             transition: var(--transition);
@@ -159,8 +162,8 @@
         /* Hero Section */
         .hero {
             min-height: 100vh;
-            background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)),
-                        url('{{heroImage}}') center/cover no-repeat fixed;
+            background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+            url('{{heroImage}}') center/cover no-repeat fixed;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -176,7 +179,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.3) 100%);
+            background: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.3) 100%);
         }
 
         .hero-content {
@@ -203,8 +206,13 @@
             font-size: 0.75rem;
         }
 
-        .hero-ornament::before { left: -20px; }
-        .hero-ornament::after { right: -20px; }
+        .hero-ornament::before {
+            left: -20px;
+        }
+
+        .hero-ornament::after {
+            right: -20px;
+        }
 
         .hero h1 {
             font-family: 'Playfair Display', Georgia, serif;
@@ -267,7 +275,7 @@
         .btn-outline {
             background: transparent;
             color: white;
-            border: 1px solid rgba(255,255,255,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.5);
         }
 
         .btn-outline:hover {
@@ -513,7 +521,7 @@
         }
 
         .contact .section-header p {
-            color: rgba(255,255,255,0.7);
+            color: rgba(255, 255, 255, 0.7);
         }
 
         .contact-grid {
@@ -527,7 +535,7 @@
         .contact-card {
             text-align: center;
             padding: 2.5rem;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .contact-icon {
@@ -551,7 +559,7 @@
         }
 
         .contact-card p {
-            color: rgba(255,255,255,0.7);
+            color: rgba(255, 255, 255, 0.7);
             font-size: 1rem;
         }
 
@@ -563,7 +571,7 @@
             display: flex;
             justify-content: space-between;
             padding: 0.5rem 0;
-            border-bottom: 1px dotted rgba(255,255,255,0.2);
+            border-bottom: 1px dotted rgba(255, 255, 255, 0.2);
             font-size: 0.95rem;
         }
 
@@ -608,7 +616,7 @@
         }
 
         .footer p {
-            color: rgba(255,255,255,0.6);
+            color: rgba(255, 255, 255, 0.6);
             font-size: 0.9rem;
         }
 
@@ -619,7 +627,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0, 0, 0, 0.6);
             z-index: 1999;
             opacity: 0;
             visibility: hidden;
@@ -805,7 +813,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 2999;
             display: flex;
             align-items: center;
@@ -1046,8 +1054,13 @@
             visibility: visible;
         }
 
-        .toast.success { background: #27ae60; }
-        .toast.error { background: #c0392b; }
+        .toast.success {
+            background: #27ae60;
+        }
+
+        .toast.error {
+            background: #c0392b;
+        }
 
         /* Stripe */
         #card-element {
@@ -1066,20 +1079,33 @@
         .spinner {
             width: 40px;
             height: 40px;
-            border: 3px solid rgba(255,255,255,0.3);
+            border: 3px solid rgba(255, 255, 255, 0.3);
             border-top-color: white;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             margin: 0 auto;
         }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
 
         /* Responsive */
         @media (max-width: 1024px) {
-            .about-grid { grid-template-columns: 1fr; gap: 3rem; }
-            .about-image::before { display: none; }
-            .contact-grid { grid-template-columns: 1fr; }
+            .about-grid {
+                grid-template-columns: 1fr;
+                gap: 3rem;
+            }
+
+            .about-image::before {
+                display: none;
+            }
+
+            .contact-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (max-width: 768px) {
@@ -1098,15 +1124,30 @@
                 transition: var(--transition);
             }
 
-            .nav-links.active { transform: translateX(0); }
-            .nav-toggle { display: block; z-index: 1001; }
+            .nav-links.active {
+                transform: translateX(0);
+            }
 
-            section { padding: 4rem 1.5rem; }
-            .menu-grid { grid-template-columns: 1fr; }
-            .cart-sidebar { width: 100%; }
+            .nav-toggle {
+                display: block;
+                z-index: 1001;
+            }
+
+            section {
+                padding: 4rem 1.5rem;
+            }
+
+            .menu-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .cart-sidebar {
+                width: 100%;
+            }
         }
     </style>
 </head>
+
 <body>
     <!-- Same structure as modern-bistro but with Italian styling applied via CSS -->
     <nav class="navbar" id="navbar">
@@ -1138,7 +1179,8 @@
             <p>{{description}}</p>
             <div class="hero-buttons">
                 <a href="#menu" class="btn btn-primary">View Our Menu</a>
-                <a href="#menu" class="btn btn-outline" onclick="scrollToMenuAndOpenCart(); return false;">Order Online</a>
+                <a href="#menu" class="btn btn-outline" onclick="scrollToMenuAndOpenCart(); return false;">Order
+                    Online</a>
             </div>
         </div>
     </section>
@@ -1196,9 +1238,12 @@
             </div>
         </div>
         <div class="social-links">
-            {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i class="bi bi-facebook"></i></a>{{/if}}
-            {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i class="bi bi-instagram"></i></a>{{/if}}
-            {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i class="bi bi-twitter-x"></i></a>{{/if}}
+            {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i
+                    class="bi bi-facebook"></i></a>{{/if}}
+            {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i
+                    class="bi bi-instagram"></i></a>{{/if}}
+            {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i
+                    class="bi bi-twitter-x"></i></a>{{/if}}
         </div>
     </section>
 
@@ -1253,22 +1298,22 @@
             restaurantName: '{{restaurantName}}',
             apiBaseUrl: '{{apiBaseUrl}}',
             stripePublishableKey: '{{stripePublishableKey}}',
-            taxRate: 0.08
+            taxRate: {{ taxRate }} / 100
         };
 
-        const hours = {{hoursJson}};
+        const hours = {{ hoursJson }};
         let cart = [];
         let menuData = [];
         let selectedCategory = 'all';
         let stripe = null;
         let cardElement = null;
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             loadMenu();
             loadCart();
             renderHours();
             initNavbar();
-            
+
             // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
             console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
             if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
@@ -1288,7 +1333,7 @@
         });
 
         function initNavbar() {
-            window.addEventListener('scroll', function() {
+            window.addEventListener('scroll', function () {
                 const navbar = document.getElementById('navbar');
                 if (window.scrollY > 50) navbar.classList.add('scrolled');
                 else navbar.classList.remove('scrolled');
@@ -1367,7 +1412,7 @@
                             </div>
                         </div>
                         <p class="menu-item-description">${item.description || 'A delightful dish'}</p>
-                        <button class="add-to-cart-btn" onclick='addToCart(${JSON.stringify({id:item.id,name:item.name,price:price,finalPrice:finalPrice,imageUrl:item.imageUrl||""}).replace(/'/g,"\\'")})'><i class="bi bi-plus"></i> Add to Order</button>
+                        <button class="add-to-cart-btn" onclick='addToCart(${JSON.stringify({ id: item.id, name: item.name, price: price, finalPrice: finalPrice, imageUrl: item.imageUrl || "" }).replace(/'/g, "\\'")})'><i class="bi bi-plus"></i> Add to Order</button>
                     </div>
                 </div>
             `;
@@ -1489,16 +1534,16 @@
                     setTimeout(() => {
                         if (!cardElement) {
                             const elements = stripe.elements();
-                            cardElement = elements.create('card', { 
-                                style: { 
-                                    base: { 
-                                        fontSize: '16px', 
+                            cardElement = elements.create('card', {
+                                style: {
+                                    base: {
+                                        fontSize: '16px',
                                         color: '#2d2d2d',
                                         fontFamily: 'var(--font-family)',
                                         '::placeholder': { color: '#aab7c4' }
                                     },
                                     invalid: { color: '#e74c3c' }
-                                } 
+                                }
                             });
                             console.log('Mounting card element...');
                             cardElement.mount('#card-element');
@@ -1614,4 +1659,5 @@
         }
     </script>
 </body>
+
 </html>

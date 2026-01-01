@@ -32,11 +32,11 @@ const CARD_ELEMENT_OPTIONS = {
 };
 
 // Stripe Card Payment Form Component
-const CardPaymentForm = ({ 
-  total, 
-  onPaymentSuccess, 
-  onPaymentError, 
-  processing, 
+const CardPaymentForm = ({
+  total,
+  onPaymentSuccess,
+  onPaymentError,
+  processing,
   setProcessing,
   orderIds,
   tableNumbers,
@@ -112,16 +112,16 @@ const CardPaymentForm = ({
           </Alert>
         )}
       </div>
-      
+
       <div className="mt-4 d-flex justify-content-between align-items-center">
         <div className="payment-total-display">
           <span>Total to charge:</span>
           <strong className="text-success fs-4">${total.toFixed(2)}</strong>
         </div>
-        <Button 
-          type="submit" 
-          variant="success" 
-          size="lg" 
+        <Button
+          type="submit"
+          variant="success"
+          size="lg"
           disabled={!stripe || !cardComplete || processing}
         >
           {processing ? (
@@ -154,7 +154,7 @@ const Payments = () => {
   const { selectedLocation, isMultiLocation } = useLocation();
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
-  
+
   // Track previous order IDs to detect new served orders
   const prevServedOrderIds = useRef(new Set());
   const isInitialServedLoad = useRef(true);
@@ -171,7 +171,7 @@ const Payments = () => {
   const [selectedOnlineOrder, setSelectedOnlineOrder] = useState(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState(''); // For reimbursement search
   const [onlineOrderPaymentMethod, setOnlineOrderPaymentMethod] = useState('cash'); // Payment method for pay-at-store orders
-  
+
   // Payment details
   const [subtotal, setSubtotal] = useState(0);
   const [taxRate, setTaxRate] = useState(8.5); // Default 8.5%
@@ -193,10 +193,30 @@ const Payments = () => {
   const [processingReimbursement, setProcessingReimbursement] = useState(false);
   const [completedOrders, setCompletedOrders] = useState({}); // { tableNumber: [orders] }
   const [restaurantData, setRestaurantData] = useState(null);
-  
+
   // Payment method selection
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash' or 'card'
   const [stripePromise, setStripePromise] = useState(null);
+
+  // Load restaurant settings (tax rate)
+  useEffect(() => {
+    const fetchRestaurantData = async () => {
+      if (!currentUser) return;
+      try {
+        const docRef = doc(db, 'restaurants', currentUser.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setRestaurantData(data);
+          // Set tax rate from settings, default to 8.5 if not set
+          setTaxRate(data.taxRate !== undefined ? data.taxRate : 8.5);
+        }
+      } catch (error) {
+        console.error('Error fetching restaurant settings:', error);
+      }
+    };
+    fetchRestaurantData();
+  }, [currentUser]);
 
   // Initialize Stripe
   useEffect(() => {
@@ -216,9 +236,9 @@ const Payments = () => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    
+
     let q = query(ordersRef, where('status', '==', 'served'));
-    
+
     // Add location filter if multi-location
     if (isMultiLocation && selectedLocation) {
       q = query(q, where('locationId', '==', selectedLocation));
@@ -259,11 +279,11 @@ const Payments = () => {
       ordersData.forEach(order => {
         // Skip online orders - they appear in the Online Orders section
         if (order.source === 'website') return;
-        
-        const tableNumbers = Array.isArray(order.tableNumber) 
-          ? order.tableNumber 
+
+        const tableNumbers = Array.isArray(order.tableNumber)
+          ? order.tableNumber
           : [order.tableNumber];
-        
+
         tableNumbers.forEach(tableNum => {
           if (!grouped[tableNum]) {
             grouped[tableNum] = [];
@@ -276,7 +296,7 @@ const Payments = () => {
       });
 
       setTablesWithOrders(grouped);
-      
+
       // If a table is selected, update its orders
       if (selectedTable) {
         const tableKey = Array.isArray(selectedTable) ? selectedTable[0] : selectedTable;
@@ -295,18 +315,18 @@ const Payments = () => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    
+
     // Query for website orders - they have source='website' or orderType in ['pickup', 'delivery']
     let q = query(
-      ordersRef, 
+      ordersRef,
       where('source', '==', 'website'),
       where('status', 'in', ['new', 'served', 'ready'])
     );
-    
+
     // Add location filter if multi-location
     if (isMultiLocation && selectedLocation) {
       q = query(
-        ordersRef, 
+        ordersRef,
         where('source', '==', 'website'),
         where('locationId', '==', selectedLocation),
         where('status', 'in', ['new', 'served', 'ready'])
@@ -321,7 +341,7 @@ const Payments = () => {
         id: doc.id,
         ...doc.data()
       }));
-      
+
       // Sort by createdAt (newest first)
       ordersData.sort((a, b) => {
         const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
@@ -342,9 +362,9 @@ const Payments = () => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    
+
     let q = query(ordersRef, where('status', '==', 'completed'));
-    
+
     // Add location filter if multi-location
     if (isMultiLocation && selectedLocation) {
       q = query(q, where('locationId', '==', selectedLocation));
@@ -364,7 +384,7 @@ const Payments = () => {
       ordersData.forEach(order => {
         // Check if it's an online order (no table, or has source='website')
         const isOnlineOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
-        
+
         if (isOnlineOrder && !order.tableNumber) {
           // Group online orders under a special key
           if (!grouped['__online__']) {
@@ -373,10 +393,10 @@ const Payments = () => {
           grouped['__online__'].push(order);
         } else {
           // Regular table orders
-          const tableNumbers = Array.isArray(order.tableNumber) 
-            ? order.tableNumber 
+          const tableNumbers = Array.isArray(order.tableNumber)
+            ? order.tableNumber
             : [order.tableNumber];
-          
+
           tableNumbers.forEach(tableNum => {
             if (!grouped[tableNum]) {
               grouped[tableNum] = [];
@@ -404,15 +424,15 @@ const Payments = () => {
     try {
       setLoading(true);
       setError('');
-      
+
       const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-      
+
       // Get table numbers - handle both single table and array
       const tableNumbers = Array.isArray(selectedTable) ? selectedTable : [selectedTable];
-      
+
       // Query for orders with "served" status and matching table number
       const ordersData = [];
-      
+
       for (const tableNum of tableNumbers) {
         let q = query(
           ordersRef,
@@ -426,7 +446,7 @@ const Payments = () => {
         }
 
         const snapshot = await getDocs(q);
-        
+
         snapshot.docs.forEach(doc => {
           ordersData.push({
             id: doc.id,
@@ -437,14 +457,14 @@ const Payments = () => {
 
       // Also check for orders where tableNumber is an array
       let allOrdersQuery = query(ordersRef, where('status', '==', 'served'));
-      
+
       // Add location filter if multi-location
       if (isMultiLocation && selectedLocation) {
         allOrdersQuery = query(allOrdersQuery, where('locationId', '==', selectedLocation));
       }
-      
+
       const allOrdersSnapshot = await getDocs(allOrdersQuery);
-      
+
       allOrdersSnapshot.docs.forEach(doc => {
         const orderData = doc.data();
         if (Array.isArray(orderData.tableNumber)) {
@@ -459,7 +479,7 @@ const Payments = () => {
       });
 
       setOrders(ordersData);
-      
+
       if (ordersData.length === 0) {
         setError(`No orders served at ${Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}`);
       }
@@ -616,7 +636,7 @@ const Payments = () => {
 
       setSuccess(`Cash payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
       setShowPaymentModal(false);
-      
+
       // Reset form
       resetPaymentForm();
     } catch (error) {
@@ -665,7 +685,7 @@ const Payments = () => {
 
       setSuccess(`Card payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
       setShowPaymentModal(false);
-      
+
       // Reset form
       resetPaymentForm();
     } catch (error) {
@@ -685,16 +705,16 @@ const Payments = () => {
   // Release table status
   const releaseTableStatus = async (tableNumbers) => {
     if (tableNumbers.size === 0) return;
-    
+
     try {
       // For multi-location, use location-specific layout path
       const layoutPath = isMultiLocation && selectedLocation
         ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
         : `restaurants/${currentUser.uid}/layout/floorPlan`;
-      
+
       const layoutRef = doc(db, layoutPath);
       const layoutSnap = await getDoc(layoutRef);
-      
+
       if (layoutSnap.exists()) {
         const layoutData = layoutSnap.data();
         const updatedTables = layoutData.tables.map(table => {
@@ -746,7 +766,7 @@ const Payments = () => {
 
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${selectedOnlineOrder.id}`);
-      
+
       await updateDoc(orderRef, {
         status: 'completed',
         paymentVerified: true,
@@ -791,7 +811,7 @@ const Payments = () => {
 
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${selectedOnlineOrder.id}`);
-      
+
       await updateDoc(orderRef, {
         status: 'completed',
         paymentDate: new Date(),
@@ -867,7 +887,7 @@ const Payments = () => {
   // Filter completed orders for reimbursement search
   const getFilteredReimbursementOrders = () => {
     if (!orderSearchQuery.trim()) return null;
-    
+
     // Search across all completed orders
     const allOrders = [];
     Object.entries(completedOrders).forEach(([key, orders]) => {
@@ -878,7 +898,7 @@ const Payments = () => {
         }
       });
     });
-    
+
     return allOrders;
   };
 
@@ -895,17 +915,17 @@ const Payments = () => {
 
   const calculateRefundAmount = (order) => {
     if (!order) return 0;
-    
+
     // Get payment details if available (for completed orders)
     const paymentDetails = order.paymentDetails || {};
-    
+
     // If payment was processed, use the final total minus tip
     if (paymentDetails.total) {
       const tipAmount = paymentDetails.tipAmount || 0;
       // Refundable = final paid amount - tip (tips are non-refundable)
       return Math.max(0, paymentDetails.total - tipAmount);
     }
-    
+
     // For orders without payment details, use original order total
     // (no tip was added yet, so full amount is refundable)
     return order.total || 0;
@@ -927,7 +947,7 @@ const Payments = () => {
     setError('');
 
     try {
-      const refundAmount = reimbursementType === 'full' 
+      const refundAmount = reimbursementType === 'full'
         ? calculateRefundAmount(selectedOrder)
         : Math.min(parseFloat(partialRefundAmount) || 0, calculateRefundAmount(selectedOrder));
 
@@ -940,16 +960,16 @@ const Payments = () => {
       // Check if order was paid with card
       // For POS orders: check stripePaymentIntentId
       // For website orders: check paymentMethod === 'card' or paymentDetails.paymentMethodId
-      const hasStripePayment = selectedOrder.paymentDetails?.stripePaymentIntentId || 
-        selectedOrder.paymentMethod === 'card' || 
+      const hasStripePayment = selectedOrder.paymentDetails?.stripePaymentIntentId ||
+        selectedOrder.paymentMethod === 'card' ||
         selectedOrder.paymentDetails?.paymentMethodId;
-      
+
       // Determine actual payment method for display
-      const actualPaymentMethod = hasStripePayment ? 'card' : 
+      const actualPaymentMethod = hasStripePayment ? 'card' :
         (selectedOrder.paymentMethod === 'payAtRestaurant' ? 'cash' : (selectedOrder.paymentMethod || 'cash'));
-      
+
       // Handle tableNumber for online orders (may be undefined)
-      const orderTableNumber = selectedOrder.tableNumber || 
+      const orderTableNumber = selectedOrder.tableNumber ||
         (selectedOrder.source === 'website' ? 'Online Order' : null);
       const isOnlineOrder = selectedOrder.source === 'website' || reimbursementTable === '__online__';
 
@@ -1005,12 +1025,12 @@ const Payments = () => {
           isOnlineOrder: isOnlineOrder,
           orderType: selectedOrder.orderType || 'dine_in'
         };
-        
+
         // Only add tableNumber if it exists (not for online orders)
         if (orderTableNumber && orderTableNumber !== 'Online Order') {
           reimbursementData.tableNumber = orderTableNumber;
         }
-        
+
         await setDoc(doc(reimbursementsRef), reimbursementData);
 
         // Log reimbursement activity
@@ -1062,7 +1082,7 @@ const Payments = () => {
 
   const handlePinVerification = () => {
     setPinError('');
-    
+
     if (!reimbursementPin || reimbursementPin.length !== 4) {
       setPinError('Please enter a 4-digit PIN');
       return;
@@ -1100,7 +1120,7 @@ const Payments = () => {
   };
 
   const selectedOrdersData = orders.filter(o => selectedOrders.includes(o.id));
-  const reimbursementOrderData = reimbursementOrder && reimbursementTable 
+  const reimbursementOrderData = reimbursementOrder && reimbursementTable
     ? completedOrders[reimbursementTable]?.find(o => o.id === reimbursementOrder)
     : null;
   const maxRefundAmount = reimbursementOrderData ? calculateRefundAmount(reimbursementOrderData) : 0;
@@ -1141,9 +1161,9 @@ const Payments = () => {
               <i className="bi bi-bell-fill"></i> Notifications On
             </Badge>
           ) : showNotificationPrompt ? (
-            <Button 
-              variant="warning" 
-              size="sm" 
+            <Button
+              variant="warning"
+              size="sm"
               onClick={enableNotifications}
               className="enable-notifications-btn"
             >
@@ -1176,8 +1196,8 @@ const Payments = () => {
         <Card className="mb-4 online-orders-card">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h5><i className="bi bi-globe"></i> Online Orders ({onlineOrders.length})</h5>
-            <Button 
-              variant="light" 
+            <Button
+              variant="light"
               size="sm"
               onClick={() => setShowOnlineOrders(!showOnlineOrders)}
               className="online-orders-toggle-btn"
@@ -1688,9 +1708,9 @@ const Payments = () => {
           <Alert variant="warning">
             <i className="bi bi-info-circle"></i> Enter your 4-digit reimbursement PIN to proceed with reimbursement.
           </Alert>
-          
+
           {pinError && <Alert variant="danger">{pinError}</Alert>}
-          
+
           <Form.Group className="mb-3">
             <Form.Label><strong>Reimbursement PIN</strong></Form.Label>
             <Form.Control
@@ -1721,8 +1741,8 @@ const Payments = () => {
           <Button variant="secondary" onClick={() => setShowPinModal(false)} disabled={processingReimbursement}>
             Cancel
           </Button>
-          <Button 
-            variant="warning" 
+          <Button
+            variant="warning"
             onClick={handlePinVerification}
             disabled={processingReimbursement || reimbursementPin.length !== 4}
           >
@@ -1827,7 +1847,7 @@ const Payments = () => {
                     <Row>
                       <Col md={6}>
                         <p className="mb-1"><strong>Payment Method:</strong> Credit Card</p>
-                        <p className="mb-1"><strong>Status:</strong> 
+                        <p className="mb-1"><strong>Status:</strong>
                           <Badge bg="success" className="ms-2">Paid Online</Badge>
                         </p>
                       </Col>
@@ -1852,7 +1872,7 @@ const Payments = () => {
                   </Card.Header>
                   <Card.Body>
                     <p className="mb-3">This customer chose to pay at the restaurant. Total to collect: <strong className="text-success fs-5">${(selectedOnlineOrder.total || 0).toFixed(2)}</strong></p>
-                    
+
                     {/* Payment Method Selection */}
                     <div className="payment-method-selection mb-3">
                       <Form.Label><strong>Select Payment Method:</strong></Form.Label>
@@ -1967,18 +1987,18 @@ const Payments = () => {
         <Modal.Body>
           <Alert variant="warning">
             <i className="bi bi-info-circle"></i> Tips are non-refundable. Refunds will include order amount, taxes, and discounts.
-            {(reimbursementOrderData?.paymentDetails?.stripePaymentIntentId || 
+            {(reimbursementOrderData?.paymentDetails?.stripePaymentIntentId ||
               reimbursementOrderData?.paymentMethod === 'card' ||
               reimbursementOrderData?.paymentDetails?.paymentMethodId) && (
-              <div className="mt-2">
-                <Badge bg="primary">
-                  <i className="bi bi-credit-card"></i> This order was paid with card
-                  {reimbursementOrderData?.paymentDetails?.stripePaymentIntentId 
-                    ? ' - refund will be processed through Stripe' 
-                    : ' (online payment)'}
-                </Badge>
-              </div>
-            )}
+                <div className="mt-2">
+                  <Badge bg="primary">
+                    <i className="bi bi-credit-card"></i> This order was paid with card
+                    {reimbursementOrderData?.paymentDetails?.stripePaymentIntentId
+                      ? ' - refund will be processed through Stripe'
+                      : ' (online payment)'}
+                  </Badge>
+                </div>
+              )}
           </Alert>
 
           {/* Search by Order Number */}
@@ -2006,8 +2026,8 @@ const Payments = () => {
               {getFilteredReimbursementOrders().length > 0 ? (
                 <div className="search-results-list">
                   {getFilteredReimbursementOrders().map(order => (
-                    <Card 
-                      key={order.id} 
+                    <Card
+                      key={order.id}
                       className={`mb-2 cursor-pointer ${reimbursementOrder === order.id ? 'border-primary' : ''}`}
                       onClick={() => {
                         setReimbursementTable(order.tableKey);
@@ -2049,7 +2069,7 @@ const Payments = () => {
               <h6 className="mb-3">Or select by Table/Order Type:</h6>
             </>
           )}
-          
+
           <Form>
             {!orderSearchQuery.trim() && (
               <>
@@ -2114,11 +2134,11 @@ const Payments = () => {
                   <div className="d-flex justify-content-between mb-2">
                     <span>Payment Method:</span>
                     <Badge bg={
-                      (reimbursementOrderData.paymentDetails?.paymentMethod === 'card' || 
-                       reimbursementOrderData.paymentMethod === 'card' ||
-                       reimbursementOrderData.paymentDetails?.paymentMethodId) ? 'primary' : 'secondary'
+                      (reimbursementOrderData.paymentDetails?.paymentMethod === 'card' ||
+                        reimbursementOrderData.paymentMethod === 'card' ||
+                        reimbursementOrderData.paymentDetails?.paymentMethodId) ? 'primary' : 'secondary'
                     }>
-                      {(reimbursementOrderData.paymentDetails?.paymentMethod === 'card' || 
+                      {(reimbursementOrderData.paymentDetails?.paymentMethod === 'card' ||
                         reimbursementOrderData.paymentMethod === 'card' ||
                         reimbursementOrderData.paymentDetails?.paymentMethodId) ? (
                         <><i className="bi bi-credit-card"></i> Card</>
@@ -2191,7 +2211,7 @@ const Payments = () => {
                       <span>Subtotal:</span>
                       <span>${(reimbursementOrderData.paymentDetails?.subtotal || reimbursementOrderData.total || 0).toFixed(2)}</span>
                     </div>
-                    
+
                     {/* Tax */}
                     {reimbursementOrderData.paymentDetails?.taxAmount > 0 && (
                       <div className="d-flex justify-content-between mb-2">
@@ -2199,37 +2219,37 @@ const Payments = () => {
                         <span>${(reimbursementOrderData.paymentDetails.taxAmount || 0).toFixed(2)}</span>
                       </div>
                     )}
-                    
+
                     {/* Discount */}
                     {reimbursementOrderData.paymentDetails?.discountAmount > 0 && (
                       <div className="d-flex justify-content-between mb-2 text-success">
-                        <span>Discount ({reimbursementOrderData.paymentDetails?.discountType === 'percentage' 
-                          ? `${reimbursementOrderData.paymentDetails.discountAmount}%` 
+                        <span>Discount ({reimbursementOrderData.paymentDetails?.discountType === 'percentage'
+                          ? `${reimbursementOrderData.paymentDetails.discountAmount}%`
                           : `$${reimbursementOrderData.paymentDetails.discountAmount.toFixed(2)}`}):</span>
                         <span>
-                          -${(reimbursementOrderData.paymentDetails.discountType === 'percentage' 
+                          -${(reimbursementOrderData.paymentDetails.discountType === 'percentage'
                             ? (reimbursementOrderData.paymentDetails.subtotal || reimbursementOrderData.total || 0) * (reimbursementOrderData.paymentDetails.discountAmount / 100)
                             : reimbursementOrderData.paymentDetails.discountAmount).toFixed(2)}
                         </span>
                       </div>
                     )}
-                    
+
                     {/* Tip - Not refundable */}
                     {reimbursementOrderData.paymentDetails?.tipAmount > 0 && (
                       <div className="d-flex justify-content-between mb-2 text-muted">
                         <span>
-                          Tip ({reimbursementOrderData.paymentDetails?.tipType === 'percentage' 
-                            ? `${reimbursementOrderData.paymentDetails.tipAmount}%` 
-                            : `$${reimbursementOrderData.paymentDetails.tipAmount.toFixed(2)}`}) 
+                          Tip ({reimbursementOrderData.paymentDetails?.tipType === 'percentage'
+                            ? `${reimbursementOrderData.paymentDetails.tipAmount}%`
+                            : `$${reimbursementOrderData.paymentDetails.tipAmount.toFixed(2)}`})
                           <small className="text-danger">(Not refundable)</small>:
                         </span>
                         <span>-${(reimbursementOrderData.paymentDetails.tipAmount || 0).toFixed(2)}</span>
                       </div>
                     )}
-                    
+
                     {/* Divider */}
                     <hr className="my-2" />
-                    
+
                     {/* Total Refund Amount */}
                     <div className="d-flex justify-content-between mt-2">
                       <span><strong>Total Refund Amount:</strong></span>
@@ -2247,9 +2267,9 @@ const Payments = () => {
           <Button variant="secondary" onClick={() => setShowReimbursementModal(false)} disabled={processingReimbursement}>
             Cancel
           </Button>
-          <Button 
-            variant="warning" 
-            onClick={handleReimbursement} 
+          <Button
+            variant="warning"
+            onClick={handleReimbursement}
             disabled={processingReimbursement || !reimbursementTable || !reimbursementOrder || (reimbursementType === 'partial' && (parseFloat(partialRefundAmount) || 0) <= 0)}
           >
             {processingReimbursement ? (
