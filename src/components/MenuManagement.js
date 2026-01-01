@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  orderBy, 
+import {
+  collection,
+  query,
+  orderBy,
   onSnapshot,
   doc,
   setDoc,
@@ -15,7 +15,8 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
-import { Button, Form, Alert, Spinner, Modal, Badge } from 'react-bootstrap';
+import { Button, Form, Alert, Spinner, Modal, Badge, ProgressBar } from 'react-bootstrap';
+import menuParserService from '../services/menuParserService';
 import './PageHeader.css';
 import './MenuManagement.css';
 
@@ -47,23 +48,31 @@ const MenuManagement = () => {
   const [categoryForm, setCategoryForm] = useState({ name: '' });
   const [imagePreview, setImagePreview] = useState(null);
 
+  // Menu upload states
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadComplete, setUploadComplete] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null);
+
   useEffect(() => {
     if (!currentUser) return;
 
     const categoriesRef = collection(db, `restaurants/${currentUser.uid}/menuCategories`);
     const q = query(categoriesRef, orderBy('name'));
-    
+
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const categoriesData = [];
-      
+
       for (const categoryDoc of snapshot.docs) {
         const category = { id: categoryDoc.id, ...categoryDoc.data() };
-        
+
         // Fetch items for this category
         const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${category.id}/items`);
         const itemsQuery = query(itemsRef, orderBy('name'));
         const itemsSnapshot = await getDocs(itemsQuery);
-        
+
         const allItems = itemsSnapshot.docs.map(itemDoc => ({
           id: itemDoc.id,
           categoryId: category.id,
@@ -83,10 +92,10 @@ const MenuManagement = () => {
         } else {
           category.items = allItems;
         }
-        
+
         categoriesData.push(category);
       }
-      
+
       setCategories(categoriesData);
       if (categoriesData.length > 0 && !selectedCategory) {
         setSelectedCategory(categoriesData[0].id);
@@ -139,7 +148,7 @@ const MenuManagement = () => {
       // Delete all items in the category first
       const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`);
       const itemsSnapshot = await getDocs(itemsRef);
-      
+
       for (const itemDoc of itemsSnapshot.docs) {
         const itemData = itemDoc.data();
         if (itemData.imageStoragePath) {
@@ -148,11 +157,11 @@ const MenuManagement = () => {
         }
         await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemDoc.id}`));
       }
-      
+
       // Then delete the category
       await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}`));
       setSuccess('Category and all its items deleted successfully');
-      
+
       // Select first category if available
       const updatedCategories = categories.filter(c => c.id !== categoryId);
       if (updatedCategories.length > 0 && selectedCategory === categoryId) {
@@ -160,7 +169,7 @@ const MenuManagement = () => {
       } else if (updatedCategories.length === 0) {
         setSelectedCategory(null);
       }
-      
+
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to delete category: ' + error.message);
@@ -207,7 +216,7 @@ const MenuManagement = () => {
         ...itemForm,
         image: file
       });
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result);
@@ -236,7 +245,7 @@ const MenuManagement = () => {
             console.error('Error deleting old image:', err);
           }
         }
-        
+
         const fileName = `${Date.now()}-${itemForm.image.name}`;
         imageStoragePath = `restaurants/${currentUser.uid}/menuItems/${currentCategory.id}/${fileName}`;
         const storageRef = ref(storage, imageStoragePath);
@@ -264,8 +273,8 @@ const MenuManagement = () => {
       } else {
         // Add new item
         itemData.createdAt = new Date();
-      await addDoc(collection(db, `restaurants/${currentUser.uid}/menuCategories/${currentCategory.id}/items`), itemData);
-      setSuccess('Item added successfully');
+        await addDoc(collection(db, `restaurants/${currentUser.uid}/menuCategories/${currentCategory.id}/items`), itemData);
+        setSuccess('Item added successfully');
       }
 
       setShowItemModal(false);
@@ -299,13 +308,141 @@ const MenuManagement = () => {
         const imageRef = ref(storage, imageStoragePath);
         await deleteObject(imageRef);
       }
-      
+
       await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemId}`));
       setSuccess('Item deleted successfully');
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to delete item: ' + error.message);
     }
+  };
+
+  // Handle menu upload with AI parsing
+  const handleMenuUpload = async () => {
+    if (!uploadedFile) {
+      setError('Please select a file to upload');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(1);
+    setUploadStatus('Preparing your menu for AI processing...');
+    setUploadComplete(false);
+
+    try {
+      // Read file as base64
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        try {
+          const base64Data = e.target.result;
+          // Extract base64 data without the data URL prefix
+          const base64Content = base64Data.split(',')[1];
+          const mimeType = uploadedFile.type;
+
+          setUploadProgress(15);
+          setUploadStatus('Uploading to AI service...');
+
+          // Simulate progress while waiting for AI
+          const progressInterval = setInterval(() => {
+            setUploadProgress(prev => {
+              if (prev < 85) {
+                return prev + Math.random() * 5;
+              }
+              return prev;
+            });
+          }, 500);
+
+          setUploadStatus('AI is analyzing your menu...');
+
+          // Call the AI parsing service
+          const result = await menuParserService.parseMenuImage(base64Content, mimeType);
+
+          clearInterval(progressInterval);
+          setUploadProgress(90);
+          setUploadStatus('Creating menu items...');
+
+          if (result.success && result.data?.categories) {
+            // Create categories and items in Firestore
+            let totalItemsCreated = 0;
+
+            for (const category of result.data.categories) {
+              // Check if category already exists
+              let categoryId;
+              const existingCategory = categories.find(
+                c => c.name.toLowerCase() === category.name.toLowerCase()
+              );
+
+              if (existingCategory) {
+                categoryId = existingCategory.id;
+              } else {
+                // Create new category
+                const categoryRef = doc(collection(db, `restaurants/${currentUser.uid}/menuCategories`));
+                await setDoc(categoryRef, {
+                  name: category.name,
+                  createdAt: new Date()
+                });
+                categoryId = categoryRef.id;
+              }
+
+              // Create items in the category
+              for (const item of category.items) {
+                await addDoc(
+                  collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`),
+                  {
+                    name: item.name,
+                    description: item.description || '',
+                    price: item.price || 0,
+                    discount: item.discount || 0,
+                    discountType: 'amount',
+                    imageUrl: '',
+                    imageStoragePath: '',
+                    locations: [],
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                  }
+                );
+                totalItemsCreated++;
+              }
+            }
+
+            setUploadProgress(100);
+            setUploadStatus(`✅ Successfully imported ${totalItemsCreated} items!`);
+            setUploadComplete(true);
+            setSuccess(`Menu imported! Created ${totalItemsCreated} items across ${result.data.categories.length} categories.`);
+          } else {
+            throw new Error('Failed to parse menu data');
+          }
+        } catch (err) {
+          console.error('Error processing menu:', err);
+          setUploadStatus(`❌ Error: ${err.message}`);
+          setUploadProgress(0);
+          setError('Failed to process menu: ' + err.message);
+        } finally {
+          setIsUploading(false);
+        }
+      };
+
+      reader.onerror = () => {
+        setError('Failed to read the file');
+        setIsUploading(false);
+      };
+
+      reader.readAsDataURL(uploadedFile);
+    } catch (err) {
+      console.error('Error uploading menu:', err);
+      setError('Failed to upload menu: ' + err.message);
+      setIsUploading(false);
+    }
+  };
+
+  const resetUploadModal = () => {
+    setShowUploadModal(false);
+    setUploadProgress(0);
+    setUploadStatus('');
+    setIsUploading(false);
+    setUploadComplete(false);
+    setUploadedFile(null);
   };
 
   // Get current category's items
@@ -333,14 +470,29 @@ const MenuManagement = () => {
             <p>Create and organize your restaurant menu</p>
           </div>
         </div>
+        <Button
+          variant="light"
+          className="ms-auto"
+          onClick={() => setShowUploadModal(true)}
+          style={{
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <i className="bi bi-cloud-upload"></i>
+          Upload Menu
+          <Badge bg="warning" text="dark" style={{ fontSize: '0.7em' }}>AI</Badge>
+        </Button>
       </div>
-      
+
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible className="menu-alert">{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible className="menu-alert">{success}</Alert>}
 
       {isMultiLocation && selectedLocation && (
         <Alert variant="info" className="menu-alert">
-          <i className="bi bi-info-circle"></i> Showing menu items for: <strong>{locations.find(l => l.id === selectedLocation)?.name || 'Selected Location'}</strong>. 
+          <i className="bi bi-info-circle"></i> Showing menu items for: <strong>{locations.find(l => l.id === selectedLocation)?.name || 'Selected Location'}</strong>.
           Items available at all locations are also shown. Use location assignment when adding/editing items to limit to specific locations.
         </Alert>
       )}
@@ -349,7 +501,7 @@ const MenuManagement = () => {
         {/* Left Panel - Category Navigation */}
         <div className="menu-categories">
           <h5>Categories</h5>
-          <button 
+          <button
             className="menu-add-category-btn"
             onClick={() => setShowCategoryModal(true)}
           >
@@ -393,7 +545,7 @@ const MenuManagement = () => {
               {currentCategoryData?.name || 'Select a Category'}
             </h4>
             {selectedCategory && (
-              <Button 
+              <Button
                 variant="primary"
                 onClick={() => handleAddItem(currentCategoryData)}
                 className="menu-add-item-header-btn"
@@ -402,7 +554,7 @@ const MenuManagement = () => {
               </Button>
             )}
           </div>
-          
+
           <div className="menu-items-grid">
             {/* Add Item Tile */}
             {selectedCategory && (
@@ -485,7 +637,7 @@ const MenuManagement = () => {
           </div>
         </div>
       </div>
-      
+
       {/* Add Category Modal */}
       <Modal show={showCategoryModal} onHide={() => setShowCategoryModal(false)}>
         <Modal.Header closeButton>
@@ -508,15 +660,15 @@ const MenuManagement = () => {
               <Button variant="secondary" className="me-2" onClick={() => setShowCategoryModal(false)}>
                 Cancel
               </Button>
-            <Button type="submit">Add Category</Button>
+              <Button type="submit">Add Category</Button>
             </div>
           </Form>
         </Modal.Body>
       </Modal>
 
       {/* Add/Edit Item Modal */}
-      <Modal 
-        show={showItemModal || showEditItemModal} 
+      <Modal
+        show={showItemModal || showEditItemModal}
         onHide={() => {
           setShowItemModal(false);
           setShowEditItemModal(false);
@@ -547,7 +699,7 @@ const MenuManagement = () => {
               <Form.Control
                 type="text"
                 value={itemForm.name}
-                onChange={(e) => setItemForm({...itemForm, name: e.target.value})}
+                onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
                 required
                 autoFocus
               />
@@ -559,7 +711,7 @@ const MenuManagement = () => {
                 as="textarea"
                 rows={3}
                 value={itemForm.description}
-                onChange={(e) => setItemForm({...itemForm, description: e.target.value})}
+                onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
               />
             </Form.Group>
 
@@ -571,12 +723,12 @@ const MenuManagement = () => {
                 value={itemForm.price}
                 onChange={(e) => {
                   const value = e.target.value;
-                  setItemForm({...itemForm, price: value === '' ? '' : value});
+                  setItemForm({ ...itemForm, price: value === '' ? '' : value });
                 }}
                 onBlur={(e) => {
                   const value = e.target.value;
                   if (value === '') {
-                    setItemForm({...itemForm, price: ''});
+                    setItemForm({ ...itemForm, price: '' });
                   }
                 }}
                 required
@@ -593,12 +745,12 @@ const MenuManagement = () => {
                     value={itemForm.discount}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setItemForm({...itemForm, discount: value === '' ? '' : value});
+                      setItemForm({ ...itemForm, discount: value === '' ? '' : value });
                     }}
                     onBlur={(e) => {
                       const value = e.target.value;
                       if (value === '') {
-                        setItemForm({...itemForm, discount: ''});
+                        setItemForm({ ...itemForm, discount: '' });
                       }
                     }}
                     placeholder="Enter discount"
@@ -610,7 +762,7 @@ const MenuManagement = () => {
                   <Form.Label>Discount Type</Form.Label>
                   <Form.Select
                     value={itemForm.discountType}
-                    onChange={(e) => setItemForm({...itemForm, discountType: e.target.value})}
+                    onChange={(e) => setItemForm({ ...itemForm, discountType: e.target.value })}
                   >
                     <option value="amount">Amount ($)</option>
                     <option value="percentage">Percentage (%)</option>
@@ -687,9 +839,9 @@ const MenuManagement = () => {
             )}
 
             <div className="d-flex justify-content-end">
-              <Button 
-                variant="secondary" 
-                className="me-2" 
+              <Button
+                variant="secondary"
+                className="me-2"
                 onClick={() => {
                   setShowItemModal(false);
                   setShowEditItemModal(false);
@@ -715,6 +867,96 @@ const MenuManagement = () => {
             </div>
           </Form>
         </Modal.Body>
+      </Modal>
+
+      {/* Menu Upload Modal */}
+      <Modal
+        show={showUploadModal}
+        onHide={!isUploading ? resetUploadModal : undefined}
+        centered
+        backdrop={isUploading ? 'static' : true}
+      >
+        <Modal.Header closeButton={!isUploading}>
+          <Modal.Title>
+            <i className="bi bi-magic me-2"></i>
+            AI Menu Upload
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {!isUploading && !uploadComplete ? (
+            <>
+              <p className="text-muted mb-3">
+                Upload a photo or PDF of your menu and our AI will automatically extract
+                all categories and items for you.
+              </p>
+              <Form.Group className="mb-3">
+                <Form.Label>Select Menu File</Form.Label>
+                <Form.Control
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setUploadedFile(e.target.files[0])}
+                />
+                <Form.Text className="text-muted">
+                  Supported formats: JPG, PNG, PDF
+                </Form.Text>
+              </Form.Group>
+              {uploadedFile && (
+                <Alert variant="info" className="d-flex align-items-center">
+                  <i className="bi bi-file-earmark me-2"></i>
+                  <span>{uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(1)} KB)</span>
+                </Alert>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-4">
+              <div className="mb-3">
+                {uploadComplete ? (
+                  <i className="bi bi-check-circle-fill text-success" style={{ fontSize: '3rem' }}></i>
+                ) : (
+                  <Spinner animation="border" variant="primary" style={{ width: '3rem', height: '3rem' }} />
+                )}
+              </div>
+              <h5 className="mb-3">{uploadStatus}</h5>
+              <ProgressBar
+                now={uploadProgress}
+                label={`${Math.round(uploadProgress)}%`}
+                animated={!uploadComplete}
+                variant={uploadComplete ? 'success' : 'primary'}
+                className="mb-3"
+                style={{ height: '25px' }}
+              />
+              {uploadComplete && (
+                <p className="text-success mb-0">
+                  <i className="bi bi-info-circle me-1"></i>
+                  Your menu items have been imported successfully!
+                </p>
+              )}
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          {!isUploading && !uploadComplete && (
+            <>
+              <Button variant="secondary" onClick={resetUploadModal}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleMenuUpload}
+                disabled={!uploadedFile}
+              >
+                <i className="bi bi-magic me-1"></i>
+                Start AI Processing
+              </Button>
+            </>
+          )}
+          {uploadComplete && (
+            <Button variant="success" onClick={resetUploadModal}>
+              <i className="bi bi-check-lg me-1"></i>
+              Close
+            </Button>
+          )}
+        </Modal.Footer>
       </Modal>
     </div>
   );

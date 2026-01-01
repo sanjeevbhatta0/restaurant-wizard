@@ -8,6 +8,9 @@
 /.pnp
 .pnp.js
 
+# environment files with secrets
+/functions/.env
+
 # testing
 /coverage
 

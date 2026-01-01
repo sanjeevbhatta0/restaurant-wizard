@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Container, Button, Form, Row, Col, Alert, Card, Spinner, 
+import {
+  Container, Button, Form, Row, Col, Alert, Card, Spinner,
   Tab, Nav, Badge, Modal, OverlayTrigger, Tooltip, Dropdown,
   ProgressBar, ListGroup, Accordion
 } from 'react-bootstrap';
-import { FaFacebook, FaInstagram, FaTwitter, FaImage, FaMagic, FaRobot, FaLightbulb, 
+import {
+  FaFacebook, FaInstagram, FaTwitter, FaImage, FaMagic, FaRobot, FaLightbulb,
   FaChartLine, FaCalendarAlt, FaHashtag, FaCopy, FaRedo, FaCheck, FaSearch,
-  FaGoogle, FaMapMarkerAlt, FaStar, FaExclamationTriangle } from 'react-icons/fa';
+  FaGoogle, FaMapMarkerAlt, FaStar, FaExclamationTriangle
+} from 'react-icons/fa';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, getDoc, collection, addDoc, query, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
@@ -21,7 +23,7 @@ import './PageHeader.css';
 const SeoSocialPosts = () => {
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation, locations } = useLocation();
-  
+
   // Connection states
   const [connectedAccounts, setConnectedAccounts] = useState({
     facebook: false,
@@ -32,11 +34,11 @@ const SeoSocialPosts = () => {
   const [selectedFacebookPage, setSelectedFacebookPage] = useState('');
   const [instagramAccounts, setInstagramAccounts] = useState([]);
   const [selectedInstagramAccount, setSelectedInstagramAccount] = useState('');
-  
+
   // Restaurant data
   const [restaurantData, setRestaurantData] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
-  
+
   // Content creation states
   const [postContent, setPostContent] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
@@ -45,7 +47,7 @@ const SeoSocialPosts = () => {
     instagram: false,
     twitter: false
   });
-  
+
   // AI states
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState(null);
@@ -54,7 +56,7 @@ const SeoSocialPosts = () => {
   const [contentIdeas, setContentIdeas] = useState([]);
   const [seoData, setSeoData] = useState(null);
   const [isLoadingSeo, setIsLoadingSeo] = useState(false);
-  
+
   // UI states
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -67,6 +69,7 @@ const SeoSocialPosts = () => {
   const [selectedMenuItem, setSelectedMenuItem] = useState('');
   const [postHistory, setPostHistory] = useState([]);
   const [copied, setCopied] = useState('');
+  const [expandedTasks, setExpandedTasks] = useState({});
 
   // Load initial data
   useEffect(() => {
@@ -83,7 +86,7 @@ const SeoSocialPosts = () => {
       const restaurantDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}`));
       if (restaurantDoc.exists()) {
         const data = restaurantDoc.data();
-        
+
         // Get location-specific data if multi-location
         if (isMultiLocation && selectedLocation) {
           const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`));
@@ -107,7 +110,7 @@ const SeoSocialPosts = () => {
       const categoriesSnapshot = await getDocs(
         collection(db, `restaurants/${currentUser.uid}/menuCategories`)
       );
-      
+
       const items = [];
       for (const categoryDoc of categoriesSnapshot.docs) {
         const itemsSnapshot = await getDocs(
@@ -116,9 +119,9 @@ const SeoSocialPosts = () => {
         itemsSnapshot.forEach(itemDoc => {
           const itemData = itemDoc.data();
           // Filter by location if multi-location
-          if (!isMultiLocation || !selectedLocation || 
-              !itemData.locations || itemData.locations.length === 0 || 
-              itemData.locations.includes(selectedLocation)) {
+          if (!isMultiLocation || !selectedLocation ||
+            !itemData.locations || itemData.locations.length === 0 ||
+            itemData.locations.includes(selectedLocation)) {
             items.push({ id: itemDoc.id, categoryName: categoryDoc.data().name, ...itemData });
           }
         });
@@ -147,12 +150,12 @@ const SeoSocialPosts = () => {
   const loadSavedConnections = async () => {
     try {
       const connections = await socialMediaService.getConnections(currentUser.uid);
-      
+
       if (connections?.facebook?.connected) {
         setConnectedAccounts(prev => ({ ...prev, facebook: true }));
         await checkFacebookLoginStatus();
       }
-      
+
       if (connections?.instagram?.connected) {
         setConnectedAccounts(prev => ({ ...prev, instagram: true }));
       }
@@ -169,10 +172,10 @@ const SeoSocialPosts = () => {
       if (pages.length > 0) {
         setSelectedFacebookPage(pages[0].id);
       }
-      
+
       const igAccounts = await facebookService.getInstagramAccounts();
       setInstagramAccounts(igAccounts);
-      
+
       if (pages.length > 0) {
         setConnectedAccounts(prev => ({ ...prev, facebook: true }));
         await socialMediaService.updateConnection(currentUser.uid, 'facebook', {
@@ -189,14 +192,14 @@ const SeoSocialPosts = () => {
   const handleGenerateContent = async () => {
     setIsGenerating(true);
     setError('');
-    
+
     try {
       const context = {
         restaurantName: restaurantData?.name || restaurantData?.restaurantName,
         cuisineType: restaurantData?.cuisineType || 'Restaurant',
         location: restaurantData?.address || restaurantData?.locationName
       };
-      
+
       // Add menu item context if selected
       if (aiContentType === 'menu_feature' && selectedMenuItem) {
         const menuItem = menuItems.find(item => item.id === selectedMenuItem);
@@ -208,14 +211,14 @@ const SeoSocialPosts = () => {
           };
         }
       }
-      
+
       const result = await aiContentService.generatePost({
         type: aiContentType,
         platform: aiPlatform,
         tone: aiTone,
         context
       });
-      
+
       if (result.success && result.content) {
         setGeneratedContent(result.content);
         setSuggestedHashtags(result.content.hashtags || []);
@@ -246,10 +249,10 @@ const SeoSocialPosts = () => {
       setError('Please write some content first');
       return;
     }
-    
+
     setIsGenerating(true);
     setError('');
-    
+
     try {
       const result = await aiContentService.improveContent(postContent, instruction);
       if (result.success && result.improvedContent) {
@@ -269,9 +272,9 @@ const SeoSocialPosts = () => {
       setError('Please write some content first');
       return;
     }
-    
+
     setIsGenerating(true);
-    
+
     try {
       const platform = Object.keys(selectedPlatforms).find(p => selectedPlatforms[p]) || 'instagram';
       const result = await aiContentService.generateHashtags(postContent, platform);
@@ -288,7 +291,7 @@ const SeoSocialPosts = () => {
 
   const handleLoadSeoData = async () => {
     setIsLoadingSeo(true);
-    
+
     try {
       const result = await aiContentService.getSeoRecommendations({
         name: restaurantData?.name || restaurantData?.restaurantName,
@@ -298,7 +301,7 @@ const SeoSocialPosts = () => {
         hasOnlineOrdering: true,
         socialMedia: connectedAccounts.facebook ? 'Facebook connected' : 'Not connected'
       });
-      
+
       if (result.success && result.recommendations) {
         setSeoData(result.recommendations);
       }
@@ -312,7 +315,8 @@ const SeoSocialPosts = () => {
 
   const handleLoadContentIdeas = async () => {
     setIsGenerating(true);
-    
+    setError(''); // Clear any previous errors
+
     try {
       const result = await aiContentService.getContentIdeas({
         restaurantName: restaurantData?.name || restaurantData?.restaurantName,
@@ -320,13 +324,17 @@ const SeoSocialPosts = () => {
         location: restaurantData?.address,
         currentMonth: new Date().toLocaleString('default', { month: 'long' })
       });
-      
+
       if (result.success && result.ideas) {
         setContentIdeas(result.ideas);
+      } else {
+        // Handle unexpected response structure
+        console.error('Unexpected response from content ideas API:', result);
+        setError('Failed to generate content ideas. Please try again.');
       }
     } catch (error) {
       console.error('Error loading content ideas:', error);
-      setError('Failed to load content ideas');
+      setError(`Failed to load content ideas: ${error.message || 'Unknown error'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -337,7 +345,7 @@ const SeoSocialPosts = () => {
     try {
       setIsLoading(true);
       setError('');
-      
+
       const response = await facebookService.login();
       await socialMediaService.updateConnection(currentUser.uid, 'facebook', {
         connected: true,
@@ -345,7 +353,7 @@ const SeoSocialPosts = () => {
         userId: response.authResponse.userID,
         connectedAt: new Date().toISOString()
       });
-      
+
       setConnectedAccounts(prev => ({ ...prev, facebook: true }));
       await checkFacebookLoginStatus();
       setSuccess('Successfully connected to Facebook!');
@@ -403,7 +411,7 @@ const SeoSocialPosts = () => {
         const page = facebookPages.find(p => p.id === selectedFacebookPage);
         await facebookService.postToPage(selectedFacebookPage, page.access_token, postContent, imageUrl);
       }
-      
+
       if (selectedPlatforms.instagram && selectedInstagramAccount) {
         if (!imageUrl) {
           throw new Error('An image is required for Instagram posts');
@@ -440,8 +448,8 @@ const SeoSocialPosts = () => {
   };
 
   const toggleHashtag = (hashtag) => {
-    setSelectedHashtags(prev => 
-      prev.includes(hashtag) 
+    setSelectedHashtags(prev =>
+      prev.includes(hashtag)
         ? prev.filter(h => h !== hashtag)
         : [...prev, hashtag]
     );
@@ -518,8 +526,8 @@ const SeoSocialPosts = () => {
                   <Card.Header className="bg-white py-3">
                     <div className="d-flex justify-content-between align-items-center">
                       <h5 className="mb-0">Create Your Post</h5>
-                      <Button 
-                        variant="primary" 
+                      <Button
+                        variant="primary"
                         onClick={() => setShowAIModal(true)}
                         className="ai-generate-btn"
                       >
@@ -637,9 +645,9 @@ const SeoSocialPosts = () => {
                         />
                         <div className="d-flex justify-content-between mt-2">
                           <small className="text-muted">{postContent.length} characters</small>
-                          <Button 
-                            variant="link" 
-                            size="sm" 
+                          <Button
+                            variant="link"
+                            size="sm"
                             onClick={handleGenerateHashtags}
                             disabled={isGenerating || !postContent.trim()}
                           >
@@ -653,8 +661,8 @@ const SeoSocialPosts = () => {
                         <div className="hashtag-suggestions mb-4">
                           <div className="d-flex justify-content-between align-items-center mb-2">
                             <Form.Label className="mb-0">Suggested Hashtags</Form.Label>
-                            <Button 
-                              variant="outline-primary" 
+                            <Button
+                              variant="outline-primary"
                               size="sm"
                               onClick={addHashtagsToContent}
                               disabled={selectedHashtags.length === 0}
@@ -800,8 +808,8 @@ const SeoSocialPosts = () => {
                     <h5 className="mb-1">AI Content Ideas</h5>
                     <small className="text-muted">Get personalized content suggestions for your restaurant</small>
                   </div>
-                  <Button 
-                    variant="primary" 
+                  <Button
+                    variant="primary"
                     onClick={handleLoadContentIdeas}
                     disabled={isGenerating}
                   >
@@ -814,6 +822,7 @@ const SeoSocialPosts = () => {
                 </div>
               </Card.Header>
               <Card.Body>
+                {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
                 {contentIdeas.length === 0 ? (
                   <div className="text-center py-5">
                     <FaLightbulb size={48} className="text-warning mb-3" />
@@ -832,15 +841,15 @@ const SeoSocialPosts = () => {
                             <div className="d-flex justify-content-between align-items-start mb-2">
                               <Badge bg={
                                 idea.type === 'promotion' ? 'success' :
-                                idea.type === 'engagement' ? 'primary' :
-                                idea.type === 'seasonal' ? 'warning' :
-                                idea.type === 'behind_scenes' ? 'info' : 'secondary'
+                                  idea.type === 'engagement' ? 'primary' :
+                                    idea.type === 'seasonal' ? 'warning' :
+                                      idea.type === 'behind_scenes' ? 'info' : 'secondary'
                               }>
                                 {idea.type}
                               </Badge>
                               <Badge bg={
                                 idea.estimatedEngagement === 'high' ? 'success' :
-                                idea.estimatedEngagement === 'medium' ? 'warning' : 'secondary'
+                                  idea.estimatedEngagement === 'medium' ? 'warning' : 'secondary'
                               }>
                                 {idea.estimatedEngagement} engagement
                               </Badge>
@@ -859,8 +868,8 @@ const SeoSocialPosts = () => {
                                 </Badge>
                               ))}
                             </div>
-                            <Button 
-                              variant="outline-primary" 
+                            <Button
+                              variant="outline-primary"
                               size="sm"
                               onClick={() => {
                                 setPostContent(idea.exampleCaption || '');
@@ -885,11 +894,11 @@ const SeoSocialPosts = () => {
               <Card.Header className="bg-white py-3">
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
-                    <h5 className="mb-1"><FaSearch className="me-2" />SEO Health Check</h5>
-                    <small className="text-muted">AI-powered analysis of your online presence</small>
+                    <h5 className="mb-1"><FaRobot className="me-2" />AI Powered SEO Analysis <Badge bg="info" className="ms-2">Beta</Badge></h5>
+                    <small className="text-muted">Get AI-powered recommendations to boost your online visibility</small>
                   </div>
-                  <Button 
-                    variant="primary" 
+                  <Button
+                    variant="primary"
                     onClick={handleLoadSeoData}
                     disabled={isLoadingSeo}
                   >
@@ -904,14 +913,14 @@ const SeoSocialPosts = () => {
               <Card.Body>
                 {!seoData ? (
                   <div className="text-center py-5">
-                    <FaSearch size={48} className="text-primary mb-3" />
-                    <h5>Check Your SEO Health</h5>
+                    <FaRobot size={48} className="text-primary mb-3" />
+                    <h5>AI Powered SEO Analysis</h5>
                     <p className="text-muted">
                       Get AI-powered recommendations to improve your<br />
                       restaurant's visibility on Google and social media.
                     </p>
                     <Button variant="primary" onClick={handleLoadSeoData} disabled={isLoadingSeo}>
-                      Start Analysis
+                      <FaChartLine className="me-2" />Start AI Analysis
                     </Button>
                   </div>
                 ) : (
@@ -924,11 +933,11 @@ const SeoSocialPosts = () => {
                             <div className={`seo-score seo-grade-${seoData.grade?.toLowerCase()}`}>
                               {seoData.seoScore}
                             </div>
-                            <h4 className="mb-2">SEO Score</h4>
+                            <h4 className="mb-2"><FaRobot className="me-2" style={{ fontSize: '0.8em' }} />AI SEO Score</h4>
                             <Badge bg={
                               seoData.grade === 'A' ? 'success' :
-                              seoData.grade === 'B' ? 'primary' :
-                              seoData.grade === 'C' ? 'warning' : 'danger'
+                                seoData.grade === 'B' ? 'primary' :
+                                  seoData.grade === 'C' ? 'warning' : 'danger'
                             } className="grade-badge">
                               Grade: {seoData.grade}
                             </Badge>
@@ -943,7 +952,7 @@ const SeoSocialPosts = () => {
                           <ListGroup variant="flush">
                             {seoData.immediateActions?.slice(0, 4).map((action, index) => (
                               <ListGroup.Item key={index} className="d-flex align-items-start">
-                                <Badge 
+                                <Badge
                                   bg={action.priority === 'high' ? 'danger' : action.priority === 'medium' ? 'warning' : 'info'}
                                   className="me-2 mt-1"
                                 >
@@ -1018,7 +1027,7 @@ const SeoSocialPosts = () => {
                         </Accordion.Header>
                         <Accordion.Body>
                           {seoData.monthlyChecklist?.map((task, index) => (
-                            <Form.Check 
+                            <Form.Check
                               key={index}
                               type="checkbox"
                               label={task}
@@ -1028,6 +1037,78 @@ const SeoSocialPosts = () => {
                         </Accordion.Body>
                       </Accordion.Item>
                     </Accordion>
+
+                    {/* SEO Improvement Roadmap */}
+                    <Card className="mt-4 border-primary">
+                      <Card.Header className="bg-primary text-white">
+                        <h6 className="mb-0"><FaChartLine className="me-2" />SEO Improvement Roadmap</h6>
+                        <small>Click on any task to see step-by-step instructions</small>
+                      </Card.Header>
+                      <Card.Body className="p-0">
+                        <Accordion flush>
+                          {seoData.immediateActions?.map((action, index) => (
+                            <Accordion.Item key={index} eventKey={index.toString()}>
+                              <Accordion.Header>
+                                <div className="d-flex align-items-center justify-content-between w-100 pe-3">
+                                  <div className="d-flex align-items-center">
+                                    <Form.Check
+                                      type="checkbox"
+                                      className="me-3"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <Badge bg={
+                                      action.priority === 'high' ? 'danger' :
+                                        action.priority === 'medium' ? 'warning' : 'info'
+                                    } className="me-3">
+                                      {action.priority?.toUpperCase()}
+                                    </Badge>
+                                    <div>
+                                      <strong>{action.action}</strong>
+                                      {action.impact && <small className="text-muted d-block">{action.impact}</small>}
+                                    </div>
+                                  </div>
+                                  <Badge bg="success" className="ms-auto">
+                                    +{action.priority === 'high' ? '10-15' : action.priority === 'medium' ? '5-10' : '2-5'} pts
+                                  </Badge>
+                                </div>
+                              </Accordion.Header>
+                              <Accordion.Body className="bg-light">
+                                <div className="p-2">
+                                  <h6 className="text-primary mb-3">
+                                    <FaLightbulb className="me-2" />Step-by-Step Instructions
+                                  </h6>
+                                  {action.steps && action.steps.length > 0 ? (
+                                    <ol className="mb-0 ps-3">
+                                      {action.steps.map((step, stepIndex) => (
+                                        <li key={stepIndex} className="mb-2 pb-2 border-bottom">
+                                          <span>{step.replace(/^Step \d+:\s*/i, '')}</span>
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  ) : (
+                                    <Alert variant="info" className="mb-0">
+                                      <small>
+                                        Detailed instructions will be generated when you run a new SEO analysis.
+                                        Click "Refresh Analysis" to get step-by-step guidance for this task.
+                                      </small>
+                                    </Alert>
+                                  )}
+                                </div>
+                              </Accordion.Body>
+                            </Accordion.Item>
+                          ))}
+                        </Accordion>
+                        <div className="p-3 bg-light border-top">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <div>
+                              <strong>Potential Score After Completion:</strong>
+                              <span className="text-success ms-2 fs-5">Up to {Math.min(100, (seoData.seoScore || 50) + 35)} points</span>
+                            </div>
+                            <Badge bg="success" className="fs-6">Grade: A</Badge>
+                          </div>
+                        </div>
+                      </Card.Body>
+                    </Card>
                   </>
                 )}
               </Card.Body>
@@ -1146,8 +1227,8 @@ const SeoSocialPosts = () => {
           )}
 
           <div className="text-center mb-4">
-            <Button 
-              variant="primary" 
+            <Button
+              variant="primary"
               size="lg"
               onClick={handleGenerateContent}
               disabled={isGenerating}
@@ -1166,8 +1247,8 @@ const SeoSocialPosts = () => {
                 <Card.Header className="bg-success text-white">
                   <div className="d-flex justify-content-between align-items-center">
                     <span>Generated Caption</span>
-                    <Button 
-                      variant="light" 
+                    <Button
+                      variant="light"
                       size="sm"
                       onClick={() => handleCopy(generatedContent.caption, 'caption')}
                     >
@@ -1214,7 +1295,7 @@ const SeoSocialPosts = () => {
                         <div key={index} className="mb-2 p-2 bg-light rounded">
                           <p className="mb-1 small">{version}</p>
                           <Button variant="link" size="sm" className="p-0" onClick={() => {
-                            setGeneratedContent({...generatedContent, caption: version});
+                            setGeneratedContent({ ...generatedContent, caption: version });
                           }}>
                             Use this version
                           </Button>
@@ -1231,8 +1312,8 @@ const SeoSocialPosts = () => {
           <Button variant="secondary" onClick={() => setShowAIModal(false)}>
             Cancel
           </Button>
-          <Button 
-            variant="success" 
+          <Button
+            variant="success"
             onClick={handleUseGeneratedContent}
             disabled={!generatedContent?.caption}
           >

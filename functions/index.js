@@ -34,26 +34,26 @@ exports.lookupEmailByUsername = onRequest(async (req, res) => {
 
       const db = admin.firestore();
       const restaurantsRef = db.collection('restaurants');
-      
+
       // Try exact match first
       let snapshot = await restaurantsRef.where('username', '==', username).limit(1).get();
-      
+
       if (!snapshot.empty) {
         const doc = snapshot.docs[0];
         return res.json({ email: doc.data().email });
       }
-      
+
       // Try case-insensitive match using usernameLower field
       snapshot = await restaurantsRef.where('usernameLower', '==', username.toLowerCase()).limit(1).get();
-      
+
       if (!snapshot.empty) {
         const doc = snapshot.docs[0];
         return res.json({ email: doc.data().email });
       }
-      
+
       // Try lowercase match on original username field (fallback for older accounts)
       snapshot = await restaurantsRef.where('username', '==', username.toLowerCase()).limit(1).get();
-      
+
       if (!snapshot.empty) {
         const doc = snapshot.docs[0];
         return res.json({ email: doc.data().email });
@@ -193,10 +193,10 @@ exports.processStripeRefund = onCall(async (request) => {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { 
-      orderId, 
-      restaurantId, 
-      refundAmount, 
+    const {
+      orderId,
+      restaurantId,
+      refundAmount,
       refundType,
       reason = 'requested_by_customer'
     } = request.data;
@@ -283,12 +283,12 @@ exports.processStripeRefund = onCall(async (request) => {
       orderType: orderData.orderType || 'dine_in',
       isOnlineOrder: orderData.source === 'website'
     };
-    
+
     // Only add tableNumber if it exists (not for online orders)
     if (orderData.tableNumber) {
       reimbursementRecord.tableNumber = orderData.tableNumber;
     }
-    
+
     await db.collection(`restaurants/${restaurantId}/reimbursements`).add(reimbursementRecord);
 
     return {
@@ -324,63 +324,63 @@ exports.getStripeConfig = onCall(async (request) => {
 });
 
 exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', async (event) => {
-    const snap = event.data;
-    if (!snap) return;
-    const postData = snap.data();
-    const postId = event.params.postId;
-    const db = admin.firestore();
+  const snap = event.data;
+  if (!snap) return;
+  const postData = snap.data();
+  const postId = event.params.postId;
+  const db = admin.firestore();
 
-    try {
-      // Get user's social media tokens
-      const userConnections = await db
-        .collection('socialMediaConnections')
-        .doc(postData.userId)
-        .get();
+  try {
+    // Get user's social media tokens
+    const userConnections = await db
+      .collection('socialMediaConnections')
+      .doc(postData.userId)
+      .get();
 
-      if (!userConnections.exists) {
-        throw new Error('User social media connections not found');
-      }
-
-      const connections = userConnections.data();
-      const updates = [];
-
-      // Post to each selected platform
-      if (postData.platforms.facebook && connections.facebook.connected) {
-        updates.push(postToFacebook(postData, connections.facebook.token));
-      }
-
-      if (postData.platforms.instagram && connections.instagram.connected) {
-        updates.push(postToInstagram(postData, connections.instagram.token));
-      }
-
-      if (postData.platforms.twitter && connections.twitter.connected) {
-        updates.push(postToTwitter(postData, connections.twitter.token));
-      }
-
-      // Wait for all posts to complete
-      const results = await Promise.allSettled(updates);
-
-      // Update post status
-      const status = results.every(r => r.status === 'fulfilled') ? 'completed' : 'partial';
-      const errors = results
-        .filter(r => r.status === 'rejected')
-        .map(r => r.reason.message);
-
-      await snap.ref.update({
-        status,
-        errors: errors.length > 0 ? errors : [],
-        updatedAt: FieldValue.serverTimestamp()
-      });
-
-    } catch (error) {
-      console.error('Error processing social media post:', error);
-      await snap.ref.update({
-        status: 'failed',
-        error: error.message,
-        updatedAt: FieldValue.serverTimestamp()
-      });
+    if (!userConnections.exists) {
+      throw new Error('User social media connections not found');
     }
-  });
+
+    const connections = userConnections.data();
+    const updates = [];
+
+    // Post to each selected platform
+    if (postData.platforms.facebook && connections.facebook.connected) {
+      updates.push(postToFacebook(postData, connections.facebook.token));
+    }
+
+    if (postData.platforms.instagram && connections.instagram.connected) {
+      updates.push(postToInstagram(postData, connections.instagram.token));
+    }
+
+    if (postData.platforms.twitter && connections.twitter.connected) {
+      updates.push(postToTwitter(postData, connections.twitter.token));
+    }
+
+    // Wait for all posts to complete
+    const results = await Promise.allSettled(updates);
+
+    // Update post status
+    const status = results.every(r => r.status === 'fulfilled') ? 'completed' : 'partial';
+    const errors = results
+      .filter(r => r.status === 'rejected')
+      .map(r => r.reason.message);
+
+    await snap.ref.update({
+      status,
+      errors: errors.length > 0 ? errors : [],
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+  } catch (error) {
+    console.error('Error processing social media post:', error);
+    await snap.ref.update({
+      status: 'failed',
+      error: error.message,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  }
+});
 
 // Platform-specific posting functions
 async function postToFacebook(postData, token) {
@@ -455,208 +455,208 @@ async function postToTwitter(postData, token) {
 
 // Helper function to get restaurant by slug
 async function getRestaurantBySlug(slug) {
-    const snapshot = await admin.firestore()
-        .collection('restaurants')
-        .where('slug', '==', slug)
-        .limit(1)
-        .get();
+  const snapshot = await admin.firestore()
+    .collection('restaurants')
+    .where('slug', '==', slug)
+    .limit(1)
+    .get();
 
-    if (snapshot.empty) {
-        return null;
-    }
+  if (snapshot.empty) {
+    return null;
+  }
 
-    const doc = snapshot.docs[0];
-    return {
-        id: doc.id,
-        ...doc.data()
-    };
+  const doc = snapshot.docs[0];
+  return {
+    id: doc.id,
+    ...doc.data()
+  };
 }
 
 // Template definitions (embedded for Cloud Functions)
 const TEMPLATES = {
-    'modern-bistro': {
-        primaryColor: '#2c3e50',
-        secondaryColor: '#3498db',
-        accentColor: '#e74c3c',
-        fontFamily: 'Poppins'
-    },
-    'italian-trattoria': {
-        primaryColor: '#1a1a1a',
-        secondaryColor: '#2d2d2d',
-        accentColor: '#c9a962',
-        fontFamily: 'Playfair Display'
-    },
-    'fresh-cafe': {
-        primaryColor: '#2d6a4f',
-        secondaryColor: '#40916c',
-        accentColor: '#ff6b6b',
-        fontFamily: 'Nunito'
-    }
+  'modern-bistro': {
+    primaryColor: '#2c3e50',
+    secondaryColor: '#3498db',
+    accentColor: '#e74c3c',
+    fontFamily: 'Poppins'
+  },
+  'italian-trattoria': {
+    primaryColor: '#1a1a1a',
+    secondaryColor: '#2d2d2d',
+    accentColor: '#c9a962',
+    fontFamily: 'Playfair Display'
+  },
+  'fresh-cafe': {
+    primaryColor: '#2d6a4f',
+    secondaryColor: '#40916c',
+    accentColor: '#ff6b6b',
+    fontFamily: 'Nunito'
+  }
 };
 
 // Helper function to render template with data
 function renderTemplate(template, data) {
-    let html = template;
-    
-    // Replace simple placeholders
-    const replacements = {
-        '{{restaurantId}}': data.restaurantId || '',
-        '{{locationId}}': data.locationId || data.restaurantId || '', // For multi-location support
-        '{{restaurantName}}': data.restaurantName || 'Restaurant',
-        '{{tagline}}': data.tagline || 'Welcome to our restaurant',
-        '{{description}}': data.description || 'Delicious food, great atmosphere',
-        '{{heroImage}}': data.heroImage || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1920',
-        '{{aboutImage}}': data.aboutImage || 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800',
-        '{{aboutContent}}': data.aboutContent || '<p>Welcome to our restaurant! We are passionate about serving delicious food made with the freshest ingredients.</p>',
-        '{{address}}': data.address || '123 Main Street, City, State 12345',
-        '{{phone}}': data.phone || '(555) 123-4567',
-        '{{email}}': data.email || 'hello@restaurant.com',
-        '{{primaryColor}}': data.primaryColor || '#2c3e50',
-        '{{secondaryColor}}': data.secondaryColor || '#3498db',
-        '{{accentColor}}': data.accentColor || '#e74c3c',
-        '{{fontFamily}}': data.fontFamily || 'Poppins',
-        '{{logo}}': data.logo || '',
-        '{{facebook}}': data.facebook || '',
-        '{{instagram}}': data.instagram || '',
-        '{{twitter}}': data.twitter || '',
-        '{{year}}': new Date().getFullYear().toString(),
-        '{{apiBaseUrl}}': data.apiBaseUrl || 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
-        '{{stripePublishableKey}}': data.stripePublishableKey || '',
-        '{{hoursJson}}': JSON.stringify(data.hours || {
-            monday: { open: '11:00', close: '22:00' },
-            tuesday: { open: '11:00', close: '22:00' },
-            wednesday: { open: '11:00', close: '22:00' },
-            thursday: { open: '11:00', close: '22:00' },
-            friday: { open: '11:00', close: '23:00' },
-            saturday: { open: '12:00', close: '23:00' },
-            sunday: { open: '12:00', close: '21:00' }
-        })
-    };
+  let html = template;
 
-    // Replace all placeholders
-    for (const [placeholder, value] of Object.entries(replacements)) {
-        html = html.split(placeholder).join(value);
-    }
+  // Replace simple placeholders
+  const replacements = {
+    '{{restaurantId}}': data.restaurantId || '',
+    '{{locationId}}': data.locationId || data.restaurantId || '', // For multi-location support
+    '{{restaurantName}}': data.restaurantName || 'Restaurant',
+    '{{tagline}}': data.tagline || 'Welcome to our restaurant',
+    '{{description}}': data.description || 'Delicious food, great atmosphere',
+    '{{heroImage}}': data.heroImage || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1920',
+    '{{aboutImage}}': data.aboutImage || 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800',
+    '{{aboutContent}}': data.aboutContent || '<p>Welcome to our restaurant! We are passionate about serving delicious food made with the freshest ingredients.</p>',
+    '{{address}}': data.address || '123 Main Street, City, State 12345',
+    '{{phone}}': data.phone || '(555) 123-4567',
+    '{{email}}': data.email || 'hello@restaurant.com',
+    '{{primaryColor}}': data.primaryColor || '#2c3e50',
+    '{{secondaryColor}}': data.secondaryColor || '#3498db',
+    '{{accentColor}}': data.accentColor || '#e74c3c',
+    '{{fontFamily}}': data.fontFamily || 'Poppins',
+    '{{logo}}': data.logo || '',
+    '{{facebook}}': data.facebook || '',
+    '{{instagram}}': data.instagram || '',
+    '{{twitter}}': data.twitter || '',
+    '{{year}}': new Date().getFullYear().toString(),
+    '{{apiBaseUrl}}': data.apiBaseUrl || 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
+    '{{stripePublishableKey}}': data.stripePublishableKey || '',
+    '{{hoursJson}}': JSON.stringify(data.hours || {
+      monday: { open: '11:00', close: '22:00' },
+      tuesday: { open: '11:00', close: '22:00' },
+      wednesday: { open: '11:00', close: '22:00' },
+      thursday: { open: '11:00', close: '22:00' },
+      friday: { open: '11:00', close: '23:00' },
+      saturday: { open: '12:00', close: '23:00' },
+      sunday: { open: '12:00', close: '21:00' }
+    })
+  };
 
-    // Handle conditional blocks {{#if variable}}...{{/if}}
-    html = html.replace(/\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (match, variable, content) => {
-        return data[variable] ? content : '';
-    });
+  // Replace all placeholders
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    html = html.split(placeholder).join(value);
+  }
 
-    return html;
+  // Handle conditional blocks {{#if variable}}...{{/if}}
+  html = html.replace(/\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (match, variable, content) => {
+    return data[variable] ? content : '';
+  });
+
+  return html;
 }
 
 // Serve restaurant websites dynamically
 exports.serveWebsite = onRequest(async (req, res) => {
-    return cors(req, res, async () => {
-        try {
-            const host = req.hostname;
-            console.log('Incoming request hostname:', host);
+  return cors(req, res, async () => {
+    try {
+      const host = req.hostname;
+      console.log('Incoming request hostname:', host);
 
-            let restaurantId;
-            let restaurant;
-            let derivedLocationId = null;
+      let restaurantId;
+      let restaurant;
+      let derivedLocationId = null;
 
-            // Helper function to find restaurant by slug or ID, handling multi-location combined slugs
-            async function findRestaurantBySlugOrId(slug) {
-                const db = admin.firestore();
-                
-                // First try exact slug match
-                let rest = await getRestaurantBySlug(slug);
-                if (rest) {
-                    return { restaurantId: rest.id, restaurant: rest, locationSlug: null };
-                }
-                
-                // Try as direct restaurant ID (for cases where slug isn't set)
-                const directDoc = await db.doc(`restaurants/${slug}`).get();
-                if (directDoc.exists) {
-                    return { restaurantId: slug, restaurant: { id: slug, ...directDoc.data() }, locationSlug: null };
-                }
-                
-                // For multi-location: slug might be "restaurant-id-or-slug-location-slug"
-                // Try progressively shorter prefixes
-                const parts = slug.split('-');
-                for (let i = parts.length - 1; i >= 1; i--) {
-                    const potentialRestaurantPart = parts.slice(0, i).join('-');
-                    const potentialLocationSlug = parts.slice(i).join('-');
-                    
-                    // Try as slug first
-                    rest = await getRestaurantBySlug(potentialRestaurantPart);
-                    if (rest) {
-                        return { restaurantId: rest.id, restaurant: rest, locationSlug: potentialLocationSlug };
-                    }
-                    
-                    // Try as direct restaurant ID
-                    const idDoc = await db.doc(`restaurants/${potentialRestaurantPart}`).get();
-                    if (idDoc.exists) {
-                        return { restaurantId: potentialRestaurantPart, restaurant: { id: potentialRestaurantPart, ...idDoc.data() }, locationSlug: potentialLocationSlug };
-                    }
-                }
-                
-                return { restaurantId: null, restaurant: null, locationSlug: null };
-            }
+      // Helper function to find restaurant by slug or ID, handling multi-location combined slugs
+      async function findRestaurantBySlugOrId(slug) {
+        const db = admin.firestore();
 
-            // Handle subdomain or query param
-            if (host.includes('restaurant-portal-6b147.web.app') || host.includes('cloudfunctions.net')) {
-                const subdomain = host.split('.')[0];
-                if (subdomain !== 'restaurant-portal-6b147' && subdomain !== 'us-central1-restaurant-portal-6b147') {
-                    const result = await findRestaurantBySlugOrId(subdomain);
-                    if (result.restaurantId) {
-                        restaurant = result.restaurant;
-                        restaurantId = result.restaurantId;
-                        if (result.locationSlug) {
-                            // Find the locationId from the location slug
-                            const locationsSnap = await admin.firestore()
-                                .collection(`restaurants/${restaurantId}/locations`)
-                                .where('slug', '==', result.locationSlug)
-                                .limit(1)
-                                .get();
-                            if (!locationsSnap.empty) {
-                                derivedLocationId = locationsSnap.docs[0].id;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Fallback to query param for testing
-            if (!restaurantId && req.query.restaurant) {
-                console.log('Looking up restaurant by query param:', req.query.restaurant);
-                const result = await findRestaurantBySlugOrId(req.query.restaurant);
-                console.log('Lookup result:', JSON.stringify({ restaurantId: result.restaurantId, hasRestaurant: !!result.restaurant, locationSlug: result.locationSlug }));
-                if (result.restaurantId) {
-                    restaurant = result.restaurant;
-                    restaurantId = result.restaurantId;
-                    if (result.locationSlug) {
-                        // Find the locationId from the location slug
-                        const locationsSnap = await admin.firestore()
-                            .collection(`restaurants/${restaurantId}/locations`)
-                            .where('slug', '==', result.locationSlug)
-                            .limit(1)
-                            .get();
-                        if (!locationsSnap.empty) {
-                            derivedLocationId = locationsSnap.docs[0].id;
-                            console.log('Found location by slug:', result.locationSlug, '-> id:', derivedLocationId);
-                        } else {
-                            console.log('No location found with slug:', result.locationSlug);
-                            // Try to find location by name match (fallback)
-                            const allLocationsSnap = await admin.firestore()
-                                .collection(`restaurants/${restaurantId}/locations`)
-                                .get();
-                            console.log('Available locations:', allLocationsSnap.docs.map(d => ({ id: d.id, slug: d.data().slug, name: d.data().name })));
-                        }
-                    }
-                }
-            }
-            
-            // Also check if locationId is directly in query params (takes priority)
-            if (req.query.locationId) {
-                derivedLocationId = req.query.locationId;
-                console.log('Using locationId from query param:', derivedLocationId);
-            }
+        // First try exact slug match
+        let rest = await getRestaurantBySlug(slug);
+        if (rest) {
+          return { restaurantId: rest.id, restaurant: rest, locationSlug: null };
+        }
 
-            if (!restaurantId) {
-                return res.status(404).send(`
+        // Try as direct restaurant ID (for cases where slug isn't set)
+        const directDoc = await db.doc(`restaurants/${slug}`).get();
+        if (directDoc.exists) {
+          return { restaurantId: slug, restaurant: { id: slug, ...directDoc.data() }, locationSlug: null };
+        }
+
+        // For multi-location: slug might be "restaurant-id-or-slug-location-slug"
+        // Try progressively shorter prefixes
+        const parts = slug.split('-');
+        for (let i = parts.length - 1; i >= 1; i--) {
+          const potentialRestaurantPart = parts.slice(0, i).join('-');
+          const potentialLocationSlug = parts.slice(i).join('-');
+
+          // Try as slug first
+          rest = await getRestaurantBySlug(potentialRestaurantPart);
+          if (rest) {
+            return { restaurantId: rest.id, restaurant: rest, locationSlug: potentialLocationSlug };
+          }
+
+          // Try as direct restaurant ID
+          const idDoc = await db.doc(`restaurants/${potentialRestaurantPart}`).get();
+          if (idDoc.exists) {
+            return { restaurantId: potentialRestaurantPart, restaurant: { id: potentialRestaurantPart, ...idDoc.data() }, locationSlug: potentialLocationSlug };
+          }
+        }
+
+        return { restaurantId: null, restaurant: null, locationSlug: null };
+      }
+
+      // Handle subdomain or query param
+      if (host.includes('restaurant-portal-6b147.web.app') || host.includes('cloudfunctions.net')) {
+        const subdomain = host.split('.')[0];
+        if (subdomain !== 'restaurant-portal-6b147' && subdomain !== 'us-central1-restaurant-portal-6b147') {
+          const result = await findRestaurantBySlugOrId(subdomain);
+          if (result.restaurantId) {
+            restaurant = result.restaurant;
+            restaurantId = result.restaurantId;
+            if (result.locationSlug) {
+              // Find the locationId from the location slug
+              const locationsSnap = await admin.firestore()
+                .collection(`restaurants/${restaurantId}/locations`)
+                .where('slug', '==', result.locationSlug)
+                .limit(1)
+                .get();
+              if (!locationsSnap.empty) {
+                derivedLocationId = locationsSnap.docs[0].id;
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback to query param for testing
+      if (!restaurantId && req.query.restaurant) {
+        console.log('Looking up restaurant by query param:', req.query.restaurant);
+        const result = await findRestaurantBySlugOrId(req.query.restaurant);
+        console.log('Lookup result:', JSON.stringify({ restaurantId: result.restaurantId, hasRestaurant: !!result.restaurant, locationSlug: result.locationSlug }));
+        if (result.restaurantId) {
+          restaurant = result.restaurant;
+          restaurantId = result.restaurantId;
+          if (result.locationSlug) {
+            // Find the locationId from the location slug
+            const locationsSnap = await admin.firestore()
+              .collection(`restaurants/${restaurantId}/locations`)
+              .where('slug', '==', result.locationSlug)
+              .limit(1)
+              .get();
+            if (!locationsSnap.empty) {
+              derivedLocationId = locationsSnap.docs[0].id;
+              console.log('Found location by slug:', result.locationSlug, '-> id:', derivedLocationId);
+            } else {
+              console.log('No location found with slug:', result.locationSlug);
+              // Try to find location by name match (fallback)
+              const allLocationsSnap = await admin.firestore()
+                .collection(`restaurants/${restaurantId}/locations`)
+                .get();
+              console.log('Available locations:', allLocationsSnap.docs.map(d => ({ id: d.id, slug: d.data().slug, name: d.data().name })));
+            }
+          }
+        }
+      }
+
+      // Also check if locationId is directly in query params (takes priority)
+      if (req.query.locationId) {
+        derivedLocationId = req.query.locationId;
+        console.log('Using locationId from query param:', derivedLocationId);
+      }
+
+      if (!restaurantId) {
+        return res.status(404).send(`
                     <!DOCTYPE html>
                     <html><head><title>Restaurant Not Found</title>
                     <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5;}
@@ -664,14 +664,14 @@ exports.serveWebsite = onRequest(async (req, res) => {
                     h1{color:#e74c3c;margin-bottom:1rem;}</style></head>
                     <body><div class="container"><h1>🍽️ Restaurant Not Found</h1><p>The restaurant you're looking for doesn't exist.</p></div></body></html>
                 `);
-            }
+      }
 
-            // Fetch restaurant data from Firestore
-            const db = admin.firestore();
-            const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
-            
-            if (!restaurantDoc.exists) {
-                return res.status(404).send(`
+      // Fetch restaurant data from Firestore
+      const db = admin.firestore();
+      const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
+
+      if (!restaurantDoc.exists) {
+        return res.status(404).send(`
                     <!DOCTYPE html>
                     <html><head><title>Restaurant Not Found</title>
                     <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5;}
@@ -679,72 +679,72 @@ exports.serveWebsite = onRequest(async (req, res) => {
                     h1{color:#e74c3c;margin-bottom:1rem;}</style></head>
                     <body><div class="container"><h1>🍽️ Restaurant Not Found</h1><p>This restaurant doesn't exist in our system.</p></div></body></html>
                 `);
-            }
+      }
 
-            const restaurantData = restaurantDoc.data();
-            
-            // Check if multi-location and get locationId from query, derived from slug, or config
-            const isMultiLocation = restaurantData.isMultiLocation === true;
-            const locationId = req.query.locationId || derivedLocationId || null;
-            
-            console.log('Multi-location:', isMultiLocation, '| LocationId:', locationId, '| Derived:', derivedLocationId);
-            
-            // Fetch website configuration (location-specific for multi-location)
-            let websiteDoc;
-            let websiteData = {};
-            let effectiveLocationId;
-            
-            if (isMultiLocation && locationId) {
-                // Multi-location: load location-specific config
-                websiteDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}/website/config`).get();
-                websiteData = websiteDoc.exists ? websiteDoc.data() : {};
-                effectiveLocationId = locationId; // Use the known locationId
-                console.log('Loaded location-specific config for locationId:', locationId);
-            } else if (isMultiLocation && !locationId) {
-                // Multi-location but no locationId - this is a problem!
-                // Try to find a location by searching through all locations for a matching slug
-                console.log('Multi-location restaurant but no locationId. Searching locations...');
-                const locationsSnap = await db.collection(`restaurants/${restaurantId}/locations`).get();
-                
-                for (const locDoc of locationsSnap.docs) {
-                    const locData = locDoc.data();
-                    const locConfigDoc = await db.doc(`restaurants/${restaurantId}/locations/${locDoc.id}/website/config`).get();
-                    if (locConfigDoc.exists) {
-                        // Check if this location's website config is published or matches our needs
-                        const locConfig = locConfigDoc.data();
-                        // Use the first location that has a website config
-                        // This is a fallback - ideally we'd have the locationId from the URL
-                        websiteDoc = locConfigDoc;
-                        websiteData = locConfig;
-                        effectiveLocationId = locDoc.id;
-                        console.log('Using fallback location:', locDoc.id, locData.name);
-                        break;
-                    }
-                }
-                
-                // If still no config found, fall back to restaurant-level (legacy single-location)
-                if (!websiteDoc?.exists) {
-                    websiteDoc = await db.doc(`restaurants/${restaurantId}/website/config`).get();
-                    websiteData = websiteDoc.exists ? websiteDoc.data() : {};
-                    effectiveLocationId = websiteData.locationId || restaurantId;
-                    console.log('Using restaurant-level fallback config');
-                }
-            } else {
-                // Single-location: load restaurant-level config
-                websiteDoc = await db.doc(`restaurants/${restaurantId}/website/config`).get();
-                websiteData = websiteDoc.exists ? websiteDoc.data() : {};
-                effectiveLocationId = restaurantId;
-                console.log('Single-location: using restaurant-level config');
-            }
-            
-            console.log('Effective locationId for orders:', effectiveLocationId);
+      const restaurantData = restaurantDoc.data();
 
-            // Check if this is a preview request (allows viewing unpublished sites)
-            const isPreview = req.query.preview === 'true';
+      // Check if multi-location and get locationId from query, derived from slug, or config
+      const isMultiLocation = restaurantData.isMultiLocation === true;
+      const locationId = req.query.locationId || derivedLocationId || null;
 
-            // Check if website is published (unless it's a preview request)
-            if (!websiteData.isPublished && !isPreview) {
-                return res.status(404).send(`
+      console.log('Multi-location:', isMultiLocation, '| LocationId:', locationId, '| Derived:', derivedLocationId);
+
+      // Fetch website configuration (location-specific for multi-location)
+      let websiteDoc;
+      let websiteData = {};
+      let effectiveLocationId;
+
+      if (isMultiLocation && locationId) {
+        // Multi-location: load location-specific config
+        websiteDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}/website/config`).get();
+        websiteData = websiteDoc.exists ? websiteDoc.data() : {};
+        effectiveLocationId = locationId; // Use the known locationId
+        console.log('Loaded location-specific config for locationId:', locationId);
+      } else if (isMultiLocation && !locationId) {
+        // Multi-location but no locationId - this is a problem!
+        // Try to find a location by searching through all locations for a matching slug
+        console.log('Multi-location restaurant but no locationId. Searching locations...');
+        const locationsSnap = await db.collection(`restaurants/${restaurantId}/locations`).get();
+
+        for (const locDoc of locationsSnap.docs) {
+          const locData = locDoc.data();
+          const locConfigDoc = await db.doc(`restaurants/${restaurantId}/locations/${locDoc.id}/website/config`).get();
+          if (locConfigDoc.exists) {
+            // Check if this location's website config is published or matches our needs
+            const locConfig = locConfigDoc.data();
+            // Use the first location that has a website config
+            // This is a fallback - ideally we'd have the locationId from the URL
+            websiteDoc = locConfigDoc;
+            websiteData = locConfig;
+            effectiveLocationId = locDoc.id;
+            console.log('Using fallback location:', locDoc.id, locData.name);
+            break;
+          }
+        }
+
+        // If still no config found, fall back to restaurant-level (legacy single-location)
+        if (!websiteDoc?.exists) {
+          websiteDoc = await db.doc(`restaurants/${restaurantId}/website/config`).get();
+          websiteData = websiteDoc.exists ? websiteDoc.data() : {};
+          effectiveLocationId = websiteData.locationId || restaurantId;
+          console.log('Using restaurant-level fallback config');
+        }
+      } else {
+        // Single-location: load restaurant-level config
+        websiteDoc = await db.doc(`restaurants/${restaurantId}/website/config`).get();
+        websiteData = websiteDoc.exists ? websiteDoc.data() : {};
+        effectiveLocationId = restaurantId;
+        console.log('Single-location: using restaurant-level config');
+      }
+
+      console.log('Effective locationId for orders:', effectiveLocationId);
+
+      // Check if this is a preview request (allows viewing unpublished sites)
+      const isPreview = req.query.preview === 'true';
+
+      // Check if website is published (unless it's a preview request)
+      if (!websiteData.isPublished && !isPreview) {
+        return res.status(404).send(`
                     <!DOCTYPE html>
                     <html><head><title>Website Not Published</title>
                     <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5;}
@@ -752,72 +752,72 @@ exports.serveWebsite = onRequest(async (req, res) => {
                     h1{color:#f39c12;margin-bottom:1rem;}</style></head>
                     <body><div class="container"><h1>🚧 Coming Soon</h1><p>This restaurant's website is under construction.</p></div></body></html>
                 `);
-            }
+      }
 
-            const templateId = websiteData.template || 'modern-bistro';
-            const templateDefaults = TEMPLATES[templateId] || TEMPLATES['modern-bistro'];
+      const templateId = websiteData.template || 'modern-bistro';
+      const templateDefaults = TEMPLATES[templateId] || TEMPLATES['modern-bistro'];
 
-            // Build template data
-            const templateData = {
-                restaurantId: restaurantId,
-                locationId: effectiveLocationId,
-                restaurantName: websiteData.restaurantName || restaurantData.name || 'Restaurant',
-                tagline: websiteData.tagline || 'Welcome to our restaurant',
-                description: websiteData.description || 'Delicious food made with love',
-                heroImage: websiteData.heroImage || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1920&q=80',
-                aboutImage: websiteData.aboutImage || 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80',
-                aboutContent: websiteData.aboutContent || '<p>Welcome to our restaurant! We are passionate about serving delicious food.</p>',
-                address: websiteData.address || restaurantData.address || '',
-                phone: websiteData.phone || restaurantData.phone || '',
-                email: websiteData.email || restaurantData.email || '',
-                logo: websiteData.logo || restaurantData.logo || '',
-                primaryColor: websiteData.primaryColor || templateDefaults.primaryColor,
-                secondaryColor: websiteData.secondaryColor || templateDefaults.secondaryColor,
-                accentColor: websiteData.accentColor || templateDefaults.accentColor,
-                fontFamily: websiteData.fontFamily || templateDefaults.fontFamily,
-                facebook: websiteData.facebook || '',
-                instagram: websiteData.instagram || '',
-                twitter: websiteData.twitter || '',
-                hours: websiteData.hours || {
-                    monday: { open: '11:00', close: '22:00' },
-                    tuesday: { open: '11:00', close: '22:00' },
-                    wednesday: { open: '11:00', close: '22:00' },
-                    thursday: { open: '11:00', close: '22:00' },
-                    friday: { open: '11:00', close: '23:00' },
-                    saturday: { open: '12:00', close: '23:00' },
-                    sunday: { open: '12:00', close: '21:00' }
-                },
-                // Use emulator URL if running in emulator, otherwise production
-                apiBaseUrl: process.env.FUNCTIONS_EMULATOR === 'true' 
-                    ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
-                    : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
-                stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15'
-            };
+      // Build template data
+      const templateData = {
+        restaurantId: restaurantId,
+        locationId: effectiveLocationId,
+        restaurantName: websiteData.restaurantName || restaurantData.name || 'Restaurant',
+        tagline: websiteData.tagline || 'Welcome to our restaurant',
+        description: websiteData.description || 'Delicious food made with love',
+        heroImage: websiteData.heroImage || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1920&q=80',
+        aboutImage: websiteData.aboutImage || 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80',
+        aboutContent: websiteData.aboutContent || '<p>Welcome to our restaurant! We are passionate about serving delicious food.</p>',
+        address: websiteData.address || restaurantData.address || '',
+        phone: websiteData.phone || restaurantData.phone || '',
+        email: websiteData.email || restaurantData.email || '',
+        logo: websiteData.logo || restaurantData.logo || '',
+        primaryColor: websiteData.primaryColor || templateDefaults.primaryColor,
+        secondaryColor: websiteData.secondaryColor || templateDefaults.secondaryColor,
+        accentColor: websiteData.accentColor || templateDefaults.accentColor,
+        fontFamily: websiteData.fontFamily || templateDefaults.fontFamily,
+        facebook: websiteData.facebook || '',
+        instagram: websiteData.instagram || '',
+        twitter: websiteData.twitter || '',
+        hours: websiteData.hours || {
+          monday: { open: '11:00', close: '22:00' },
+          tuesday: { open: '11:00', close: '22:00' },
+          wednesday: { open: '11:00', close: '22:00' },
+          thursday: { open: '11:00', close: '22:00' },
+          friday: { open: '11:00', close: '23:00' },
+          saturday: { open: '12:00', close: '23:00' },
+          sunday: { open: '12:00', close: '21:00' }
+        },
+        // Use emulator URL if running in emulator, otherwise production
+        apiBaseUrl: process.env.FUNCTIONS_EMULATOR === 'true'
+          ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
+          : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
+        stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15'
+      };
 
-            // ALWAYS load from local files first (they're included in the functions package and always up-to-date)
-            // Only fall back to Storage if local files don't exist
-            const fs = require('fs');
-            const path = require('path');
-            const localTemplatePath = path.join(__dirname, 'templates', templateId, 'template.html');
-            
-            let templateHtml;
-            
-            if (fs.existsSync(localTemplatePath)) {
-                templateHtml = fs.readFileSync(localTemplatePath, 'utf-8');
-                console.log(`Loaded template from local file: ${localTemplatePath}`);
-            } else {
-                // Fallback: Try to load from Firebase Storage
-                console.log(`Local template not found, trying Storage: ${localTemplatePath}`);
-            const bucket = admin.storage().bucket();
-                const templateFile = bucket.file(`templates/${templateId}/template.html`);
-                const [templateExists] = await templateFile.exists();
-                
-                if (templateExists) {
-                    const [content] = await templateFile.download();
-                    templateHtml = content.toString('utf-8');
-                    console.log(`Loaded template from Storage: templates/${templateId}/template.html`);
-                } else {
-                    return res.status(500).send(`
+      // ALWAYS load from local files first (they're included in the functions package and always up-to-date)
+      // Only fall back to Storage if local files don't exist
+      const fs = require('fs');
+      const path = require('path');
+      const localTemplatePath = path.join(__dirname, 'templates', templateId, 'template.html');
+
+      let templateHtml;
+
+      if (fs.existsSync(localTemplatePath)) {
+        templateHtml = fs.readFileSync(localTemplatePath, 'utf-8');
+        console.log(`Loaded template from local file: ${localTemplatePath}`);
+      } else {
+        // Fallback: Try to load from Firebase Storage
+        console.log(`Local template not found, trying Storage: ${localTemplatePath}`);
+        const bucket = admin.storage().bucket();
+        const templateFile = bucket.file(`templates/${templateId}/template.html`);
+        const [templateExists] = await templateFile.exists();
+
+        if (templateExists) {
+          const [content] = await templateFile.download();
+          templateHtml = content.toString('utf-8');
+          console.log(`Loaded template from Storage: templates/${templateId}/template.html`);
+        } else {
+          return res.status(500).send(`
                         <!DOCTYPE html>
                         <html><head><title>Template Not Found</title>
                         <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5;}
@@ -825,24 +825,24 @@ exports.serveWebsite = onRequest(async (req, res) => {
                         h1{color:#e74c3c;margin-bottom:1rem;}</style></head>
                         <body><div class="container"><h1>⚠️ Template Not Found</h1><p>Template "${templateId}" needs to be uploaded to storage or added to local templates.</p></div></body></html>
                     `);
-                }
-            }
+        }
+      }
 
-            // Render template with data
-            const renderedHtml = renderTemplate(templateHtml, templateData);
+      // Render template with data
+      const renderedHtml = renderTemplate(templateHtml, templateData);
 
-            // Set headers
-            res.set({
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'public, max-age=300',
-                'X-Content-Type-Options': 'nosniff'
-            });
+      // Set headers
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+        'X-Content-Type-Options': 'nosniff'
+      });
 
-            return res.send(renderedHtml);
+      return res.send(renderedHtml);
 
-        } catch (error) {
-            console.error('Error serving website:', error);
-            return res.status(500).send(`
+    } catch (error) {
+      console.error('Error serving website:', error);
+      return res.status(500).send(`
                 <!DOCTYPE html>
                 <html><head><title>Error</title>
                 <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5;}
@@ -850,269 +850,269 @@ exports.serveWebsite = onRequest(async (req, res) => {
                 h1{color:#e74c3c;margin-bottom:1rem;}</style></head>
                 <body><div class="container"><h1>😕 Oops!</h1><p>Something went wrong. Please try again later.</p></div></body></html>
             `);
-        }
-    });
+    }
+  });
 });
 
 // Upload templates to storage (admin function)
 exports.uploadTemplate = onCall(async (request) => {
-    try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
-        }
-
-        const { templateId, templateHtml } = request.data;
-        
-        if (!templateId || !templateHtml) {
-            throw new HttpsError('invalid-argument', 'Template ID and HTML are required');
-        }
-
-        const bucket = admin.storage().bucket();
-        const file = bucket.file(`templates/${templateId}/template.html`);
-        
-        await file.save(templateHtml, {
-            metadata: {
-                contentType: 'text/html',
-                cacheControl: 'public, max-age=3600'
-            }
-        });
-
-        return { success: true, message: `Template ${templateId} uploaded successfully` };
-    } catch (error) {
-        console.error('Error uploading template:', error);
-        throw new HttpsError('internal', error.message);
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
+
+    const { templateId, templateHtml } = request.data;
+
+    if (!templateId || !templateHtml) {
+      throw new HttpsError('invalid-argument', 'Template ID and HTML are required');
+    }
+
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(`templates/${templateId}/template.html`);
+
+    await file.save(templateHtml, {
+      metadata: {
+        contentType: 'text/html',
+        cacheControl: 'public, max-age=3600'
+      }
+    });
+
+    return { success: true, message: `Template ${templateId} uploaded successfully` };
+  } catch (error) {
+    console.error('Error uploading template:', error);
+    throw new HttpsError('internal', error.message);
+  }
 });
 
 // Save website configuration
 exports.saveWebsiteConfig = onCall(async (request) => {
-    try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
-        }
-
-        const { config, locationId } = request.data;
-        const restaurantId = request.auth.uid;
-
-        if (!config) {
-            throw new HttpsError('invalid-argument', 'Config is required');
-        }
-
-        const db = admin.firestore();
-        
-        // Check if multi-location restaurant
-        const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
-        const restaurantData = restaurantDoc.data() || {};
-        const isMultiLocation = restaurantData.isMultiLocation === true;
-        
-        // Determine config path based on whether this is a location-specific website
-        let configPath;
-        let effectiveLocationId;
-        
-        if (isMultiLocation && locationId) {
-            // Multi-location: save config under the location
-            configPath = `restaurants/${restaurantId}/locations/${locationId}/website/config`;
-            effectiveLocationId = locationId;
-        } else {
-            // Single-location: save config under restaurant
-            configPath = `restaurants/${restaurantId}/website/config`;
-            effectiveLocationId = restaurantId;
-        }
-        
-        // Save website config with locationId
-        await db.doc(configPath).set({
-            ...config,
-            locationId: effectiveLocationId,
-            updatedAt: FieldValue.serverTimestamp()
-        }, { merge: true });
-
-        // Generate slug
-        let slug;
-        if (isMultiLocation && locationId) {
-            // For multi-location, use combined slug: restaurant-location
-            const locationDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).get();
-            const locationData = locationDoc.data() || {};
-            const baseSlug = restaurantData.slug || restaurantId;
-            const locationSlug = locationData.slug || locationData.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || locationId;
-            slug = `${baseSlug}-${locationSlug}`;
-            
-            // Save slug to location
-            if (!locationData.slug) {
-                await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).update({ 
-                    slug: locationSlug 
-                });
-            }
-        } else {
-            // Single-location slug
-            if (!restaurantData.slug && config.restaurantName) {
-                slug = config.restaurantName
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/(^-|-$)/g, '');
-                
-                await db.doc(`restaurants/${restaurantId}`).update({ slug });
-            } else {
-                slug = restaurantData.slug || config.restaurantName?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || restaurantId;
-            }
-        }
-
-        const locationParam = isMultiLocation && locationId ? `&locationId=${locationId}` : '';
-        
-        return { 
-            success: true, 
-            slug: slug,
-            locationId: effectiveLocationId,
-            websiteUrl: `https://${slug}.restaurant-portal-6b147.web.app`,
-            previewUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}&preview=true${locationParam}`
-        };
-    } catch (error) {
-        console.error('Error saving website config:', error);
-        throw new HttpsError('internal', error.message);
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
+
+    const { config, locationId } = request.data;
+    const restaurantId = request.auth.uid;
+
+    if (!config) {
+      throw new HttpsError('invalid-argument', 'Config is required');
+    }
+
+    const db = admin.firestore();
+
+    // Check if multi-location restaurant
+    const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
+    const restaurantData = restaurantDoc.data() || {};
+    const isMultiLocation = restaurantData.isMultiLocation === true;
+
+    // Determine config path based on whether this is a location-specific website
+    let configPath;
+    let effectiveLocationId;
+
+    if (isMultiLocation && locationId) {
+      // Multi-location: save config under the location
+      configPath = `restaurants/${restaurantId}/locations/${locationId}/website/config`;
+      effectiveLocationId = locationId;
+    } else {
+      // Single-location: save config under restaurant
+      configPath = `restaurants/${restaurantId}/website/config`;
+      effectiveLocationId = restaurantId;
+    }
+
+    // Save website config with locationId
+    await db.doc(configPath).set({
+      ...config,
+      locationId: effectiveLocationId,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // Generate slug
+    let slug;
+    if (isMultiLocation && locationId) {
+      // For multi-location, use combined slug: restaurant-location
+      const locationDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).get();
+      const locationData = locationDoc.data() || {};
+      const baseSlug = restaurantData.slug || restaurantId;
+      const locationSlug = locationData.slug || locationData.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || locationId;
+      slug = `${baseSlug}-${locationSlug}`;
+
+      // Save slug to location
+      if (!locationData.slug) {
+        await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).update({
+          slug: locationSlug
+        });
+      }
+    } else {
+      // Single-location slug
+      if (!restaurantData.slug && config.restaurantName) {
+        slug = config.restaurantName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '');
+
+        await db.doc(`restaurants/${restaurantId}`).update({ slug });
+      } else {
+        slug = restaurantData.slug || config.restaurantName?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || restaurantId;
+      }
+    }
+
+    const locationParam = isMultiLocation && locationId ? `&locationId=${locationId}` : '';
+
+    return {
+      success: true,
+      slug: slug,
+      locationId: effectiveLocationId,
+      websiteUrl: `https://${slug}.restaurant-portal-6b147.web.app`,
+      previewUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}&preview=true${locationParam}`
+    };
+  } catch (error) {
+    console.error('Error saving website config:', error);
+    throw new HttpsError('internal', error.message);
+  }
 });
 
 // Publish website
 exports.publishWebsite = onCall(async (request) => {
-    try {
-        if (!request.auth) {
-            throw new HttpsError('unauthenticated', 'User must be authenticated');
-        }
-
-        const restaurantId = request.auth.uid;
-        const { locationId } = request.data || {};
-        const db = admin.firestore();
-
-        // Check if multi-location restaurant
-        const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
-        const restaurantData = restaurantDoc.data() || {};
-        const isMultiLocation = restaurantData.isMultiLocation === true;
-
-        // Determine config path
-        let configPath;
-        let slug;
-        
-        if (isMultiLocation && locationId) {
-            // Multi-location: use location-specific config
-            configPath = `restaurants/${restaurantId}/locations/${locationId}/website/config`;
-            
-            // Get location slug for URL
-            const locationDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).get();
-            const locationData = locationDoc.data() || {};
-            const locationSlug = locationData.slug || locationId;
-            const baseSlug = restaurantData.slug || restaurantId;
-            slug = `${baseSlug}-${locationSlug}`;
-        } else {
-            // Single-location: use restaurant-level config
-            configPath = `restaurants/${restaurantId}/website/config`;
-            slug = restaurantData.slug || restaurantId;
-        }
-
-        // Check if config exists, if not create it
-        const configDoc = await db.doc(configPath).get();
-        if (!configDoc.exists) {
-            // Create the config document first
-            await db.doc(configPath).set({
-                isPublished: true,
-                publishedAt: FieldValue.serverTimestamp(),
-                template: 'modern-bistro'
-            });
-        } else {
-            // Update existing config
-            await db.doc(configPath).update({
-                isPublished: true,
-                publishedAt: FieldValue.serverTimestamp()
-            });
-        }
-
-        return { 
-            success: true, 
-            websiteUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}`,
-            message: 'Website published successfully!'
-        };
-    } catch (error) {
-        console.error('Error publishing website:', error);
-        throw new HttpsError('internal', error.message);
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
+
+    const restaurantId = request.auth.uid;
+    const { locationId } = request.data || {};
+    const db = admin.firestore();
+
+    // Check if multi-location restaurant
+    const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
+    const restaurantData = restaurantDoc.data() || {};
+    const isMultiLocation = restaurantData.isMultiLocation === true;
+
+    // Determine config path
+    let configPath;
+    let slug;
+
+    if (isMultiLocation && locationId) {
+      // Multi-location: use location-specific config
+      configPath = `restaurants/${restaurantId}/locations/${locationId}/website/config`;
+
+      // Get location slug for URL
+      const locationDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).get();
+      const locationData = locationDoc.data() || {};
+      const locationSlug = locationData.slug || locationId;
+      const baseSlug = restaurantData.slug || restaurantId;
+      slug = `${baseSlug}-${locationSlug}`;
+    } else {
+      // Single-location: use restaurant-level config
+      configPath = `restaurants/${restaurantId}/website/config`;
+      slug = restaurantData.slug || restaurantId;
+    }
+
+    // Check if config exists, if not create it
+    const configDoc = await db.doc(configPath).get();
+    if (!configDoc.exists) {
+      // Create the config document first
+      await db.doc(configPath).set({
+        isPublished: true,
+        publishedAt: FieldValue.serverTimestamp(),
+        template: 'modern-bistro'
+      });
+    } else {
+      // Update existing config
+      await db.doc(configPath).update({
+        isPublished: true,
+        publishedAt: FieldValue.serverTimestamp()
+      });
+    }
+
+    return {
+      success: true,
+      websiteUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}`,
+      message: 'Website published successfully!'
+    };
+  } catch (error) {
+    console.error('Error publishing website:', error);
+    throw new HttpsError('internal', error.message);
+  }
 });
 
 // Serve menu data
 exports.getMenu = onRequest(async (req, res) => {
-    return cors(req, res, async () => {
-        try {
-            // Get restaurant ID and optional locationId from query parameters
-            const restaurantId = req.query.restaurantId;
-            const locationId = req.query.locationId;
-            console.log('Getting menu for restaurant:', restaurantId, '| location:', locationId);
-            
-            if (!restaurantId) {
-                console.error('No restaurant ID provided');
-                return res.status(400).json({ error: 'Restaurant ID is required' });
-            }
-            
-            // Check if this is a multi-location restaurant
-            const restaurantDoc = await admin.firestore().doc(`restaurants/${restaurantId}`).get();
-            const isMultiLocation = restaurantDoc.exists && restaurantDoc.data()?.isMultiLocation === true;
-            
-            // Get menu categories from Firestore
-            const categoriesSnapshot = await admin.firestore()
-                .collection(`restaurants/${restaurantId}/menuCategories`)
-                .orderBy('name')
-                .get();
+  return cors(req, res, async () => {
+    try {
+      // Get restaurant ID and optional locationId from query parameters
+      const restaurantId = req.query.restaurantId;
+      const locationId = req.query.locationId;
+      console.log('Getting menu for restaurant:', restaurantId, '| location:', locationId);
 
-            const categories = [];
-            
-            // For each category, get its items
-            for (const categoryDoc of categoriesSnapshot.docs) {
-                const categoryData = {
-                    id: categoryDoc.id,
-                    ...categoryDoc.data(),
-                    items: []
-                };
-                
-                // Get items for this category
-                const itemsSnapshot = await admin.firestore()
-                    .collection(`restaurants/${restaurantId}/menuCategories/${categoryDoc.id}/items`)
-                    .orderBy('name')
-                    .get();
-                
-                itemsSnapshot.forEach(itemDoc => {
-                    const itemData = itemDoc.data();
-                    
-                    // Filter by location for multi-location restaurants
-                    if (isMultiLocation && locationId) {
-                        // If item has locations array with entries, check if current location is included
-                        if (itemData.locations && itemData.locations.length > 0) {
-                            if (!itemData.locations.includes(locationId)) {
-                                // Skip this item - not available at this location
-                                return;
-                            }
-                        }
-                        // If no locations array or empty, item is available at all locations
-                    }
-                    
-                    // Ensure price and discount are numbers
-                    categoryData.items.push({
-                        id: itemDoc.id,
-                        ...itemData,
-                        price: typeof itemData.price === 'number' ? itemData.price : parseFloat(itemData.price) || 0,
-                        discount: typeof itemData.discount === 'number' ? itemData.discount : parseFloat(itemData.discount) || 0,
-                        discountType: itemData.discountType || 'amount'
-                    });
-                });
-                
-                // Only include categories that have items (after location filtering)
-                if (categoryData.items.length > 0) {
-                    categories.push(categoryData);
-                }
-            }
+      if (!restaurantId) {
+        console.error('No restaurant ID provided');
+        return res.status(400).json({ error: 'Restaurant ID is required' });
+      }
 
-            console.log('Menu data loaded successfully:', categories.length, 'categories for location:', locationId || 'all');
-            res.json({ categories });
-        } catch (error) {
-            console.error('Error serving menu:', error);
-            res.status(500).json({ error: 'Error loading menu: ' + error.message });
+      // Check if this is a multi-location restaurant
+      const restaurantDoc = await admin.firestore().doc(`restaurants/${restaurantId}`).get();
+      const isMultiLocation = restaurantDoc.exists && restaurantDoc.data()?.isMultiLocation === true;
+
+      // Get menu categories from Firestore
+      const categoriesSnapshot = await admin.firestore()
+        .collection(`restaurants/${restaurantId}/menuCategories`)
+        .orderBy('name')
+        .get();
+
+      const categories = [];
+
+      // For each category, get its items
+      for (const categoryDoc of categoriesSnapshot.docs) {
+        const categoryData = {
+          id: categoryDoc.id,
+          ...categoryDoc.data(),
+          items: []
+        };
+
+        // Get items for this category
+        const itemsSnapshot = await admin.firestore()
+          .collection(`restaurants/${restaurantId}/menuCategories/${categoryDoc.id}/items`)
+          .orderBy('name')
+          .get();
+
+        itemsSnapshot.forEach(itemDoc => {
+          const itemData = itemDoc.data();
+
+          // Filter by location for multi-location restaurants
+          if (isMultiLocation && locationId) {
+            // If item has locations array with entries, check if current location is included
+            if (itemData.locations && itemData.locations.length > 0) {
+              if (!itemData.locations.includes(locationId)) {
+                // Skip this item - not available at this location
+                return;
+              }
+            }
+            // If no locations array or empty, item is available at all locations
+          }
+
+          // Ensure price and discount are numbers
+          categoryData.items.push({
+            id: itemDoc.id,
+            ...itemData,
+            price: typeof itemData.price === 'number' ? itemData.price : parseFloat(itemData.price) || 0,
+            discount: typeof itemData.discount === 'number' ? itemData.discount : parseFloat(itemData.discount) || 0,
+            discountType: itemData.discountType || 'amount'
+          });
+        });
+
+        // Only include categories that have items (after location filtering)
+        if (categoryData.items.length > 0) {
+          categories.push(categoryData);
         }
-    });
+      }
+
+      console.log('Menu data loaded successfully:', categories.length, 'categories for location:', locationId || 'all');
+      res.json({ categories });
+    } catch (error) {
+      console.error('Error serving menu:', error);
+      res.status(500).json({ error: 'Error loading menu: ' + error.message });
+    }
+  });
 });
 
 // Handle order submissions
@@ -1125,10 +1125,10 @@ exports.submitOrder = onRequest((request, response) => {
 
       const orderData = request.body;
       console.log('Received order data:', orderData);
-      
+
       // Validate required fields
       if (!orderData.restaurantId || !orderData.customer || !orderData.items || orderData.items.length === 0) {
-        console.error('Missing required fields:', { 
+        console.error('Missing required fields:', {
           hasRestaurantId: !!orderData.restaurantId,
           hasCustomer: !!orderData.customer,
           hasItems: !!orderData.items,
@@ -1171,8 +1171,8 @@ exports.submitOrder = onRequest((request, response) => {
         .set(orderDoc);
 
       // Return success with order ID
-      response.json({ 
-        success: true, 
+      response.json({
+        success: true,
         orderId: orderNumber,
         message: 'Order submitted successfully'
       });
@@ -1192,7 +1192,7 @@ exports.updateWebsite = onCall(async (request) => {
 
     const uid = request.auth.uid;
     const { html, restaurantId, slug } = request.data;
-    
+
     // Verify request data
     if (!html || !restaurantId || uid !== restaurantId) {
       throw new HttpsError('invalid-argument', 'Invalid request data');
@@ -1201,7 +1201,7 @@ exports.updateWebsite = onCall(async (request) => {
     // Upload to Firebase Storage
     const bucket = admin.storage().bucket();
     const file = bucket.file(`websites/${restaurantId}/index.html`);
-    
+
     await file.save(html, {
       metadata: {
         contentType: 'text/html',
@@ -1216,7 +1216,7 @@ exports.updateWebsite = onCall(async (request) => {
     // Make the file publicly readable
     await file.makePublic();
 
-    const websiteUrl = slug 
+    const websiteUrl = slug
       ? `https://${slug}.restaurant-portal-6b147.web.app`
       : `https://${restaurantId}.restaurant-portal-6b147.web.app`;
 
@@ -1237,7 +1237,7 @@ exports.updateWebsite = onCall(async (request) => {
 
 // Gemini API key - set via Firebase Functions config or environment
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 /**
  * Helper function to call Gemini API
@@ -1246,7 +1246,7 @@ async function callGeminiAPI(prompt) {
   if (!GEMINI_API_KEY) {
     throw new Error('Gemini API key not configured. Please set GEMINI_API_KEY environment variable.');
   }
-  
+
   try {
     const response = await axios.post(
       `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
@@ -1265,7 +1265,7 @@ async function callGeminiAPI(prompt) {
         headers: { 'Content-Type': 'application/json' }
       }
     );
-    
+
     if (response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
       return response.data.candidates[0].content.parts[0].text;
     }
@@ -1274,6 +1274,82 @@ async function callGeminiAPI(prompt) {
     console.error('Gemini API error:', error.response?.data || error.message);
     throw new Error('Failed to generate content: ' + (error.response?.data?.error?.message || error.message));
   }
+}
+
+/**
+ * Generate default steps for common SEO actions when AI doesn't provide them
+ */
+function generateDefaultSteps(actionText) {
+  const actionLower = actionText.toLowerCase();
+
+  if (actionLower.includes('google business') || actionLower.includes('google my business') || actionLower.includes('gbp')) {
+    return [
+      'Go to google.com/business and sign in with your Gmail account',
+      'Search for your restaurant name to check if a listing already exists',
+      'If found, click "Claim this business" and follow the verification steps',
+      'If not found, click "Add your business to Google"',
+      'Enter your business name and complete address',
+      'Add your phone number and website URL',
+      'Select "Restaurant" as your primary category',
+      'Add your business hours and upload photos'
+    ];
+  }
+
+  if (actionLower.includes('photo') || actionLower.includes('image')) {
+    return [
+      'Take photos during good natural lighting (near windows or outdoors)',
+      'Use your smartphone camera in landscape/horizontal mode',
+      'Photograph your top 5 most popular dishes from a 45-degree angle',
+      'Take a clear photo of your restaurant exterior showing the signage',
+      'Capture your dining area when it is clean and well-lit',
+      'Upload photos to Google Business, Facebook, Instagram, and your website'
+    ];
+  }
+
+  if (actionLower.includes('review') || actionLower.includes('respond')) {
+    return [
+      'Log into your Google Business Profile at business.google.com',
+      'Click on "Reviews" in the left menu',
+      'Read each review carefully before responding',
+      'For positive reviews: Thank the customer and mention something specific they said',
+      'For negative reviews: Apologize sincerely, offer to make it right, and provide your contact',
+      'Respond within 24-48 hours for best results',
+      'Always stay professional - never argue or get defensive'
+    ];
+  }
+
+  if (actionLower.includes('social media') || actionLower.includes('facebook') || actionLower.includes('instagram')) {
+    return [
+      'Choose 2-3 social platforms to focus on (Facebook and Instagram recommended)',
+      'Create a business account if you do not have one already',
+      'Add your restaurant name, address, phone, and website to your bio',
+      'Upload your logo as profile picture and a food photo as cover',
+      'Post at least 3 times per week - food photos, specials, behind-the-scenes',
+      'Respond to comments and messages within a few hours',
+      'Use relevant hashtags like #restaurantname #cityname #foodie'
+    ];
+  }
+
+  if (actionLower.includes('website') || actionLower.includes('menu online')) {
+    return [
+      'Make sure your menu is available on your website (not just a PDF)',
+      'Add your address and phone number on every page',
+      'Include a "Contact" or "Location" page with Google Maps embed',
+      'Add high-quality photos of your food and restaurant',
+      'Make sure your website works well on mobile phones',
+      'Add online ordering if available'
+    ];
+  }
+
+  // Default generic steps
+  return [
+    'Research what this task involves and why it is important',
+    'Set aside 30 minutes to complete this task',
+    'Gather any information or photos you might need',
+    'Follow any official guides or tutorials available online',
+    'Test your changes to make sure everything looks correct',
+    'Make a note to review and update periodically'
+  ];
 }
 
 /**
@@ -1286,7 +1362,7 @@ exports.generateAIContent = onCall(async (request) => {
     }
 
     const { type, platform, tone, context } = request.data;
-    
+
     // Build the prompt based on content type
     let prompt = `You are a social media expert for restaurants. Generate a ${platform} post for a restaurant.
 
@@ -1304,7 +1380,7 @@ Create a post featuring this menu item:
 
 Make it appetizing and enticing. Include a call to action to visit or order.`;
         break;
-        
+
       case 'promotion':
         prompt += `
 Create a promotional post for:
@@ -1314,7 +1390,7 @@ Create a promotional post for:
 
 Make it urgent and compelling with a clear call to action.`;
         break;
-        
+
       case 'event':
         prompt += `
 Create a post announcing:
@@ -1324,7 +1400,7 @@ Create a post announcing:
 
 Make it exciting and encourage RSVPs or reservations.`;
         break;
-        
+
       case 'engagement':
         prompt += `
 Create an engaging post that encourages interaction.
@@ -1333,7 +1409,7 @@ Goal: Get customers to comment, like, or share.
 
 Ideas: Ask a question, run a poll, share a fun fact about the restaurant/food, or create a conversation starter.`;
         break;
-        
+
       case 'behind_scenes':
         prompt += `
 Create a behind-the-scenes post showing the human side of the restaurant.
@@ -1341,7 +1417,7 @@ Focus on: ${context.focus || 'kitchen, team, preparation'}
 
 Make it personal and authentic.`;
         break;
-        
+
       default:
         prompt += `
 Create a general promotional post that:
@@ -1367,7 +1443,7 @@ IMPORTANT: Return your response as valid JSON with this exact structure:
 }`;
 
     const result = await callGeminiAPI(prompt);
-    
+
     // Try to parse as JSON, with fallback
     try {
       // Extract JSON from the response (it might be wrapped in markdown code blocks)
@@ -1407,7 +1483,7 @@ exports.improveAIContent = onCall(async (request) => {
     }
 
     const { content, instruction } = request.data;
-    
+
     const instructionPrompts = {
       'make_shorter': 'Make this social media post shorter and more concise while keeping the main message:',
       'make_longer': 'Expand this social media post with more details and engaging content:',
@@ -1427,7 +1503,7 @@ Original post:
 Return ONLY the improved post text, nothing else.`;
 
     const result = await callGeminiAPI(prompt);
-    
+
     return { success: true, improvedContent: result.trim().replace(/^["']|["']$/g, '') };
   } catch (error) {
     console.error('Error improving content:', error);
@@ -1445,7 +1521,7 @@ exports.generateHashtags = onCall(async (request) => {
     }
 
     const { content, platform, count = 10 } = request.data;
-    
+
     const prompt = `Generate ${count} highly relevant hashtags for this ${platform} post about a restaurant:
 
 "${content}"
@@ -1462,7 +1538,7 @@ Return ONLY a JSON array of hashtags (without the # symbol), like this:
 ["foodie", "restaurant", "delicious"]`;
 
     const result = await callGeminiAPI(prompt);
-    
+
     // Parse the result
     try {
       let jsonStr = result;
@@ -1498,8 +1574,10 @@ exports.getSeoRecommendations = onCall(async (request) => {
     }
 
     const { restaurantData } = request.data;
-    
-    const prompt = `As an SEO expert for local restaurants, analyze this restaurant's online presence and provide actionable recommendations:
+
+    const prompt = `As an SEO expert for local restaurants, analyze this restaurant's online presence and provide actionable recommendations.
+
+IMPORTANT: Your audience is restaurant owners who are NOT tech-savvy. For each action, provide DETAILED step-by-step instructions that anyone can follow.
 
 Restaurant Information:
 - Name: ${restaurantData.name || 'Not provided'}
@@ -1511,7 +1589,7 @@ Restaurant Information:
 
 Provide a comprehensive SEO analysis with:
 1. Local SEO score (0-100)
-2. Top 5 immediate actions to improve visibility
+2. Top 5 immediate actions to improve visibility - INCLUDE DETAILED STEP-BY-STEP INSTRUCTIONS
 3. Keyword recommendations for their cuisine/location
 4. Google Business Profile optimization tips
 5. Content ideas for better search rankings
@@ -1522,8 +1600,20 @@ Return as JSON:
   "seoScore": 75,
   "grade": "B",
   "immediateActions": [
-    {"priority": "high", "action": "...", "impact": "..."},
-    {"priority": "medium", "action": "...", "impact": "..."}
+    {
+      "priority": "high",
+      "action": "Complete your Google Business Profile",
+      "impact": "Can increase visibility by 50%",
+      "steps": [
+        "Step 1: Go to google.com/business and sign in with your Gmail account",
+        "Step 2: Search for your restaurant name - if it exists, claim it; if not, click 'Add your business'",
+        "Step 3: Enter your restaurant's full address exactly as it appears on your storefront",
+        "Step 4: Add your phone number and website URL",
+        "Step 5: Select your primary category as 'Restaurant' and add secondary categories like your cuisine type",
+        "Step 6: Add your business hours including special holiday hours",
+        "Step 7: Upload at least 10 high-quality photos of your food, interior, and exterior"
+      ]
+    }
   ],
   "keywords": ["keyword1", "keyword2"],
   "googleBusinessTips": ["tip1", "tip2"],
@@ -1533,7 +1623,7 @@ Return as JSON:
 }`;
 
     const result = await callGeminiAPI(prompt);
-    
+
     try {
       let jsonStr = result;
       const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -1541,15 +1631,72 @@ Return as JSON:
         jsonStr = jsonMatch[1];
       }
       const parsed = JSON.parse(jsonStr.trim());
+
+      // Ensure each action has steps - add default steps if missing
+      if (parsed.immediateActions) {
+        parsed.immediateActions = parsed.immediateActions.map(action => {
+          if (!action.steps || action.steps.length === 0) {
+            // Generate default helpful steps based on the action
+            action.steps = generateDefaultSteps(action.action);
+          }
+          return action;
+        });
+      }
+
       return { success: true, recommendations: parsed };
     } catch (parseError) {
+      console.error('Parse error, using fallback:', parseError);
       // Return a default structure if parsing fails
       return {
         success: true,
         recommendations: {
           seoScore: 50,
           grade: 'C',
-          immediateActions: [{ priority: 'high', action: 'Complete your Google Business Profile', impact: 'High visibility boost' }],
+          immediateActions: [
+            {
+              priority: 'high',
+              action: 'Complete your Google Business Profile',
+              impact: 'Can increase visibility by 50%',
+              steps: [
+                'Go to google.com/business and sign in with your Gmail account',
+                'Search for your restaurant name to see if it already exists',
+                'If found, click "Claim this business" and verify ownership',
+                'If not found, click "Add your business to Google"',
+                'Enter your complete address exactly as it appears on your storefront',
+                'Add your phone number that customers can call',
+                'Choose "Restaurant" as your primary business category',
+                'Set your business hours including any special holiday hours',
+                'Upload at least 5 photos of your food, interior, and storefront'
+              ]
+            },
+            {
+              priority: 'high',
+              action: 'Add high-quality photos to your online profiles',
+              impact: 'Businesses with photos get 42% more direction requests',
+              steps: [
+                'Take photos during good lighting (natural daylight works best)',
+                'Photograph your 5 most popular dishes from above at a 45-degree angle',
+                'Take a photo of your restaurant exterior showing the sign clearly',
+                'Capture your dining area when it looks clean and inviting',
+                'Upload these photos to Google Business Profile, Facebook, and Instagram',
+                'Add descriptive captions mentioning the dish name and key ingredients'
+              ]
+            },
+            {
+              priority: 'medium',
+              action: 'Respond to all customer reviews',
+              impact: 'Improves customer trust and search rankings',
+              steps: [
+                'Log into your Google Business Profile dashboard',
+                'Click on "Reviews" in the left sidebar',
+                'Read each review carefully before responding',
+                'For positive reviews: Thank them specifically for what they mentioned',
+                'For negative reviews: Apologize, offer to make it right, provide contact info',
+                'Aim to respond within 24-48 hours of receiving a review',
+                'Keep responses professional and avoid getting defensive'
+              ]
+            }
+          ],
           keywords: [],
           googleBusinessTips: ['Add photos weekly', 'Respond to all reviews'],
           contentIdeas: ['Share daily specials', 'Behind-the-scenes content'],
@@ -1575,9 +1722,9 @@ exports.getContentIdeas = onCall(async (request) => {
     }
 
     const { restaurantName, cuisineType, location, currentMonth } = request.data;
-    
+
     const month = currentMonth || new Date().toLocaleString('default', { month: 'long' });
-    
+
     const prompt = `Generate 10 creative social media content ideas for a ${cuisineType || 'restaurant'} called "${restaurantName || 'the restaurant'}" located in ${location || 'the local area'}.
 
 Consider:
@@ -1601,7 +1748,7 @@ Return as JSON array:
 ]`;
 
     const result = await callGeminiAPI(prompt);
-    
+
     try {
       let jsonStr = result;
       const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -1635,5 +1782,146 @@ Return as JSON array:
   } catch (error) {
     console.error('Error getting content ideas:', error);
     throw new HttpsError('internal', error.message);
+  }
+});
+
+// ============================================
+// MENU PARSING WITH VISION API
+// ============================================
+
+/**
+ * Parse a menu image/PDF using Gemini Vision API
+ * Extracts categories and items with prices
+ */
+exports.parseMenuImage = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { imageData, mimeType } = request.data;
+
+    if (!imageData) {
+      throw new HttpsError('invalid-argument', 'Image data is required');
+    }
+
+    if (!GEMINI_API_KEY) {
+      throw new HttpsError('failed-precondition', 'Gemini API key not configured');
+    }
+
+    console.log('Parsing menu image, mimeType:', mimeType);
+
+    // Use Gemini Vision API to parse the menu
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [
+            {
+              text: `You are a menu parsing expert. Analyze this restaurant menu image and extract ALL menu items you can find.
+
+For each item, extract:
+- The category/section it belongs to (e.g., "Appetizers", "Main Course", "Beverages", "Desserts", etc.)
+- The item name
+- The description (if available, otherwise leave empty)
+- The price (as a number, without currency symbols)
+- Any discount information (if mentioned)
+
+IMPORTANT: 
+- Be thorough and extract EVERY item you can see
+- If you can't read the price clearly, estimate based on typical restaurant prices
+- Group items into logical categories based on how they appear in the menu
+- If a section header is visible, use that as the category name
+
+Return your response as valid JSON in this EXACT format:
+{
+  "categories": [
+    {
+      "name": "Category Name",
+      "items": [
+        {
+          "name": "Item Name",
+          "description": "Item description or empty string",
+          "price": 12.99,
+          "discount": 0
+        }
+      ]
+    }
+  ],
+  "totalItemsFound": 10,
+  "parsingConfidence": "high"
+}
+
+Return ONLY the JSON, no other text.`
+            },
+            {
+              inline_data: {
+                mime_type: mimeType || 'image/jpeg',
+                data: imageData
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.2,
+          topK: 32,
+          topP: 0.95,
+          maxOutputTokens: 8192
+        }
+      },
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error('Invalid response from Gemini Vision API');
+    }
+
+    const resultText = response.data.candidates[0].content.parts[0].text;
+    console.log('Gemini response received, parsing JSON...');
+
+    // Parse the JSON response
+    try {
+      let jsonStr = resultText;
+      // Remove markdown code blocks if present
+      const jsonMatch = resultText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+
+      const parsed = JSON.parse(jsonStr.trim());
+
+      // Validate and clean the data
+      if (parsed.categories && Array.isArray(parsed.categories)) {
+        parsed.categories = parsed.categories.map(category => ({
+          name: category.name || 'Uncategorized',
+          items: (category.items || []).map(item => ({
+            name: item.name || 'Unknown Item',
+            description: item.description || '',
+            price: typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0,
+            discount: typeof item.discount === 'number' ? item.discount : parseFloat(item.discount) || 0
+          }))
+        })).filter(cat => cat.items.length > 0);
+      }
+
+      const totalItems = parsed.categories?.reduce((sum, cat) => sum + cat.items.length, 0) || 0;
+
+      return {
+        success: true,
+        data: parsed,
+        totalItems,
+        message: `Successfully extracted ${totalItems} items from the menu`
+      };
+    } catch (parseError) {
+      console.error('JSON parsing error:', parseError, 'Raw response:', resultText);
+      throw new HttpsError('internal', 'Failed to parse menu data. Please try with a clearer image.');
+    }
+  } catch (error) {
+    console.error('Error parsing menu image:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message || 'Failed to parse menu image');
   }
 }); 
