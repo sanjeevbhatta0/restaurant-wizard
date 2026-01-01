@@ -1229,4 +1229,411 @@ exports.updateWebsite = onCall(async (request) => {
     console.error('Error in updateWebsite:', error);
     throw new HttpsError('internal', error.message);
   }
+});
+
+// ============================================
+// AI CONTENT GENERATION FUNCTIONS
+// ============================================
+
+// Gemini API key - set via Firebase Functions config or environment
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+
+/**
+ * Helper function to call Gemini API
+ */
+async function callGeminiAPI(prompt) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Gemini API key not configured. Please set GEMINI_API_KEY environment variable.');
+  }
+  
+  try {
+    const response = await axios.post(
+      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.8,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024
+        }
+      },
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+    
+    if (response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return response.data.candidates[0].content.parts[0].text;
+    }
+    throw new Error('Invalid response from Gemini API');
+  } catch (error) {
+    console.error('Gemini API error:', error.response?.data || error.message);
+    throw new Error('Failed to generate content: ' + (error.response?.data?.error?.message || error.message));
+  }
+}
+
+/**
+ * Generate AI-powered social media content
+ */
+exports.generateAIContent = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { type, platform, tone, context } = request.data;
+    
+    // Build the prompt based on content type
+    let prompt = `You are a social media expert for restaurants. Generate a ${platform} post for a restaurant.
+
+Restaurant Name: ${context.restaurantName || 'Our Restaurant'}
+Cuisine Type: ${context.cuisineType || 'Restaurant'}
+`;
+
+    switch (type) {
+      case 'menu_feature':
+        prompt += `
+Create a post featuring this menu item:
+- Item Name: ${context.menuItem?.name || 'Today\'s Special'}
+- Description: ${context.menuItem?.description || 'A delicious dish'}
+- Price: ${context.menuItem?.price ? '$' + context.menuItem.price : ''}
+
+Make it appetizing and enticing. Include a call to action to visit or order.`;
+        break;
+        
+      case 'promotion':
+        prompt += `
+Create a promotional post for:
+- Promotion: ${context.promotionDetails || 'Special offer'}
+- Discount/Offer: ${context.discount || 'Limited time offer'}
+- Valid Until: ${context.validUntil || 'While supplies last'}
+
+Make it urgent and compelling with a clear call to action.`;
+        break;
+        
+      case 'event':
+        prompt += `
+Create a post announcing:
+- Event: ${context.eventName || 'Special Event'}
+- Date: ${context.eventDate || 'Coming Soon'}
+- Details: ${context.eventDetails || 'Join us for a special experience'}
+
+Make it exciting and encourage RSVPs or reservations.`;
+        break;
+        
+      case 'engagement':
+        prompt += `
+Create an engaging post that encourages interaction.
+Theme: ${context.theme || 'general'}
+Goal: Get customers to comment, like, or share.
+
+Ideas: Ask a question, run a poll, share a fun fact about the restaurant/food, or create a conversation starter.`;
+        break;
+        
+      case 'behind_scenes':
+        prompt += `
+Create a behind-the-scenes post showing the human side of the restaurant.
+Focus on: ${context.focus || 'kitchen, team, preparation'}
+
+Make it personal and authentic.`;
+        break;
+        
+      default:
+        prompt += `
+Create a general promotional post that:
+- Highlights the restaurant's unique value
+- Encourages visits or online orders
+- Creates a sense of community`;
+    }
+
+    prompt += `
+
+Tone: ${tone || 'friendly and professional'}
+Platform: ${platform}
+${platform === 'twitter' ? 'Keep it under 280 characters.' : ''}
+${platform === 'instagram' ? 'Make it visually descriptive and include line breaks for readability.' : ''}
+
+IMPORTANT: Return your response as valid JSON with this exact structure:
+{
+  "caption": "The main post text here",
+  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"],
+  "callToAction": "A clear call to action",
+  "bestPostTime": "Suggested best time to post (e.g., '6:00 PM - Dinner rush')",
+  "alternativeVersions": ["A shorter version", "A more casual version"]
+}`;
+
+    const result = await callGeminiAPI(prompt);
+    
+    // Try to parse as JSON, with fallback
+    try {
+      // Extract JSON from the response (it might be wrapped in markdown code blocks)
+      let jsonStr = result;
+      const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+      const parsed = JSON.parse(jsonStr.trim());
+      return { success: true, content: parsed };
+    } catch (parseError) {
+      // If parsing fails, return the raw text as caption
+      return {
+        success: true,
+        content: {
+          caption: result,
+          hashtags: [],
+          callToAction: '',
+          bestPostTime: '',
+          alternativeVersions: []
+        }
+      };
+    }
+  } catch (error) {
+    console.error('Error generating AI content:', error);
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Improve existing content
+ */
+exports.improveAIContent = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { content, instruction } = request.data;
+    
+    const instructionPrompts = {
+      'make_shorter': 'Make this social media post shorter and more concise while keeping the main message:',
+      'make_longer': 'Expand this social media post with more details and engaging content:',
+      'more_engaging': 'Rewrite this post to be more engaging and attention-grabbing:',
+      'add_emojis': 'Add appropriate emojis to make this post more visually appealing:',
+      'more_professional': 'Rewrite this post in a more professional and polished tone:',
+      'more_casual': 'Rewrite this post in a casual, friendly, conversational tone:',
+      'add_urgency': 'Rewrite this post to create a sense of urgency and FOMO:',
+      'add_humor': 'Add some light humor or wit to this post while keeping it professional:'
+    };
+
+    const prompt = `${instructionPrompts[instruction] || 'Improve this social media post:'}
+
+Original post:
+"${content}"
+
+Return ONLY the improved post text, nothing else.`;
+
+    const result = await callGeminiAPI(prompt);
+    
+    return { success: true, improvedContent: result.trim().replace(/^["']|["']$/g, '') };
+  } catch (error) {
+    console.error('Error improving content:', error);
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Generate hashtag suggestions
+ */
+exports.generateHashtags = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { content, platform, count = 10 } = request.data;
+    
+    const prompt = `Generate ${count} highly relevant hashtags for this ${platform} post about a restaurant:
+
+"${content}"
+
+Requirements:
+- Mix of popular and niche hashtags
+- Include location-based hashtags if mentioned
+- Include food/cuisine specific hashtags
+- Include trending restaurant hashtags
+- For Instagram: include some hashtags with high engagement
+- For Twitter: keep hashtags shorter
+
+Return ONLY a JSON array of hashtags (without the # symbol), like this:
+["foodie", "restaurant", "delicious"]`;
+
+    const result = await callGeminiAPI(prompt);
+    
+    // Parse the result
+    try {
+      let jsonStr = result;
+      const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+      // Also try to find just the array
+      const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        jsonStr = arrayMatch[0];
+      }
+      const hashtags = JSON.parse(jsonStr.trim());
+      return { success: true, hashtags };
+    } catch (parseError) {
+      // Fallback: extract words that look like hashtags
+      const words = result.match(/\b\w+\b/g) || [];
+      return { success: true, hashtags: words.slice(0, count) };
+    }
+  } catch (error) {
+    console.error('Error generating hashtags:', error);
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Get SEO recommendations for the restaurant
+ */
+exports.getSeoRecommendations = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { restaurantData } = request.data;
+    
+    const prompt = `As an SEO expert for local restaurants, analyze this restaurant's online presence and provide actionable recommendations:
+
+Restaurant Information:
+- Name: ${restaurantData.name || 'Not provided'}
+- Location: ${restaurantData.address || 'Not provided'}
+- Cuisine Type: ${restaurantData.cuisineType || 'Not provided'}
+- Website: ${restaurantData.websiteUrl ? 'Yes' : 'No'}
+- Online Ordering: ${restaurantData.hasOnlineOrdering ? 'Yes' : 'No'}
+- Social Media Connected: ${restaurantData.socialMedia || 'Not specified'}
+
+Provide a comprehensive SEO analysis with:
+1. Local SEO score (0-100)
+2. Top 5 immediate actions to improve visibility
+3. Keyword recommendations for their cuisine/location
+4. Google Business Profile optimization tips
+5. Content ideas for better search rankings
+6. Common mistakes to avoid
+
+Return as JSON:
+{
+  "seoScore": 75,
+  "grade": "B",
+  "immediateActions": [
+    {"priority": "high", "action": "...", "impact": "..."},
+    {"priority": "medium", "action": "...", "impact": "..."}
+  ],
+  "keywords": ["keyword1", "keyword2"],
+  "googleBusinessTips": ["tip1", "tip2"],
+  "contentIdeas": ["idea1", "idea2"],
+  "mistakesToAvoid": ["mistake1", "mistake2"],
+  "monthlyChecklist": ["task1", "task2"]
+}`;
+
+    const result = await callGeminiAPI(prompt);
+    
+    try {
+      let jsonStr = result;
+      const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+      const parsed = JSON.parse(jsonStr.trim());
+      return { success: true, recommendations: parsed };
+    } catch (parseError) {
+      // Return a default structure if parsing fails
+      return {
+        success: true,
+        recommendations: {
+          seoScore: 50,
+          grade: 'C',
+          immediateActions: [{ priority: 'high', action: 'Complete your Google Business Profile', impact: 'High visibility boost' }],
+          keywords: [],
+          googleBusinessTips: ['Add photos weekly', 'Respond to all reviews'],
+          contentIdeas: ['Share daily specials', 'Behind-the-scenes content'],
+          mistakesToAvoid: ['Inconsistent NAP (Name, Address, Phone)', 'Ignoring reviews'],
+          monthlyChecklist: ['Update hours if changed', 'Post new photos'],
+          rawAnalysis: result
+        }
+      };
+    }
+  } catch (error) {
+    console.error('Error getting SEO recommendations:', error);
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Get content ideas based on trending topics and restaurant data
+ */
+exports.getContentIdeas = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { restaurantName, cuisineType, location, currentMonth } = request.data;
+    
+    const month = currentMonth || new Date().toLocaleString('default', { month: 'long' });
+    
+    const prompt = `Generate 10 creative social media content ideas for a ${cuisineType || 'restaurant'} called "${restaurantName || 'the restaurant'}" located in ${location || 'the local area'}.
+
+Consider:
+- Current month: ${month} (include seasonal/holiday relevant ideas)
+- Food trends and popular content formats
+- Mix of promotional and engaging content
+- Ideas that work across Instagram, Facebook, and Twitter
+
+Return as JSON array:
+[
+  {
+    "title": "Idea title",
+    "description": "Brief description of the content",
+    "type": "promotion|engagement|educational|behind_scenes|user_generated|seasonal",
+    "platforms": ["instagram", "facebook"],
+    "difficulty": "easy|medium|hard",
+    "estimatedEngagement": "high|medium|low",
+    "bestDayToPost": "Monday|Tuesday|etc",
+    "exampleCaption": "A sample caption for this idea"
+  }
+]`;
+
+    const result = await callGeminiAPI(prompt);
+    
+    try {
+      let jsonStr = result;
+      const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+      const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        jsonStr = arrayMatch[0];
+      }
+      const ideas = JSON.parse(jsonStr.trim());
+      return { success: true, ideas };
+    } catch (parseError) {
+      return {
+        success: true,
+        ideas: [
+          {
+            title: 'Feature Your Signature Dish',
+            description: 'Showcase your most popular menu item with mouth-watering photos',
+            type: 'promotion',
+            platforms: ['instagram', 'facebook'],
+            difficulty: 'easy',
+            estimatedEngagement: 'high',
+            bestDayToPost: 'Friday',
+            exampleCaption: 'Our famous [dish] - the one everyone talks about! 🍽️'
+          }
+        ],
+        rawResponse: result
+      };
+    }
+  } catch (error) {
+    console.error('Error getting content ideas:', error);
+    throw new HttpsError('internal', error.message);
+  }
 }); 
