@@ -2,10 +2,29 @@
  * Notification Service for Restaurant Wizard
  * Handles browser notifications and audio alerts for order status changes
  * Uses Web Audio API for reliable cross-browser sound generation
+ * Includes vibration support for mobile devices
  */
 
 // Audio context for generating sounds
 let audioContext = null;
+
+// Vibration patterns (in milliseconds: vibrate, pause, vibrate, pause, ...)
+const VIBRATION_PATTERNS = {
+  // Kitchen: Strong urgent vibration
+  newOrder: [200, 100, 200, 100, 400],
+  
+  // Server: Medium alert
+  orderPreparing: [150, 100, 150],
+  
+  // Server: Strong urgent - order ready!
+  orderReady: [300, 100, 300, 100, 300, 100, 500],
+  
+  // Payments: Short confirmation
+  orderServed: [200, 100, 200],
+  
+  // Critical: Continuous for urgent attention (will repeat)
+  critical: [500, 200, 500, 200, 500, 200, 500]
+};
 
 // Sound configurations (frequency patterns for different notifications)
 const SOUND_CONFIGS = {
@@ -16,7 +35,8 @@ const SOUND_CONFIGS = {
       { freq: 880, duration: 150, pause: 100 },
       { freq: 1100, duration: 300, pause: 0 }
     ],
-    volume: 0.5
+    volume: 0.5,
+    critical: true
   },
   
   // Server: Double tone - medium pitch, informative
@@ -25,10 +45,11 @@ const SOUND_CONFIGS = {
       { freq: 523, duration: 200, pause: 150 },
       { freq: 659, duration: 200, pause: 0 }
     ],
-    volume: 0.4
+    volume: 0.4,
+    critical: false
   },
   
-  // Server: Ascending chime - pleasant, ready signal
+  // Server: Ascending chime - pleasant, ready signal (CRITICAL for servers!)
   orderReady: {
     pattern: [
       { freq: 523, duration: 150, pause: 50 },
@@ -36,7 +57,8 @@ const SOUND_CONFIGS = {
       { freq: 784, duration: 150, pause: 50 },
       { freq: 1047, duration: 300, pause: 0 }
     ],
-    volume: 0.5
+    volume: 0.6,
+    critical: true
   },
   
   // Payments: Cash register sound - descending tone
@@ -47,7 +69,8 @@ const SOUND_CONFIGS = {
       { freq: 659, duration: 100, pause: 50 },
       { freq: 523, duration: 200, pause: 0 }
     ],
-    volume: 0.4
+    volume: 0.4,
+    critical: true
   }
 };
 
@@ -199,12 +222,31 @@ export const playSound = async (type) => {
     return;
   }
   
+  // Trigger vibration along with sound
+  if (config.critical) {
+    vibrateCritical();
+  } else {
+    vibrate(type);
+  }
+  
   try {
     for (const note of config.pattern) {
       await playTone(note.freq, note.duration, config.volume);
       if (note.pause > 0) {
         await new Promise(resolve => setTimeout(resolve, note.pause));
       }
+    }
+    
+    // For critical notifications, play the sound again after a delay
+    if (config.critical) {
+      setTimeout(async () => {
+        for (const note of config.pattern) {
+          await playTone(note.freq, note.duration, config.volume * 0.8);
+          if (note.pause > 0) {
+            await new Promise(resolve => setTimeout(resolve, note.pause));
+          }
+        }
+      }, 2000);
     }
   } catch (error) {
     console.warn('Could not play notification sound:', error.message);
@@ -221,6 +263,65 @@ export const preloadAudio = () => {
     initAudioContext();
   } catch (e) {
     console.log('Audio context will be initialized on first user interaction');
+  }
+};
+
+/**
+ * Check if vibration is supported
+ */
+export const isVibrationSupported = () => {
+  return 'vibrate' in navigator;
+};
+
+/**
+ * Trigger device vibration
+ */
+export const vibrate = (type) => {
+  if (!isVibrationSupported()) {
+    console.log('Vibration not supported on this device');
+    return false;
+  }
+  
+  const pattern = VIBRATION_PATTERNS[type];
+  if (!pattern) {
+    console.warn('Unknown vibration type:', type);
+    return false;
+  }
+  
+  try {
+    navigator.vibrate(pattern);
+    return true;
+  } catch (error) {
+    console.warn('Vibration failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Trigger critical vibration (repeating pattern for urgent attention)
+ */
+export const vibrateCritical = () => {
+  if (!isVibrationSupported()) return false;
+  
+  // Vibrate the critical pattern
+  navigator.vibrate(VIBRATION_PATTERNS.critical);
+  
+  // For truly critical alerts, repeat the vibration after a delay
+  setTimeout(() => {
+    if (isVibrationSupported()) {
+      navigator.vibrate(VIBRATION_PATTERNS.critical);
+    }
+  }, 3000);
+  
+  return true;
+};
+
+/**
+ * Stop any ongoing vibration
+ */
+export const stopVibration = () => {
+  if (isVibrationSupported()) {
+    navigator.vibrate(0);
   }
 };
 
@@ -339,6 +440,10 @@ export default {
   playSound,
   showNotification,
   notify,
+  vibrate,
+  vibrateCritical,
+  stopVibration,
+  isVibrationSupported,
   kitchen: notifyKitchen,
   server: notifyServer,
   payments: notifyPayments

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Spinner, Alert } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Spinner, Alert, Button, Badge } from 'react-bootstrap';
 import { 
   collection, 
   query, 
@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import TableSelectionModal from './TableSelectionModal';
 import activityService from '../services/activityService';
+import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import './PageHeader.css';
 import './POS.css';
 
@@ -26,8 +27,28 @@ const POS = () => {
   const [error, setError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(null);
   const [sendingOrder, setSendingOrder] = useState(false);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
+  const [showWakeLockPrompt, setShowWakeLockPrompt] = useState(true);
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
+
+  // Enable wake lock to keep POS screen on
+  const enableWakeLock = useCallback(async () => {
+    if (isWakeLockSupported()) {
+      const enabled = await initializeWakeLock(setWakeLockActive);
+      setShowWakeLockPrompt(false);
+      if (enabled) {
+        console.log('POS: Screen will stay on');
+      }
+    }
+  }, []);
+
+  // Cleanup wake lock on unmount
+  useEffect(() => {
+    return () => {
+      cleanupWakeLock();
+    };
+  }, []);
 
   // Fetch categories and items
   useEffect(() => {
@@ -284,6 +305,23 @@ const POS = () => {
             <h2>Point of Sale</h2>
             <p>Process orders and manage your restaurant sales</p>
           </div>
+        </div>
+        {/* Wake Lock status */}
+        <div className="notification-status d-flex gap-2 align-items-center">
+          {wakeLockActive ? (
+            <Badge bg="info" className="notification-badge">
+              <i className="bi bi-display"></i> Screen On
+            </Badge>
+          ) : showWakeLockPrompt && isWakeLockSupported() ? (
+            <Button 
+              variant="outline-light" 
+              size="sm" 
+              onClick={enableWakeLock}
+              className="enable-notifications-btn"
+            >
+              <i className="bi bi-display"></i> Keep Screen On
+            </Button>
+          ) : null}
         </div>
       </div>
 

@@ -5,7 +5,8 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
-import { initializeNotifications, notifyServer, unlockAudio, areNotificationsEnabled } from '../services/notificationService';
+import { initializeNotifications, notifyServer, unlockAudio } from '../services/notificationService';
+import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import './PageHeader.css';
 import './Server.css';
 
@@ -20,13 +21,26 @@ const Server = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
 
-  // Enable notifications handler
+  // Enable notifications handler (with optional wake lock for tablets)
   const enableNotifications = useCallback(async () => {
     unlockAudio();
     const enabled = await initializeNotifications();
     setNotificationsEnabled(enabled);
     setShowNotificationPrompt(false);
+    
+    // Enable wake lock for tablets (optional for servers on mobile)
+    if (isWakeLockSupported()) {
+      await initializeWakeLock(setWakeLockActive);
+    }
+  }, []);
+  
+  // Cleanup wake lock on unmount
+  useEffect(() => {
+    return () => {
+      cleanupWakeLock();
+    };
   }, []);
 
   // Timer that updates every second
@@ -327,11 +341,16 @@ const Server = () => {
             <p>Track and serve orders</p>
           </div>
         </div>
-        {/* Notification status indicator */}
-        <div className="notification-status">
+        {/* Notification and wake lock status */}
+        <div className="notification-status d-flex gap-2 align-items-center">
+          {wakeLockActive && (
+            <Badge bg="info" className="notification-badge">
+              <i className="bi bi-display"></i> Screen On
+            </Badge>
+          )}
           {notificationsEnabled ? (
             <Badge bg="success" className="notification-badge">
-              <i className="bi bi-bell-fill"></i> Notifications On
+              <i className="bi bi-bell-fill"></i> Alerts + Vibration
             </Badge>
           ) : showNotificationPrompt ? (
             <Button 
@@ -340,11 +359,11 @@ const Server = () => {
               onClick={enableNotifications}
               className="enable-notifications-btn"
             >
-              <i className="bi bi-bell"></i> Enable Sound Alerts
+              <i className="bi bi-phone-vibrate"></i> Enable Alerts
             </Button>
           ) : (
             <Badge bg="secondary" className="notification-badge">
-              <i className="bi bi-bell-slash"></i> Notifications Off
+              <i className="bi bi-bell-slash"></i> Alerts Off
             </Badge>
           )}
         </div>

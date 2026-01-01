@@ -5,7 +5,8 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
-import { initializeNotifications, notifyKitchen, unlockAudio, areNotificationsEnabled } from '../services/notificationService';
+import { initializeNotifications, notifyKitchen, unlockAudio } from '../services/notificationService';
+import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import './PageHeader.css';
 import './Kitchen.css';
 
@@ -18,20 +19,37 @@ const Kitchen = () => {
   const [updatingOrders, setUpdatingOrders] = useState(new Set());
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
   
   // Track previous order IDs to detect new orders
   const prevOrderIds = useRef(new Set());
   const isInitialLoad = useRef(true);
 
-  // Enable notifications handler
+  // Enable notifications and wake lock handler
   const enableNotifications = useCallback(async () => {
     unlockAudio(); // Unlock audio on user interaction
     const enabled = await initializeNotifications();
     setNotificationsEnabled(enabled);
     setShowNotificationPrompt(false);
+    
+    // Also enable wake lock to keep screen on
+    if (isWakeLockSupported()) {
+      const wakeLockEnabled = await initializeWakeLock(setWakeLockActive);
+      if (wakeLockEnabled) {
+        console.log('Kitchen: Screen will stay on');
+      }
+    }
+    
     if (enabled) {
       console.log('Kitchen notifications enabled!');
     }
+  }, []);
+  
+  // Cleanup wake lock on unmount
+  useEffect(() => {
+    return () => {
+      cleanupWakeLock();
+    };
   }, []);
 
   useEffect(() => {
@@ -291,11 +309,16 @@ const Kitchen = () => {
             <p>Manage orders from the kitchen</p>
           </div>
         </div>
-        {/* Notification status indicator */}
-        <div className="notification-status">
+        {/* Notification and wake lock status */}
+        <div className="notification-status d-flex gap-2 align-items-center">
+          {wakeLockActive && (
+            <Badge bg="info" className="notification-badge">
+              <i className="bi bi-display"></i> Screen On
+            </Badge>
+          )}
           {notificationsEnabled ? (
             <Badge bg="success" className="notification-badge">
-              <i className="bi bi-bell-fill"></i> Notifications On
+              <i className="bi bi-bell-fill"></i> Alerts On
             </Badge>
           ) : showNotificationPrompt ? (
             <Button 
@@ -304,11 +327,11 @@ const Kitchen = () => {
               onClick={enableNotifications}
               className="enable-notifications-btn"
             >
-              <i className="bi bi-bell"></i> Enable Sound Alerts
+              <i className="bi bi-bell"></i> Enable Alerts & Keep Screen On
             </Button>
           ) : (
             <Badge bg="secondary" className="notification-badge">
-              <i className="bi bi-bell-slash"></i> Notifications Off
+              <i className="bi bi-bell-slash"></i> Alerts Off
             </Badge>
           )}
         </div>
