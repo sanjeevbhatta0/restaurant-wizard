@@ -1321,6 +1321,7 @@
         // Same JavaScript logic as other templates
         const CONFIG = {
             restaurantId: '{{restaurantId}}',
+            locationId: '{{locationId}}',
             restaurantName: '{{restaurantName}}',
             apiBaseUrl: '{{apiBaseUrl}}',
             stripePublishableKey: '{{stripePublishableKey}}',
@@ -1338,8 +1339,22 @@
             loadMenu();
             loadCart();
             renderHours();
-            if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey !== '{{stripePublishableKey}}') {
-                stripe = Stripe(CONFIG.stripePublishableKey);
+            
+            // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
+            console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
+            if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
+                try {
+                    if (typeof Stripe === 'undefined') {
+                        console.error('Stripe.js library not loaded! Check if https://js.stripe.com/v3/ is accessible.');
+                    } else {
+                        stripe = Stripe(CONFIG.stripePublishableKey);
+                        console.log('Stripe initialized successfully with key:', CONFIG.stripePublishableKey.substring(0, 20) + '...');
+                    }
+                } catch (e) {
+                    console.error('Error initializing Stripe:', e);
+                }
+            } else {
+                console.log('Stripe key not configured or invalid. Key value:', CONFIG.stripePublishableKey);
             }
         });
 
@@ -1347,7 +1362,8 @@
 
         async function loadMenu() {
             try {
-                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}`);
+                const locationParam = CONFIG.locationId ? `&locationId=${CONFIG.locationId}` : '';
+                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}${locationParam}`);
                 const data = await response.json();
                 if (data.categories) {
                     menuData = data.categories;
@@ -1524,16 +1540,38 @@
         function selectOrderType(type) { document.querySelectorAll('.order-type-option').forEach(el => el.classList.remove('active')); document.getElementById(`${type}Option`).classList.add('active'); }
 
         function selectPaymentMethod(method) {
+            console.log('selectPaymentMethod called:', method, '| stripe:', !!stripe, '| cardElement:', !!cardElement);
             document.querySelectorAll('.payment-option').forEach(el => el.classList.remove('active'));
             document.getElementById(`${method === 'payNow' ? 'payNow' : 'payLater'}Option`).classList.add('active');
             const cardContainer = document.getElementById('cardElementContainer');
             if (method === 'payNow') {
                 cardContainer.style.display = 'block';
                 if (stripe && !cardElement) {
-                    const elements = stripe.elements();
-                    cardElement = elements.create('card', { style: { base: { fontSize: '16px', color: '#2d3436' } } });
-                    cardElement.mount('#card-element');
-                    cardElement.on('change', e => { document.getElementById('card-errors').textContent = e.error ? e.error.message : ''; });
+                    console.log('Creating Stripe card element...');
+                    // Add a small delay to ensure the container is fully rendered
+                    setTimeout(() => {
+                        if (!cardElement) {
+                            const elements = stripe.elements();
+                            cardElement = elements.create('card', { 
+                                style: { 
+                                    base: { 
+                                        fontSize: '16px', 
+                                        color: '#2d3436',
+                                        fontFamily: 'var(--font-family)',
+                                        '::placeholder': { color: '#aab7c4' }
+                                    },
+                                    invalid: { color: '#e74c3c' }
+                                } 
+                            });
+                            console.log('Mounting card element...');
+                            cardElement.mount('#card-element');
+                            cardElement.on('change', e => { document.getElementById('card-errors').textContent = e.error ? e.error.message : ''; });
+                            cardElement.on('ready', () => console.log('Stripe card element ready!'));
+                        }
+                    }, 100);
+                } else if (!stripe) {
+                    document.getElementById('card-errors').textContent = 'Online payment is currently unavailable.';
+                    console.warn('Stripe not initialized. Check API key configuration.');
                 }
             } else cardContainer.style.display = 'none';
         }
@@ -1573,6 +1611,7 @@
 
                 const orderData = {
                     restaurantId: CONFIG.restaurantId,
+                    locationId: CONFIG.locationId,
                     customer: { name, phone, email },
                     items: cart.map(item => ({ id: item.id, name: item.name, price: item.price, finalPrice: item.finalPrice, quantity: item.quantity })),
                     subtotal: totals.subtotal,

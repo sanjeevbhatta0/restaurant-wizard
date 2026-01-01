@@ -12,12 +12,18 @@ const activityService = {
   logActivity: async (restaurantId, type, message, metadata = {}) => {
     try {
       const activitiesRef = collection(db, `restaurants/${restaurantId}/activities`);
+      
+      // Filter out undefined values from metadata to prevent Firestore errors
+      const cleanMetadata = Object.fromEntries(
+        Object.entries(metadata).filter(([_, value]) => value !== undefined)
+      );
+      
       await addDoc(activitiesRef, {
         type,
         message,
-        ...metadata,
+        ...cleanMetadata,
         // Ensure locationId is set (use restaurantId as fallback for single-location)
-        locationId: metadata.locationId || restaurantId,
+        locationId: cleanMetadata.locationId || restaurantId,
         createdAt: serverTimestamp(),
         timestamp: new Date().toISOString()
       });

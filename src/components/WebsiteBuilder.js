@@ -52,8 +52,9 @@ export default function WebsiteBuilder() {
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
   const [isPublished, setIsPublished] = useState(false);
-  const [allLocations, setAllLocations] = useState([]);
-  const [selectedWebsiteLocation, setSelectedWebsiteLocation] = useState('');
+  
+  // Use global selectedLocation from the app's location context (top-right dropdown)
+  // No need for separate location state - use the global one
   
   const [config, setConfig] = useState({
     template: 'modern-bistro',
@@ -85,39 +86,13 @@ export default function WebsiteBuilder() {
     }
   });
 
-  // Load locations for multi-location restaurants
-  useEffect(() => {
-    const loadLocations = async () => {
-      if (!currentUser || !isMultiLocation) return;
-      
-      try {
-        const locationsRef = collection(db, `restaurants/${currentUser.uid}/locations`);
-        const snapshot = await getDocs(locationsRef);
-        const locationsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setAllLocations(locationsData);
-        
-        // Auto-select first location if none selected
-        if (locationsData.length > 0 && !selectedWebsiteLocation) {
-          setSelectedWebsiteLocation(locationsData[0].id);
-        }
-      } catch (err) {
-        console.error('Error loading locations:', err);
-      }
-    };
-
-    loadLocations();
-  }, [currentUser, isMultiLocation, selectedWebsiteLocation]);
-
   // Load existing configuration
   useEffect(() => {
     const loadConfig = async () => {
       if (!currentUser) return;
       
       // For multi-location, wait for location selection
-      if (isMultiLocation && !selectedWebsiteLocation) {
+      if (isMultiLocation && !selectedLocation) {
         setLoading(false);
         return;
       }
@@ -127,7 +102,7 @@ export default function WebsiteBuilder() {
         
         // For multi-location, use location-specific config path
         const configPath = isMultiLocation 
-          ? `restaurants/${currentUser.uid}/locations/${selectedWebsiteLocation}/website/config`
+          ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/website/config`
           : `restaurants/${currentUser.uid}/website/config`;
         
         // Load website config
@@ -153,8 +128,8 @@ export default function WebsiteBuilder() {
         const restaurantDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}`));
         let locationData = null;
         
-        if (isMultiLocation && selectedWebsiteLocation) {
-          const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedWebsiteLocation}`));
+        if (isMultiLocation && selectedLocation) {
+          const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`));
           if (locationDoc.exists()) {
             locationData = locationDoc.data();
           }
@@ -164,7 +139,7 @@ export default function WebsiteBuilder() {
           const data = restaurantDoc.data();
           // For multi-location, create slug with location identifier
           const locationInfo = locationData || {};
-          const locationSlug = locationData?.slug || selectedWebsiteLocation || '';
+          const locationSlug = locationData?.slug || selectedLocation || '';
           const baseSlug = data.slug || currentUser.uid;
           const slug = isMultiLocation ? `${baseSlug}-${locationSlug}` : baseSlug;
           
@@ -177,7 +152,7 @@ export default function WebsiteBuilder() {
             : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite';
           
           // Include locationId in preview URL for multi-location
-          const locationParam = isMultiLocation ? `&locationId=${selectedWebsiteLocation}` : '';
+          const locationParam = isMultiLocation ? `&locationId=${selectedLocation}` : '';
           setPreviewUrl(`${baseUrl}?restaurant=${slug}&preview=true${locationParam}`);
           
           // Set defaults from restaurant/location data if not already set
@@ -187,7 +162,7 @@ export default function WebsiteBuilder() {
             address: prev.address || locationInfo.address || data.address || '',
             phone: prev.phone || locationInfo.phone || data.phone || '',
             email: prev.email || locationInfo.email || data.email || '',
-            locationId: isMultiLocation ? selectedWebsiteLocation : currentUser.uid
+            locationId: isMultiLocation ? selectedLocation : currentUser.uid
           }));
         }
       } catch (err) {
@@ -199,7 +174,7 @@ export default function WebsiteBuilder() {
     };
 
     loadConfig();
-  }, [currentUser, isMultiLocation, selectedWebsiteLocation]);
+  }, [currentUser, isMultiLocation, selectedLocation]);
 
   // Update colors when template changes
   const handleTemplateChange = useCallback((templateId) => {
@@ -227,11 +202,11 @@ export default function WebsiteBuilder() {
       // Include locationId for multi-location restaurants
       const configWithLocation = {
         ...config,
-        locationId: isMultiLocation ? selectedWebsiteLocation : currentUser.uid
+        locationId: isMultiLocation ? selectedLocation : currentUser.uid
       };
       const result = await saveWebsiteConfig({ 
         config: configWithLocation,
-        locationId: isMultiLocation ? selectedWebsiteLocation : null
+        locationId: isMultiLocation ? selectedLocation : null
       });
       
       if (result.data.success) {
@@ -240,7 +215,7 @@ export default function WebsiteBuilder() {
         // Use emulator URL when running locally
         const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
         const slug = result.data.slug;
-        const locationParam = isMultiLocation ? `&locationId=${selectedWebsiteLocation}` : '';
+        const locationParam = isMultiLocation ? `&locationId=${selectedLocation}` : '';
         if (isEmulator && slug) {
           setPreviewUrl(`http://localhost:5001/restaurant-portal-6b147/us-central1/serveWebsite?restaurant=${slug}&preview=true${locationParam}`);
         } else {
@@ -323,10 +298,10 @@ export default function WebsiteBuilder() {
               {isPublished && (
                 <Badge bg="success" className="ms-2">Published</Badge>
               )}
-              {isMultiLocation && selectedWebsiteLocation && (
+              {isMultiLocation && selectedLocation && (
                 <Badge bg="info" className="ms-2">
                   <i className="bi bi-geo-alt me-1"></i>
-                  {allLocations.find(l => l.id === selectedWebsiteLocation)?.name || 'Location'}
+                  {locations.find(l => l.id === selectedLocation)?.name || 'Location'}
                 </Badge>
               )}
             </p>
@@ -377,30 +352,21 @@ export default function WebsiteBuilder() {
         </div>
       </div>
 
-      {/* Location Selector for Multi-Location Restaurants */}
-      {isMultiLocation && (
-        <Alert variant="light" className="mb-4 location-selector-alert">
-          <Row className="align-items-center">
-            <Col xs="auto">
-              <i className="bi bi-geo-alt-fill text-primary" style={{ fontSize: '1.5rem' }}></i>
-            </Col>
-            <Col>
-              <Form.Label className="mb-1 fw-bold">Select Location</Form.Label>
-              <p className="text-muted mb-2 small">Each location can have its own website with a unique URL</p>
-              <Form.Select 
-                value={selectedWebsiteLocation}
-                onChange={(e) => setSelectedWebsiteLocation(e.target.value)}
-                style={{ maxWidth: '400px' }}
-              >
-                <option value="">Choose a location...</option>
-                {allLocations.map(location => (
-                  <option key={location.id} value={location.id}>
-                    {location.name} {location.address && `- ${location.address}`}
-                  </option>
-                ))}
-              </Form.Select>
-            </Col>
-          </Row>
+      {/* Multi-location info banner */}
+      {isMultiLocation && selectedLocation && (
+        <Alert variant="info" className="mb-4">
+          <i className="bi bi-geo-alt-fill me-2"></i>
+          <strong>Building website for:</strong> {locations?.find(l => l.id === selectedLocation)?.name || 'Selected Location'}
+          <span className="text-muted ms-2">
+            (Use the location dropdown at the top-right to switch locations)
+          </span>
+        </Alert>
+      )}
+      
+      {isMultiLocation && !selectedLocation && (
+        <Alert variant="warning" className="mb-4">
+          <i className="bi bi-exclamation-triangle me-2"></i>
+          <strong>Please select a location</strong> from the dropdown at the top-right corner to build its website.
         </Alert>
       )}
 

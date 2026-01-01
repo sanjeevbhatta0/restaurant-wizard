@@ -339,3 +339,34 @@
 .kitchen-order-card:first-child {
   animation: pulse 2s ease-in-out infinite;
 }
+
+/* Notification Status Styles */
+.notification-status {
+  margin-left: auto;
+}
+
+.notification-badge {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.enable-notifications-btn {
+  font-weight: 600;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: attention-pulse 2s ease-in-out infinite;
+}
+
+@keyframes attention-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}

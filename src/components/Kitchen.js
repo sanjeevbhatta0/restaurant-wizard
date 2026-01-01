@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Container, Card, Button, Badge, Alert, Spinner } from 'react-bootstrap';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
+import { initializeNotifications, notifyKitchen, unlockAudio, areNotificationsEnabled } from '../services/notificationService';
 import './PageHeader.css';
 import './Kitchen.css';
 
@@ -15,6 +16,23 @@ const Kitchen = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updatingOrders, setUpdatingOrders] = useState(new Set());
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
+  
+  // Track previous order IDs to detect new orders
+  const prevOrderIds = useRef(new Set());
+  const isInitialLoad = useRef(true);
+
+  // Enable notifications handler
+  const enableNotifications = useCallback(async () => {
+    unlockAudio(); // Unlock audio on user interaction
+    const enabled = await initializeNotifications();
+    setNotificationsEnabled(enabled);
+    setShowNotificationPrompt(false);
+    if (enabled) {
+      console.log('Kitchen notifications enabled!');
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -88,6 +106,31 @@ const Kitchen = () => {
         const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return aTime - bTime; // Oldest first
       });
+      
+      // Detect new orders and trigger notifications
+      if (!isInitialLoad.current) {
+        const currentOrderIds = new Set(ordersData.map(o => o.id));
+        
+        // Find new orders (in current but not in previous)
+        ordersData.forEach(order => {
+          if (!prevOrderIds.current.has(order.id)) {
+            // New order detected!
+            console.log('New order detected:', order.orderNumber || order.id);
+            notifyKitchen.newOrder(
+              order.orderNumber || order.id,
+              order.orderType || 'dine_in',
+              order.source || 'pos'
+            );
+          }
+        });
+        
+        prevOrderIds.current = currentOrderIds;
+      } else {
+        // Initial load - just record the IDs without notifying
+        prevOrderIds.current = new Set(ordersData.map(o => o.id));
+        isInitialLoad.current = false;
+      }
+      
       setOrders(ordersData);
       setLoading(false);
       setError(''); // Clear any previous errors
@@ -247,6 +290,27 @@ const Kitchen = () => {
             <h2>Kitchen</h2>
             <p>Manage orders from the kitchen</p>
           </div>
+        </div>
+        {/* Notification status indicator */}
+        <div className="notification-status">
+          {notificationsEnabled ? (
+            <Badge bg="success" className="notification-badge">
+              <i className="bi bi-bell-fill"></i> Notifications On
+            </Badge>
+          ) : showNotificationPrompt ? (
+            <Button 
+              variant="warning" 
+              size="sm" 
+              onClick={enableNotifications}
+              className="enable-notifications-btn"
+            >
+              <i className="bi bi-bell"></i> Enable Sound Alerts
+            </Button>
+          ) : (
+            <Badge bg="secondary" className="notification-badge">
+              <i className="bi bi-bell-slash"></i> Notifications Off
+            </Badge>
+          )}
         </div>
       </div>
 

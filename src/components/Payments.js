@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,6 +7,7 @@ import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import activityService from '../services/activityService';
 import { getStripe, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
+import { initializeNotifications, notifyPayments, unlockAudio } from '../services/notificationService';
 import './PageHeader.css';
 import './Payments.css';
 
@@ -151,10 +152,25 @@ const Payments = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const { selectedLocation, isMultiLocation } = useLocation();
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
+  
+  // Track previous order IDs to detect new served orders
+  const prevServedOrderIds = useRef(new Set());
+  const isInitialServedLoad = useRef(true);
+
+  // Enable notifications handler
+  const enableNotifications = useCallback(async () => {
+    unlockAudio();
+    const enabled = await initializeNotifications();
+    setNotificationsEnabled(enabled);
+    setShowNotificationPrompt(false);
+  }, []);
   const [showOnlineOrders, setShowOnlineOrders] = useState(false); // Toggle for online orders view
   const [showOnlineOrderDetailModal, setShowOnlineOrderDetailModal] = useState(false);
   const [selectedOnlineOrder, setSelectedOnlineOrder] = useState(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState(''); // For reimbursement search
+  const [onlineOrderPaymentMethod, setOnlineOrderPaymentMethod] = useState('cash'); // Payment method for pay-at-store orders
   
   // Payment details
   const [subtotal, setSubtotal] = useState(0);
@@ -218,6 +234,25 @@ const Payments = () => {
         id: doc.id,
         ...doc.data()
       }));
+
+      // Detect new served orders and trigger notifications
+      if (!isInitialServedLoad.current) {
+        ordersData.forEach(order => {
+          if (!prevServedOrderIds.current.has(order.id) && order.source !== 'website') {
+            // New served order detected!
+            console.log('New served order detected:', order.orderNumber || order.id);
+            notifyPayments.orderServed(
+              order.orderNumber || order.id,
+              order.tableNumber,
+              order.total
+            );
+          }
+        });
+        prevServedOrderIds.current = new Set(ordersData.map(o => o.id));
+      } else {
+        prevServedOrderIds.current = new Set(ordersData.map(o => o.id));
+        isInitialServedLoad.current = false;
+      }
 
       // Group orders by table number - EXCLUDE online orders (source='website')
       const grouped = {};
@@ -693,6 +728,7 @@ const Payments = () => {
   // Handle online order selection for viewing details
   const handleOnlineOrderSelect = (order) => {
     setSelectedOnlineOrder(order);
+    setOnlineOrderPaymentMethod('cash'); // Reset to cash by default
     setShowOnlineOrderDetailModal(true);
   };
 
@@ -784,12 +820,48 @@ const Payments = () => {
       setSuccess(`Cash payment received for online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)}!`);
       setShowOnlineOrderDetailModal(false);
       setSelectedOnlineOrder(null);
+      setOnlineOrderPaymentMethod('cash');
     } catch (error) {
       console.error('Error processing cash payment:', error);
       setError('Failed to process payment: ' + error.message);
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Handle card payment success for online orders (pay at store)
+  const handleOnlineOrderCardPaymentSuccess = async (paymentIntentId) => {
+    if (!selectedOnlineOrder) return;
+
+    try {
+      // Log activity
+      await activityService.logPaymentActivity(currentUser.uid, {
+        orderNumbers: [selectedOnlineOrder.orderNumber || selectedOnlineOrder.id],
+        tableNumbers: ['Online Order'],
+        total: selectedOnlineOrder.total,
+        orderCount: 1,
+        paymentMethod: 'card',
+        stripePaymentIntentId: paymentIntentId,
+        orderType: selectedOnlineOrder.orderType,
+        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+      });
+
+      setSuccess(`Card payment processed for online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)}!`);
+      setShowOnlineOrderDetailModal(false);
+      setSelectedOnlineOrder(null);
+      setOnlineOrderPaymentMethod('cash');
+    } catch (error) {
+      console.error('Error after card payment:', error);
+      setSuccess(`Payment processed! Note: ${error.message}`);
+      setShowOnlineOrderDetailModal(false);
+      setSelectedOnlineOrder(null);
+      setOnlineOrderPaymentMethod('cash');
+    }
+  };
+
+  // Handle card payment error for online orders
+  const handleOnlineOrderCardPaymentError = (errorMessage) => {
+    setError('Card payment failed: ' + errorMessage);
   };
 
   // Filter completed orders for reimbursement search
@@ -865,11 +937,24 @@ const Payments = () => {
         return;
       }
 
-      // Check if order was paid with card (has Stripe payment intent)
-      const hasStripePayment = selectedOrder.paymentDetails?.stripePaymentIntentId;
+      // Check if order was paid with card
+      // For POS orders: check stripePaymentIntentId
+      // For website orders: check paymentMethod === 'card' or paymentDetails.paymentMethodId
+      const hasStripePayment = selectedOrder.paymentDetails?.stripePaymentIntentId || 
+        selectedOrder.paymentMethod === 'card' || 
+        selectedOrder.paymentDetails?.paymentMethodId;
+      
+      // Determine actual payment method for display
+      const actualPaymentMethod = hasStripePayment ? 'card' : 
+        (selectedOrder.paymentMethod === 'payAtRestaurant' ? 'cash' : (selectedOrder.paymentMethod || 'cash'));
+      
+      // Handle tableNumber for online orders (may be undefined)
+      const orderTableNumber = selectedOrder.tableNumber || 
+        (selectedOrder.source === 'website' ? 'Online Order' : null);
+      const isOnlineOrder = selectedOrder.source === 'website' || reimbursementTable === '__online__';
 
-      if (hasStripePayment) {
-        // Process refund through Stripe
+      if (hasStripePayment && selectedOrder.paymentDetails?.stripePaymentIntentId) {
+        // Process refund through Stripe (only if we have a payment intent ID)
         await stripeProcessRefund(
           reimbursementOrder,
           currentUser.uid,
@@ -881,16 +966,17 @@ const Payments = () => {
         await activityService.logReimbursementActivity(currentUser.uid, {
           orderNumber: selectedOrder.orderNumber || reimbursementOrder,
           orderId: reimbursementOrder,
-          tableNumber: selectedOrder.tableNumber,
+          tableNumber: orderTableNumber || 'Online Order',
           refundAmount,
           refundType: reimbursementType,
           paymentMethod: 'card',
+          isOnlineOrder: isOnlineOrder,
           locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
         });
 
         setSuccess(`Card refund processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);
       } else {
-        // Cash refund - just update order status locally
+        // Cash refund (or online card payment without Stripe intent) - update order status locally
         const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${reimbursementOrder}`);
         await updateDoc(orderRef, {
           status: 'reimbursed',
@@ -899,38 +985,47 @@ const Payments = () => {
             type: reimbursementType,
             processedAt: new Date(),
             processedBy: currentUser.uid,
-            paymentMethod: 'cash'
+            paymentMethod: actualPaymentMethod
           },
           updatedAt: new Date()
         });
 
         // Create reimbursement record for analytics
         const reimbursementsRef = collection(db, `restaurants/${currentUser.uid}/reimbursements`);
-        await setDoc(doc(reimbursementsRef), {
+        const reimbursementData = {
           orderId: reimbursementOrder,
           orderNumber: selectedOrder.orderNumber || reimbursementOrder,
-          tableNumber: selectedOrder.tableNumber,
-          locationId: selectedLocation || currentUser.uid,
+          locationId: selectedOrder.locationId || selectedLocation || currentUser.uid,
           amount: refundAmount,
           type: reimbursementType,
           originalOrderTotal: selectedOrder.total || 0,
-          paymentMethod: 'cash',
+          paymentMethod: actualPaymentMethod,
           processedAt: new Date(),
-          processedBy: currentUser.uid
-        });
+          processedBy: currentUser.uid,
+          isOnlineOrder: isOnlineOrder,
+          orderType: selectedOrder.orderType || 'dine_in'
+        };
+        
+        // Only add tableNumber if it exists (not for online orders)
+        if (orderTableNumber && orderTableNumber !== 'Online Order') {
+          reimbursementData.tableNumber = orderTableNumber;
+        }
+        
+        await setDoc(doc(reimbursementsRef), reimbursementData);
 
         // Log reimbursement activity
         await activityService.logReimbursementActivity(currentUser.uid, {
           orderNumber: selectedOrder.orderNumber || reimbursementOrder,
           orderId: reimbursementOrder,
-          tableNumber: selectedOrder.tableNumber,
+          tableNumber: orderTableNumber || 'Online Order',
           refundAmount,
           refundType: reimbursementType,
-          paymentMethod: 'cash',
+          paymentMethod: actualPaymentMethod,
+          isOnlineOrder: isOnlineOrder,
           locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
         });
 
-        setSuccess(`Cash refund recorded. Refund amount: $${refundAmount.toFixed(2)}`);
+        setSuccess(`${actualPaymentMethod === 'card' ? 'Card' : 'Cash'} refund recorded. Refund amount: $${refundAmount.toFixed(2)}`);
       }
 
       setShowReimbursementModal(false);
@@ -1038,6 +1133,27 @@ const Payments = () => {
             <h2>Payments</h2>
             <p>Process customer payments and manage transactions</p>
           </div>
+        </div>
+        {/* Notification status indicator */}
+        <div className="notification-status">
+          {notificationsEnabled ? (
+            <Badge bg="success" className="notification-badge">
+              <i className="bi bi-bell-fill"></i> Notifications On
+            </Badge>
+          ) : showNotificationPrompt ? (
+            <Button 
+              variant="warning" 
+              size="sm" 
+              onClick={enableNotifications}
+              className="enable-notifications-btn"
+            >
+              <i className="bi bi-bell"></i> Enable Sound Alerts
+            </Button>
+          ) : (
+            <Badge bg="secondary" className="notification-badge">
+              <i className="bi bi-bell-slash"></i> Notifications Off
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -1730,9 +1846,78 @@ const Payments = () => {
               )}
 
               {selectedOnlineOrder.paymentMethod !== 'card' && (
-                <Alert variant="warning">
-                  <i className="bi bi-cash"></i> This customer chose to pay at the restaurant. Collect <strong>${(selectedOnlineOrder.total || 0).toFixed(2)}</strong> when they arrive.
-                </Alert>
+                <Card className="mb-3 border-warning">
+                  <Card.Header className="bg-warning">
+                    <strong><i className="bi bi-wallet2"></i> Collect Payment</strong>
+                  </Card.Header>
+                  <Card.Body>
+                    <p className="mb-3">This customer chose to pay at the restaurant. Total to collect: <strong className="text-success fs-5">${(selectedOnlineOrder.total || 0).toFixed(2)}</strong></p>
+                    
+                    {/* Payment Method Selection */}
+                    <div className="payment-method-selection mb-3">
+                      <Form.Label><strong>Select Payment Method:</strong></Form.Label>
+                      <div className="payment-method-buttons d-flex gap-2">
+                        <Button
+                          variant={onlineOrderPaymentMethod === 'cash' ? 'success' : 'outline-secondary'}
+                          className="flex-fill"
+                          onClick={() => setOnlineOrderPaymentMethod('cash')}
+                          disabled={processing}
+                        >
+                          <i className="bi bi-cash-coin me-2"></i>
+                          Cash
+                        </Button>
+                        <Button
+                          variant={onlineOrderPaymentMethod === 'card' ? 'primary' : 'outline-secondary'}
+                          className="flex-fill"
+                          onClick={() => setOnlineOrderPaymentMethod('card')}
+                          disabled={processing}
+                        >
+                          <i className="bi bi-credit-card-2-front me-2"></i>
+                          Card
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Cash Payment Info */}
+                    {onlineOrderPaymentMethod === 'cash' && (
+                      <Alert variant="info" className="mb-0">
+                        <i className="bi bi-cash"></i> Collect <strong>${(selectedOnlineOrder.total || 0).toFixed(2)}</strong> in cash from the customer, then click "Confirm Cash Payment".
+                      </Alert>
+                    )}
+
+                    {/* Card Payment Form */}
+                    {onlineOrderPaymentMethod === 'card' && stripePromise && (
+                      <div className="card-payment-section">
+                        <Elements stripe={stripePromise}>
+                          <CardPaymentForm
+                            total={selectedOnlineOrder.total || 0}
+                            onPaymentSuccess={handleOnlineOrderCardPaymentSuccess}
+                            onPaymentError={handleOnlineOrderCardPaymentError}
+                            processing={processing}
+                            setProcessing={setProcessing}
+                            orderIds={[selectedOnlineOrder.id]}
+                            tableNumbers={['Online']}
+                            restaurantId={currentUser.uid}
+                            paymentDetails={{
+                              subtotal: selectedOnlineOrder.subtotal || selectedOnlineOrder.total,
+                              taxRate: 0,
+                              taxAmount: selectedOnlineOrder.tax || 0,
+                              total: selectedOnlineOrder.total,
+                              orderType: selectedOnlineOrder.orderType
+                            }}
+                          />
+                        </Elements>
+                      </div>
+                    )}
+
+                    {onlineOrderPaymentMethod === 'card' && !stripePromise && (
+                      <div className="text-center py-3">
+                        <Spinner animation="border" variant="primary" size="sm" />
+                        <span className="ms-2">Loading payment form...</span>
+                      </div>
+                    )}
+                  </Card.Body>
+                </Card>
               )}
             </>
           )}
@@ -1755,18 +1940,21 @@ const Payments = () => {
               )}
             </Button>
           ) : (
-            <Button variant="success" onClick={handleOnlineOrderCashPayment} disabled={processing}>
-              {processing ? (
-                <>
-                  <Spinner animation="border" size="sm" className="me-2" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <i className="bi bi-cash"></i> Confirm Cash Payment
-                </>
-              )}
-            </Button>
+            /* Only show Confirm Cash Payment button when cash is selected */
+            onlineOrderPaymentMethod === 'cash' && (
+              <Button variant="success" onClick={handleOnlineOrderCashPayment} disabled={processing}>
+                {processing ? (
+                  <>
+                    <Spinner animation="border" size="sm" className="me-2" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-cash"></i> Confirm Cash Payment
+                  </>
+                )}
+              </Button>
+            )
           )}
         </Modal.Footer>
       </Modal>
@@ -1779,9 +1967,16 @@ const Payments = () => {
         <Modal.Body>
           <Alert variant="warning">
             <i className="bi bi-info-circle"></i> Tips are non-refundable. Refunds will include order amount, taxes, and discounts.
-            {reimbursementOrderData?.paymentDetails?.stripePaymentIntentId && (
+            {(reimbursementOrderData?.paymentDetails?.stripePaymentIntentId || 
+              reimbursementOrderData?.paymentMethod === 'card' ||
+              reimbursementOrderData?.paymentDetails?.paymentMethodId) && (
               <div className="mt-2">
-                <Badge bg="primary"><i className="bi bi-credit-card"></i> This order was paid with card - refund will be processed through Stripe</Badge>
+                <Badge bg="primary">
+                  <i className="bi bi-credit-card"></i> This order was paid with card
+                  {reimbursementOrderData?.paymentDetails?.stripePaymentIntentId 
+                    ? ' - refund will be processed through Stripe' 
+                    : ' (online payment)'}
+                </Badge>
               </div>
             )}
           </Alert>
@@ -1918,8 +2113,14 @@ const Payments = () => {
                   </div>
                   <div className="d-flex justify-content-between mb-2">
                     <span>Payment Method:</span>
-                    <Badge bg={reimbursementOrderData.paymentDetails?.paymentMethod === 'card' ? 'primary' : 'secondary'}>
-                      {reimbursementOrderData.paymentDetails?.paymentMethod === 'card' ? (
+                    <Badge bg={
+                      (reimbursementOrderData.paymentDetails?.paymentMethod === 'card' || 
+                       reimbursementOrderData.paymentMethod === 'card' ||
+                       reimbursementOrderData.paymentDetails?.paymentMethodId) ? 'primary' : 'secondary'
+                    }>
+                      {(reimbursementOrderData.paymentDetails?.paymentMethod === 'card' || 
+                        reimbursementOrderData.paymentMethod === 'card' ||
+                        reimbursementOrderData.paymentDetails?.paymentMethodId) ? (
                         <><i className="bi bi-credit-card"></i> Card</>
                       ) : (
                         <><i className="bi bi-cash"></i> Cash</>

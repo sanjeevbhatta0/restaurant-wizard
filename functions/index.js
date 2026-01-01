@@ -269,18 +269,27 @@ exports.processStripeRefund = onCall(async (request) => {
     });
 
     // Create reimbursement record for analytics
-    await db.collection(`restaurants/${restaurantId}/reimbursements`).add({
+    const reimbursementRecord = {
       orderId: orderId,
       orderNumber: orderData.orderNumber || orderId,
-      tableNumber: orderData.tableNumber,
       amount: refundAmount,
       type: refundType,
       originalOrderTotal: orderData.total || 0,
       stripeRefundId: refund.id,
       stripePaymentIntentId: paymentIntentId,
       processedAt: FieldValue.serverTimestamp(),
-      processedBy: request.auth.uid
-    });
+      processedBy: request.auth.uid,
+      locationId: orderData.locationId || restaurantId,
+      orderType: orderData.orderType || 'dine_in',
+      isOnlineOrder: orderData.source === 'website'
+    };
+    
+    // Only add tableNumber if it exists (not for online orders)
+    if (orderData.tableNumber) {
+      reimbursementRecord.tableNumber = orderData.tableNumber;
+    }
+    
+    await db.collection(`restaurants/${restaurantId}/reimbursements`).add(reimbursementRecord);
 
     return {
       success: true,
@@ -546,28 +555,104 @@ exports.serveWebsite = onRequest(async (req, res) => {
 
             let restaurantId;
             let restaurant;
+            let derivedLocationId = null;
+
+            // Helper function to find restaurant by slug or ID, handling multi-location combined slugs
+            async function findRestaurantBySlugOrId(slug) {
+                const db = admin.firestore();
+                
+                // First try exact slug match
+                let rest = await getRestaurantBySlug(slug);
+                if (rest) {
+                    return { restaurantId: rest.id, restaurant: rest, locationSlug: null };
+                }
+                
+                // Try as direct restaurant ID (for cases where slug isn't set)
+                const directDoc = await db.doc(`restaurants/${slug}`).get();
+                if (directDoc.exists) {
+                    return { restaurantId: slug, restaurant: { id: slug, ...directDoc.data() }, locationSlug: null };
+                }
+                
+                // For multi-location: slug might be "restaurant-id-or-slug-location-slug"
+                // Try progressively shorter prefixes
+                const parts = slug.split('-');
+                for (let i = parts.length - 1; i >= 1; i--) {
+                    const potentialRestaurantPart = parts.slice(0, i).join('-');
+                    const potentialLocationSlug = parts.slice(i).join('-');
+                    
+                    // Try as slug first
+                    rest = await getRestaurantBySlug(potentialRestaurantPart);
+                    if (rest) {
+                        return { restaurantId: rest.id, restaurant: rest, locationSlug: potentialLocationSlug };
+                    }
+                    
+                    // Try as direct restaurant ID
+                    const idDoc = await db.doc(`restaurants/${potentialRestaurantPart}`).get();
+                    if (idDoc.exists) {
+                        return { restaurantId: potentialRestaurantPart, restaurant: { id: potentialRestaurantPart, ...idDoc.data() }, locationSlug: potentialLocationSlug };
+                    }
+                }
+                
+                return { restaurantId: null, restaurant: null, locationSlug: null };
+            }
 
             // Handle subdomain or query param
             if (host.includes('restaurant-portal-6b147.web.app') || host.includes('cloudfunctions.net')) {
                 const subdomain = host.split('.')[0];
                 if (subdomain !== 'restaurant-portal-6b147' && subdomain !== 'us-central1-restaurant-portal-6b147') {
-                restaurant = await getRestaurantBySlug(subdomain);
-                if (restaurant) {
-                    restaurantId = restaurant.id;
-                } else {
-                    restaurantId = subdomain;
-                }
+                    const result = await findRestaurantBySlugOrId(subdomain);
+                    if (result.restaurantId) {
+                        restaurant = result.restaurant;
+                        restaurantId = result.restaurantId;
+                        if (result.locationSlug) {
+                            // Find the locationId from the location slug
+                            const locationsSnap = await admin.firestore()
+                                .collection(`restaurants/${restaurantId}/locations`)
+                                .where('slug', '==', result.locationSlug)
+                                .limit(1)
+                                .get();
+                            if (!locationsSnap.empty) {
+                                derivedLocationId = locationsSnap.docs[0].id;
+                            }
+                        }
+                    }
                 }
             }
             
             // Fallback to query param for testing
             if (!restaurantId && req.query.restaurant) {
-                restaurant = await getRestaurantBySlug(req.query.restaurant);
-                    if (restaurant) {
-                        restaurantId = restaurant.id;
-                } else {
-                    restaurantId = req.query.restaurant;
+                console.log('Looking up restaurant by query param:', req.query.restaurant);
+                const result = await findRestaurantBySlugOrId(req.query.restaurant);
+                console.log('Lookup result:', JSON.stringify({ restaurantId: result.restaurantId, hasRestaurant: !!result.restaurant, locationSlug: result.locationSlug }));
+                if (result.restaurantId) {
+                    restaurant = result.restaurant;
+                    restaurantId = result.restaurantId;
+                    if (result.locationSlug) {
+                        // Find the locationId from the location slug
+                        const locationsSnap = await admin.firestore()
+                            .collection(`restaurants/${restaurantId}/locations`)
+                            .where('slug', '==', result.locationSlug)
+                            .limit(1)
+                            .get();
+                        if (!locationsSnap.empty) {
+                            derivedLocationId = locationsSnap.docs[0].id;
+                            console.log('Found location by slug:', result.locationSlug, '-> id:', derivedLocationId);
+                        } else {
+                            console.log('No location found with slug:', result.locationSlug);
+                            // Try to find location by name match (fallback)
+                            const allLocationsSnap = await admin.firestore()
+                                .collection(`restaurants/${restaurantId}/locations`)
+                                .get();
+                            console.log('Available locations:', allLocationsSnap.docs.map(d => ({ id: d.id, slug: d.data().slug, name: d.data().name })));
+                        }
+                    }
                 }
+            }
+            
+            // Also check if locationId is directly in query params (takes priority)
+            if (req.query.locationId) {
+                derivedLocationId = req.query.locationId;
+                console.log('Using locationId from query param:', derivedLocationId);
             }
 
             if (!restaurantId) {
@@ -598,28 +683,61 @@ exports.serveWebsite = onRequest(async (req, res) => {
 
             const restaurantData = restaurantDoc.data();
             
-            // Check if multi-location and get locationId from query or config
+            // Check if multi-location and get locationId from query, derived from slug, or config
             const isMultiLocation = restaurantData.isMultiLocation === true;
-            const locationId = req.query.locationId || null;
+            const locationId = req.query.locationId || derivedLocationId || null;
+            
+            console.log('Multi-location:', isMultiLocation, '| LocationId:', locationId, '| Derived:', derivedLocationId);
             
             // Fetch website configuration (location-specific for multi-location)
             let websiteDoc;
             let websiteData = {};
+            let effectiveLocationId;
             
             if (isMultiLocation && locationId) {
                 // Multi-location: load location-specific config
                 websiteDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}/website/config`).get();
                 websiteData = websiteDoc.exists ? websiteDoc.data() : {};
-            }
-            
-            // Fallback to restaurant-level config if no location-specific config
-            if (!websiteDoc?.exists) {
+                effectiveLocationId = locationId; // Use the known locationId
+                console.log('Loaded location-specific config for locationId:', locationId);
+            } else if (isMultiLocation && !locationId) {
+                // Multi-location but no locationId - this is a problem!
+                // Try to find a location by searching through all locations for a matching slug
+                console.log('Multi-location restaurant but no locationId. Searching locations...');
+                const locationsSnap = await db.collection(`restaurants/${restaurantId}/locations`).get();
+                
+                for (const locDoc of locationsSnap.docs) {
+                    const locData = locDoc.data();
+                    const locConfigDoc = await db.doc(`restaurants/${restaurantId}/locations/${locDoc.id}/website/config`).get();
+                    if (locConfigDoc.exists) {
+                        // Check if this location's website config is published or matches our needs
+                        const locConfig = locConfigDoc.data();
+                        // Use the first location that has a website config
+                        // This is a fallback - ideally we'd have the locationId from the URL
+                        websiteDoc = locConfigDoc;
+                        websiteData = locConfig;
+                        effectiveLocationId = locDoc.id;
+                        console.log('Using fallback location:', locDoc.id, locData.name);
+                        break;
+                    }
+                }
+                
+                // If still no config found, fall back to restaurant-level (legacy single-location)
+                if (!websiteDoc?.exists) {
+                    websiteDoc = await db.doc(`restaurants/${restaurantId}/website/config`).get();
+                    websiteData = websiteDoc.exists ? websiteDoc.data() : {};
+                    effectiveLocationId = websiteData.locationId || restaurantId;
+                    console.log('Using restaurant-level fallback config');
+                }
+            } else {
+                // Single-location: load restaurant-level config
                 websiteDoc = await db.doc(`restaurants/${restaurantId}/website/config`).get();
                 websiteData = websiteDoc.exists ? websiteDoc.data() : {};
+                effectiveLocationId = restaurantId;
+                console.log('Single-location: using restaurant-level config');
             }
             
-            // Determine the effective locationId for orders
-            const effectiveLocationId = locationId || websiteData.locationId || restaurantId;
+            console.log('Effective locationId for orders:', effectiveLocationId);
 
             // Check if this is a preview request (allows viewing unpublished sites)
             const isPreview = req.query.preview === 'true';
@@ -676,25 +794,28 @@ exports.serveWebsite = onRequest(async (req, res) => {
                 stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15'
             };
 
-            // Try to load template from storage, fallback to local files
-            const bucket = admin.storage().bucket();
-            const templateFile = bucket.file(`templates/${templateId}/template.html`);
+            // ALWAYS load from local files first (they're included in the functions package and always up-to-date)
+            // Only fall back to Storage if local files don't exist
+            const fs = require('fs');
+            const path = require('path');
+            const localTemplatePath = path.join(__dirname, 'templates', templateId, 'template.html');
             
             let templateHtml;
-            const [templateExists] = await templateFile.exists();
             
-            if (templateExists) {
-                const [content] = await templateFile.download();
-                templateHtml = content.toString('utf-8');
+            if (fs.existsSync(localTemplatePath)) {
+                templateHtml = fs.readFileSync(localTemplatePath, 'utf-8');
+                console.log(`Loaded template from local file: ${localTemplatePath}`);
             } else {
-                // Fallback: Try to load from local files (for emulator/local development)
-                const fs = require('fs');
-                const path = require('path');
-                const localTemplatePath = path.join(__dirname, 'templates', templateId, 'template.html');
+                // Fallback: Try to load from Firebase Storage
+                console.log(`Local template not found, trying Storage: ${localTemplatePath}`);
+            const bucket = admin.storage().bucket();
+                const templateFile = bucket.file(`templates/${templateId}/template.html`);
+                const [templateExists] = await templateFile.exists();
                 
-                if (fs.existsSync(localTemplatePath)) {
-                    templateHtml = fs.readFileSync(localTemplatePath, 'utf-8');
-                    console.log(`Loaded template from local file: ${localTemplatePath}`);
+                if (templateExists) {
+                    const [content] = await templateFile.download();
+                    templateHtml = content.toString('utf-8');
+                    console.log(`Loaded template from Storage: templates/${templateId}/template.html`);
                 } else {
                     return res.status(500).send(`
                         <!DOCTYPE html>
@@ -885,14 +1006,19 @@ exports.publishWebsite = onCall(async (request) => {
 exports.getMenu = onRequest(async (req, res) => {
     return cors(req, res, async () => {
         try {
-            // Get restaurant ID from query parameter
+            // Get restaurant ID and optional locationId from query parameters
             const restaurantId = req.query.restaurantId;
-            console.log('Getting menu for restaurant:', restaurantId);
+            const locationId = req.query.locationId;
+            console.log('Getting menu for restaurant:', restaurantId, '| location:', locationId);
             
             if (!restaurantId) {
                 console.error('No restaurant ID provided');
                 return res.status(400).json({ error: 'Restaurant ID is required' });
             }
+            
+            // Check if this is a multi-location restaurant
+            const restaurantDoc = await admin.firestore().doc(`restaurants/${restaurantId}`).get();
+            const isMultiLocation = restaurantDoc.exists && restaurantDoc.data()?.isMultiLocation === true;
             
             // Get menu categories from Firestore
             const categoriesSnapshot = await admin.firestore()
@@ -918,6 +1044,19 @@ exports.getMenu = onRequest(async (req, res) => {
                 
                 itemsSnapshot.forEach(itemDoc => {
                     const itemData = itemDoc.data();
+                    
+                    // Filter by location for multi-location restaurants
+                    if (isMultiLocation && locationId) {
+                        // If item has locations array with entries, check if current location is included
+                        if (itemData.locations && itemData.locations.length > 0) {
+                            if (!itemData.locations.includes(locationId)) {
+                                // Skip this item - not available at this location
+                                return;
+                            }
+                        }
+                        // If no locations array or empty, item is available at all locations
+                    }
+                    
                     // Ensure price and discount are numbers
                     categoryData.items.push({
                         id: itemDoc.id,
@@ -928,10 +1067,13 @@ exports.getMenu = onRequest(async (req, res) => {
                     });
                 });
                 
-                categories.push(categoryData);
+                // Only include categories that have items (after location filtering)
+                if (categoryData.items.length > 0) {
+                    categories.push(categoryData);
+                }
             }
 
-            console.log('Menu data loaded successfully:', categories.length, 'categories');
+            console.log('Menu data loaded successfully:', categories.length, 'categories for location:', locationId || 'all');
             res.json({ categories });
         } catch (error) {
             console.error('Error serving menu:', error);

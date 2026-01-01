@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Card, Button, Badge, Alert, Spinner } from 'react-bootstrap';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
+import { initializeNotifications, notifyServer, unlockAudio, areNotificationsEnabled } from '../services/notificationService';
 import './PageHeader.css';
 import './Server.css';
 
@@ -17,6 +18,16 @@ const Server = () => {
   const [updatingOrders, setUpdatingOrders] = useState(new Set());
   const [notifications, setNotifications] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
+
+  // Enable notifications handler
+  const enableNotifications = useCallback(async () => {
+    unlockAudio();
+    const enabled = await initializeNotifications();
+    setNotificationsEnabled(enabled);
+    setShowNotificationPrompt(false);
+  }, []);
 
   // Timer that updates every second
   useEffect(() => {
@@ -113,6 +124,8 @@ const Server = () => {
             // Status changed - add notification
             if (order.status === 'preparing' && existingOrder.status !== 'preparing') {
               addNotification(`Order #${order.orderNumber || order.id} for Table ${formatTableNumber(order.tableNumber)} is now being prepared`, 'info');
+              // Play audio notification
+              notifyServer.orderPreparing(order.orderNumber || order.id, order.tableNumber);
             }
             if (order.status === 'ready' && existingOrder.status !== 'ready') {
               const savedClaims = localStorage.getItem(`serverClaims_${currentUser.uid}`);
@@ -123,6 +136,8 @@ const Server = () => {
               } else {
                 addNotification(`Order #${order.orderNumber || order.id} for Table ${formatTableNumber(order.tableNumber)} is ready`, 'warning');
               }
+              // Play audio notification for ready orders
+              notifyServer.orderReady(order.orderNumber || order.id, order.tableNumber);
             }
           }
         });
@@ -311,6 +326,27 @@ const Server = () => {
             <h2>Server</h2>
             <p>Track and serve orders</p>
           </div>
+        </div>
+        {/* Notification status indicator */}
+        <div className="notification-status">
+          {notificationsEnabled ? (
+            <Badge bg="success" className="notification-badge">
+              <i className="bi bi-bell-fill"></i> Notifications On
+            </Badge>
+          ) : showNotificationPrompt ? (
+            <Button 
+              variant="warning" 
+              size="sm" 
+              onClick={enableNotifications}
+              className="enable-notifications-btn"
+            >
+              <i className="bi bi-bell"></i> Enable Sound Alerts
+            </Button>
+          ) : (
+            <Badge bg="secondary" className="notification-badge">
+              <i className="bi bi-bell-slash"></i> Notifications Off
+            </Badge>
+          )}
         </div>
       </div>
 

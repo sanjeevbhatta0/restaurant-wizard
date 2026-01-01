@@ -1456,15 +1456,20 @@
             initNavbar();
             
             // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
+            console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
             if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
                 try {
-                    stripe = Stripe(CONFIG.stripePublishableKey);
-                    console.log('Stripe initialized successfully');
+                    if (typeof Stripe === 'undefined') {
+                        console.error('Stripe.js library not loaded! Check if https://js.stripe.com/v3/ is accessible.');
+                    } else {
+                        stripe = Stripe(CONFIG.stripePublishableKey);
+                        console.log('Stripe initialized successfully with key:', CONFIG.stripePublishableKey.substring(0, 20) + '...');
+                    }
                 } catch (e) {
                     console.error('Error initializing Stripe:', e);
                 }
             } else {
-                console.log('Stripe key not configured or invalid');
+                console.log('Stripe key not configured or invalid. Key value:', CONFIG.stripePublishableKey);
             }
         });
 
@@ -1488,7 +1493,8 @@
         // Load menu from API
         async function loadMenu() {
             try {
-                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}`);
+                const locationParam = CONFIG.locationId ? `&locationId=${CONFIG.locationId}` : '';
+                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}${locationParam}`);
                 const data = await response.json();
                 
                 if (data.categories) {
@@ -1840,39 +1846,50 @@
             document.getElementById(`${method === 'payNow' ? 'payNow' : 'payLater'}Option`).classList.add('active');
             
             const cardContainer = document.getElementById('cardElementContainer');
+            console.log('selectPaymentMethod called:', method, '| stripe:', !!stripe, '| cardElement:', !!cardElement);
+            
             if (method === 'payNow') {
                 cardContainer.style.display = 'block';
                 
                 // Initialize Stripe card element with a small delay to ensure container is visible
                 if (stripe && !cardElement) {
                     setTimeout(() => {
-                        const elements = stripe.elements();
-                        cardElement = elements.create('card', {
-                            style: {
-                                base: {
-                                    fontSize: '16px',
-                                    color: '#2d3436',
-                                    fontFamily: 'var(--font-family)',
-                                    '::placeholder': { color: '#aab7c4' }
-                                },
-                                invalid: {
-                                    color: '#e74c3c'
+                        try {
+                            console.log('Creating Stripe card element...');
+                            const elements = stripe.elements();
+                            cardElement = elements.create('card', {
+                                style: {
+                                    base: {
+                                        fontSize: '16px',
+                                        color: '#2d3436',
+                                        fontFamily: 'var(--font-family)',
+                                        '::placeholder': { color: '#aab7c4' }
+                                    },
+                                    invalid: {
+                                        color: '#e74c3c'
+                                    }
                                 }
-                            }
-                        });
-                        cardElement.mount('#card-element');
-                        cardElement.on('change', function(event) {
-                            const displayError = document.getElementById('card-errors');
-                            displayError.textContent = event.error ? event.error.message : '';
-                        });
-                        cardElement.on('ready', function() {
-                            console.log('Stripe card element ready');
-                        });
-                    }, 100);
+                            });
+                            console.log('Mounting card element...');
+                            cardElement.mount('#card-element');
+                            cardElement.on('change', function(event) {
+                                const displayError = document.getElementById('card-errors');
+                                displayError.textContent = event.error ? event.error.message : '';
+                            });
+                            cardElement.on('ready', function() {
+                                console.log('Stripe card element ready and accepting input!');
+                            });
+                        } catch (err) {
+                            console.error('Error creating card element:', err);
+                            document.getElementById('card-errors').textContent = 'Error loading payment form: ' + err.message;
+                        }
+                    }, 150);
                 } else if (!stripe) {
                     // Stripe not initialized - show warning but still allow showing the form
                     document.getElementById('card-errors').textContent = 'Online payment is currently unavailable. Please select "Pay at Restaurant" or contact support.';
-                    console.warn('Stripe not initialized. Check API key configuration.');
+                    console.warn('Stripe not initialized. Check browser console for Stripe key issues.');
+                } else {
+                    console.log('Card element already initialized');
                 }
             } else {
                 cardContainer.style.display = 'none';
