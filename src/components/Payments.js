@@ -143,6 +143,7 @@ const Payments = () => {
   const { currentUser } = useAuth();
   const [selectedTable, setSelectedTable] = useState(null);
   const [tablesWithOrders, setTablesWithOrders] = useState({}); // { tableNumber: [orders] }
+  const [onlineOrders, setOnlineOrders] = useState([]); // Online orders (pickup/delivery)
   const [orders, setOrders] = useState([]);
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -150,6 +151,10 @@ const Payments = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const { selectedLocation, isMultiLocation } = useLocation();
+  const [showOnlineOrders, setShowOnlineOrders] = useState(false); // Toggle for online orders view
+  const [showOnlineOrderDetailModal, setShowOnlineOrderDetailModal] = useState(false);
+  const [selectedOnlineOrder, setSelectedOnlineOrder] = useState(null);
+  const [orderSearchQuery, setOrderSearchQuery] = useState(''); // For reimbursement search
   
   // Payment details
   const [subtotal, setSubtotal] = useState(0);
@@ -190,7 +195,7 @@ const Payments = () => {
     initStripe();
   }, []);
 
-  // Load all served orders grouped by table
+  // Load all served orders grouped by table (EXCLUDING online orders)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -214,9 +219,12 @@ const Payments = () => {
         ...doc.data()
       }));
 
-      // Group orders by table number
+      // Group orders by table number - EXCLUDE online orders (source='website')
       const grouped = {};
       ordersData.forEach(order => {
+        // Skip online orders - they appear in the Online Orders section
+        if (order.source === 'website') return;
+        
         const tableNumbers = Array.isArray(order.tableNumber) 
           ? order.tableNumber 
           : [order.tableNumber];
@@ -247,6 +255,53 @@ const Payments = () => {
     return () => unsubscribe();
   }, [currentUser, selectedLocation, isMultiLocation, selectedTable]);
 
+  // Load online orders (pickup/delivery from website) that are new or served
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    
+    // Query for website orders - they have source='website' or orderType in ['pickup', 'delivery']
+    let q = query(
+      ordersRef, 
+      where('source', '==', 'website'),
+      where('status', 'in', ['new', 'served', 'ready'])
+    );
+    
+    // Add location filter if multi-location
+    if (isMultiLocation && selectedLocation) {
+      q = query(
+        ordersRef, 
+        where('source', '==', 'website'),
+        where('locationId', '==', selectedLocation),
+        where('status', 'in', ['new', 'served', 'ready'])
+      );
+    } else if (isMultiLocation && !selectedLocation) {
+      setOnlineOrders([]);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Sort by createdAt (newest first)
+      ordersData.sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
+        const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt);
+        return dateB - dateA;
+      });
+
+      setOnlineOrders(ordersData);
+    }, (error) => {
+      console.error('Error loading online orders:', error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedLocation, isMultiLocation]);
+
   // Load completed orders for reimbursement
   useEffect(() => {
     if (!currentUser) return;
@@ -269,21 +324,33 @@ const Payments = () => {
         ...doc.data()
       }));
 
-      // Group orders by table number
+      // Group orders by table number OR as online orders
       const grouped = {};
       ordersData.forEach(order => {
-        const tableNumbers = Array.isArray(order.tableNumber) 
-          ? order.tableNumber 
-          : [order.tableNumber];
+        // Check if it's an online order (no table, or has source='website')
+        const isOnlineOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
         
-        tableNumbers.forEach(tableNum => {
-          if (!grouped[tableNum]) {
-            grouped[tableNum] = [];
+        if (isOnlineOrder && !order.tableNumber) {
+          // Group online orders under a special key
+          if (!grouped['__online__']) {
+            grouped['__online__'] = [];
           }
-          if (!grouped[tableNum].find(o => o.id === order.id)) {
-            grouped[tableNum].push(order);
-          }
-        });
+          grouped['__online__'].push(order);
+        } else {
+          // Regular table orders
+          const tableNumbers = Array.isArray(order.tableNumber) 
+            ? order.tableNumber 
+            : [order.tableNumber];
+          
+          tableNumbers.forEach(tableNum => {
+            if (!grouped[tableNum]) {
+              grouped[tableNum] = [];
+            }
+            if (!grouped[tableNum].find(o => o.id === order.id)) {
+              grouped[tableNum].push(order);
+            }
+          });
+        }
       });
 
       setCompletedOrders(grouped);
@@ -623,6 +690,126 @@ const Payments = () => {
     setPaymentMethod('cash');
   };
 
+  // Handle online order selection for viewing details
+  const handleOnlineOrderSelect = (order) => {
+    setSelectedOnlineOrder(order);
+    setShowOnlineOrderDetailModal(true);
+  };
+
+  // Check if online order is pre-paid
+  const isOrderPrepaid = (order) => {
+    return order.paymentMethod === 'card' && order.paymentDetails?.status === 'pending';
+  };
+
+  // Verify and complete pre-paid online order
+  const handleVerifyOnlineOrder = async () => {
+    if (!selectedOnlineOrder) return;
+
+    setProcessing(true);
+    setError('');
+
+    try {
+      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${selectedOnlineOrder.id}`);
+      
+      await updateDoc(orderRef, {
+        status: 'completed',
+        paymentVerified: true,
+        paymentVerifiedAt: new Date(),
+        paymentVerifiedBy: currentUser.uid,
+        paymentDetails: {
+          ...selectedOnlineOrder.paymentDetails,
+          status: 'verified',
+          verifiedAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      });
+
+      // Log activity
+      await activityService.logPaymentActivity(currentUser.uid, {
+        orderNumbers: [selectedOnlineOrder.orderNumber || selectedOnlineOrder.id],
+        tableNumbers: ['Online Order'],
+        total: selectedOnlineOrder.total,
+        orderCount: 1,
+        paymentMethod: 'card (online)',
+        orderType: selectedOnlineOrder.orderType,
+        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+      });
+
+      setSuccess(`Online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)} verified and completed!`);
+      setShowOnlineOrderDetailModal(false);
+      setSelectedOnlineOrder(null);
+    } catch (error) {
+      console.error('Error verifying online order:', error);
+      setError('Failed to verify order: ' + error.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Handle cash payment for unpaid online orders
+  const handleOnlineOrderCashPayment = async () => {
+    if (!selectedOnlineOrder) return;
+
+    setProcessing(true);
+    setError('');
+
+    try {
+      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${selectedOnlineOrder.id}`);
+      
+      await updateDoc(orderRef, {
+        status: 'completed',
+        paymentDate: new Date(),
+        paymentDetails: {
+          subtotal: selectedOnlineOrder.subtotal || selectedOnlineOrder.total,
+          taxRate: 0,
+          taxAmount: selectedOnlineOrder.tax || 0,
+          total: selectedOnlineOrder.total,
+          paymentMethod: 'cash',
+          paidAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      });
+
+      // Log activity
+      await activityService.logPaymentActivity(currentUser.uid, {
+        orderNumbers: [selectedOnlineOrder.orderNumber || selectedOnlineOrder.id],
+        tableNumbers: ['Online Order'],
+        total: selectedOnlineOrder.total,
+        orderCount: 1,
+        paymentMethod: 'cash',
+        orderType: selectedOnlineOrder.orderType,
+        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+      });
+
+      setSuccess(`Cash payment received for online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)}!`);
+      setShowOnlineOrderDetailModal(false);
+      setSelectedOnlineOrder(null);
+    } catch (error) {
+      console.error('Error processing cash payment:', error);
+      setError('Failed to process payment: ' + error.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Filter completed orders for reimbursement search
+  const getFilteredReimbursementOrders = () => {
+    if (!orderSearchQuery.trim()) return null;
+    
+    // Search across all completed orders
+    const allOrders = [];
+    Object.entries(completedOrders).forEach(([key, orders]) => {
+      orders.forEach(order => {
+        const orderNumber = order.orderNumber || order.id;
+        if (orderNumber.toLowerCase().includes(orderSearchQuery.toLowerCase())) {
+          allOrders.push({ ...order, tableKey: key });
+        }
+      });
+    });
+    
+    return allOrders;
+  };
+
   const formatDate = (timestamp) => {
     if (!timestamp) return '';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -867,6 +1054,73 @@ const Payments = () => {
           <i className="bi bi-arrow-counterclockwise"></i> Reimbursement
         </Button>
       </div>
+
+      {/* Online Orders Section */}
+      {onlineOrders.length > 0 && (
+        <Card className="mb-4 online-orders-card">
+          <Card.Header className="d-flex justify-content-between align-items-center">
+            <h5><i className="bi bi-globe"></i> Online Orders ({onlineOrders.length})</h5>
+            <Button 
+              variant="light" 
+              size="sm"
+              onClick={() => setShowOnlineOrders(!showOnlineOrders)}
+              className="online-orders-toggle-btn"
+            >
+              <i className={`bi ${showOnlineOrders ? 'bi-chevron-up' : 'bi-chevron-down'} me-1`}></i>
+              {showOnlineOrders ? 'Hide Orders' : 'View Orders'}
+            </Button>
+          </Card.Header>
+          {showOnlineOrders && (
+            <Card.Body>
+              <div className="online-orders-grid">
+                {onlineOrders.map(order => {
+                  const isPrepaid = order.paymentMethod === 'card';
+                  const orderTypeLabel = order.orderType === 'delivery' ? 'Delivery' : 'Pickup';
+                  return (
+                    <Card
+                      key={order.id}
+                      className="online-order-card"
+                      onClick={() => handleOnlineOrderSelect(order)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Card.Body>
+                        <div className="d-flex justify-content-between align-items-start mb-2">
+                          <div>
+                            <Badge bg={order.orderType === 'pickup' ? 'success' : 'warning'} className="me-2">
+                              <i className={`bi ${order.orderType === 'pickup' ? 'bi-bag-check' : 'bi-truck'}`}></i> {orderTypeLabel}
+                            </Badge>
+                            {isPrepaid && (
+                              <Badge bg="info">
+                                <i className="bi bi-credit-card-fill"></i> PAID
+                              </Badge>
+                            )}
+                            {!isPrepaid && (
+                              <Badge bg="secondary">
+                                <i className="bi bi-cash"></i> Pay at Store
+                              </Badge>
+                            )}
+                          </div>
+                          <Badge bg="dark">#{order.orderNumber || order.id.slice(0, 8)}</Badge>
+                        </div>
+                        <div className="order-customer-info">
+                          <i className="bi bi-person-circle"></i>
+                          <span>{order.customer?.name || 'Customer'}</span>
+                          <span className="text-muted ms-2">{order.customer?.phone}</span>
+                        </div>
+                        <div className="d-flex justify-content-between mt-2">
+                          <span className="text-muted">{order.items?.length || 0} items</span>
+                          <strong className="text-success">${(order.total || 0).toFixed(2)}</strong>
+                        </div>
+                        <small className="text-muted">{formatDate(order.createdAt)}</small>
+                      </Card.Body>
+                    </Card>
+                  );
+                })}
+              </div>
+            </Card.Body>
+          )}
+        </Card>
+      )}
 
       {/* Tables with Served Orders */}
       {Object.keys(tablesWithOrders).length > 0 && (
@@ -1361,6 +1615,162 @@ const Payments = () => {
         </Modal.Footer>
       </Modal>
 
+      {/* Online Order Detail Modal */}
+      <Modal show={showOnlineOrderDetailModal} onHide={() => !processing && setShowOnlineOrderDetailModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <i className="bi bi-globe"></i> Online Order Details
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedOnlineOrder && (
+            <>
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                  <h4>Order #{selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)}</h4>
+                  <Badge bg={selectedOnlineOrder.orderType === 'pickup' ? 'success' : 'warning'} className="me-2">
+                    <i className={`bi ${selectedOnlineOrder.orderType === 'pickup' ? 'bi-bag-check' : 'bi-truck'}`}></i>
+                    {selectedOnlineOrder.orderType === 'pickup' ? ' Pickup' : ' Delivery'}
+                  </Badge>
+                  {selectedOnlineOrder.paymentMethod === 'card' ? (
+                    <Badge bg="info"><i className="bi bi-credit-card-fill"></i> PRE-PAID</Badge>
+                  ) : (
+                    <Badge bg="secondary"><i className="bi bi-cash"></i> Pay at Store</Badge>
+                  )}
+                </div>
+                <div className="text-end">
+                  <h3 className="text-success mb-0">${(selectedOnlineOrder.total || 0).toFixed(2)}</h3>
+                  <small className="text-muted">{formatDate(selectedOnlineOrder.createdAt)}</small>
+                </div>
+              </div>
+
+              <Card className="mb-3">
+                <Card.Header><strong>Customer Information</strong></Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={4}>
+                      <i className="bi bi-person-circle me-2"></i>
+                      <strong>{selectedOnlineOrder.customer?.name || 'N/A'}</strong>
+                    </Col>
+                    <Col md={4}>
+                      <i className="bi bi-telephone me-2"></i>
+                      {selectedOnlineOrder.customer?.phone || 'N/A'}
+                    </Col>
+                    <Col md={4}>
+                      <i className="bi bi-envelope me-2"></i>
+                      {selectedOnlineOrder.customer?.email || 'N/A'}
+                    </Col>
+                  </Row>
+                </Card.Body>
+              </Card>
+
+              <Card className="mb-3">
+                <Card.Header><strong>Order Items</strong></Card.Header>
+                <Card.Body>
+                  <Table size="sm">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th className="text-center">Qty</th>
+                        <th className="text-end">Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOnlineOrder.items?.map((item, index) => (
+                        <tr key={index}>
+                          <td>{item.name}</td>
+                          <td className="text-center">{item.quantity}</td>
+                          <td className="text-end">${((item.finalPrice || item.price) * item.quantity).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan="2"><strong>Subtotal</strong></td>
+                        <td className="text-end"><strong>${(selectedOnlineOrder.subtotal || 0).toFixed(2)}</strong></td>
+                      </tr>
+                      <tr>
+                        <td colSpan="2">Tax</td>
+                        <td className="text-end">${(selectedOnlineOrder.tax || 0).toFixed(2)}</td>
+                      </tr>
+                      <tr className="table-success">
+                        <td colSpan="2"><strong>Total</strong></td>
+                        <td className="text-end"><strong>${(selectedOnlineOrder.total || 0).toFixed(2)}</strong></td>
+                      </tr>
+                    </tfoot>
+                  </Table>
+                </Card.Body>
+              </Card>
+
+              {selectedOnlineOrder.paymentMethod === 'card' && (
+                <Card className="mb-3 border-info">
+                  <Card.Header className="bg-info text-white">
+                    <strong><i className="bi bi-credit-card"></i> Payment Details</strong>
+                  </Card.Header>
+                  <Card.Body>
+                    <Row>
+                      <Col md={6}>
+                        <p className="mb-1"><strong>Payment Method:</strong> Credit Card</p>
+                        <p className="mb-1"><strong>Status:</strong> 
+                          <Badge bg="success" className="ms-2">Paid Online</Badge>
+                        </p>
+                      </Col>
+                      <Col md={6}>
+                        <p className="mb-1"><strong>Amount Charged:</strong> ${(selectedOnlineOrder.total || 0).toFixed(2)}</p>
+                        {selectedOnlineOrder.paymentDetails?.paymentMethodId && (
+                          <p className="mb-1 text-muted"><small>Payment ID: {selectedOnlineOrder.paymentDetails.paymentMethodId}</small></p>
+                        )}
+                      </Col>
+                    </Row>
+                    <Alert variant="info" className="mb-0 mt-3">
+                      <i className="bi bi-check-circle"></i> This order has been paid online. Click "Verify & Complete" to mark it as fulfilled.
+                    </Alert>
+                  </Card.Body>
+                </Card>
+              )}
+
+              {selectedOnlineOrder.paymentMethod !== 'card' && (
+                <Alert variant="warning">
+                  <i className="bi bi-cash"></i> This customer chose to pay at the restaurant. Collect <strong>${(selectedOnlineOrder.total || 0).toFixed(2)}</strong> when they arrive.
+                </Alert>
+              )}
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowOnlineOrderDetailModal(false)} disabled={processing}>
+            Close
+          </Button>
+          {selectedOnlineOrder?.paymentMethod === 'card' ? (
+            <Button variant="success" onClick={handleVerifyOnlineOrder} disabled={processing}>
+              {processing ? (
+                <>
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-check-circle"></i> Verify & Complete
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button variant="success" onClick={handleOnlineOrderCashPayment} disabled={processing}>
+              {processing ? (
+                <>
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-cash"></i> Confirm Cash Payment
+                </>
+              )}
+            </Button>
+          )}
+        </Modal.Footer>
+      </Modal>
+
       {/* Reimbursement Modal */}
       <Modal show={showReimbursementModal} onHide={() => !processingReimbursement && setShowReimbursementModal(false)} size="lg">
         <Modal.Header closeButton>
@@ -1375,44 +1785,127 @@ const Payments = () => {
               </div>
             )}
           </Alert>
+
+          {/* Search by Order Number */}
+          <Form.Group className="mb-4">
+            <Form.Label><strong><i className="bi bi-search"></i> Search by Order Number</strong></Form.Label>
+            <Form.Control
+              type="text"
+              placeholder="Enter order number to search..."
+              value={orderSearchQuery}
+              onChange={(e) => {
+                setOrderSearchQuery(e.target.value);
+                // Clear table/order selection when searching
+                if (e.target.value.trim()) {
+                  setReimbursementTable('');
+                  setReimbursementOrder('');
+                }
+              }}
+            />
+          </Form.Group>
+
+          {/* Search Results */}
+          {orderSearchQuery.trim() && getFilteredReimbursementOrders() && (
+            <div className="mb-4">
+              <h6>Search Results:</h6>
+              {getFilteredReimbursementOrders().length > 0 ? (
+                <div className="search-results-list">
+                  {getFilteredReimbursementOrders().map(order => (
+                    <Card 
+                      key={order.id} 
+                      className={`mb-2 cursor-pointer ${reimbursementOrder === order.id ? 'border-primary' : ''}`}
+                      onClick={() => {
+                        setReimbursementTable(order.tableKey);
+                        setReimbursementOrder(order.id);
+                        setOrderSearchQuery('');
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Card.Body className="py-2">
+                        <div className="d-flex justify-content-between align-items-center">
+                          <div>
+                            <strong>#{order.orderNumber || order.id.slice(0, 8)}</strong>
+                            {order.tableKey === '__online__' ? (
+                              <Badge bg="info" className="ms-2">Online Order</Badge>
+                            ) : (
+                              <span className="ms-2 text-muted">Table {order.tableKey}</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="me-3">${(order.total || 0).toFixed(2)}</span>
+                            <Badge bg={order.paymentDetails?.paymentMethod === 'card' ? 'primary' : 'secondary'}>
+                              {order.paymentDetails?.paymentMethod === 'card' ? 'Card' : 'Cash'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Alert variant="info">No orders found matching "{orderSearchQuery}"</Alert>
+              )}
+            </div>
+          )}
+
+          {!orderSearchQuery.trim() && (
+            <>
+              <hr />
+              <h6 className="mb-3">Or select by Table/Order Type:</h6>
+            </>
+          )}
           
           <Form>
-            <Form.Group className="mb-3">
-              <Form.Label><strong>Select Table</strong></Form.Label>
-              <Form.Select
-                value={reimbursementTable}
-                onChange={(e) => {
-                  setReimbursementTable(e.target.value);
-                  setReimbursementOrder('');
-                }}
-                required
-              >
-                <option value="">Choose a table...</option>
-                {Object.keys(completedOrders).map(tableNum => (
-                  <option key={tableNum} value={tableNum}>
-                    Table {tableNum} ({completedOrders[tableNum].length} {completedOrders[tableNum].length === 1 ? 'order' : 'orders'})
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+            {!orderSearchQuery.trim() && (
+              <>
+                <Form.Group className="mb-3">
+                  <Form.Label><strong>Select Source</strong></Form.Label>
+                  <Form.Select
+                    value={reimbursementTable}
+                    onChange={(e) => {
+                      setReimbursementTable(e.target.value);
+                      setReimbursementOrder('');
+                    }}
+                    required
+                  >
+                    <option value="">Choose a table or order type...</option>
+                    {/* Online Orders option */}
+                    {completedOrders['__online__'] && completedOrders['__online__'].length > 0 && (
+                      <option value="__online__">
+                        🌐 Online Orders ({completedOrders['__online__'].length} {completedOrders['__online__'].length === 1 ? 'order' : 'orders'})
+                      </option>
+                    )}
+                    {/* Table orders */}
+                    {Object.keys(completedOrders)
+                      .filter(key => key !== '__online__')
+                      .map(tableNum => (
+                        <option key={tableNum} value={tableNum}>
+                          Table {tableNum} ({completedOrders[tableNum].length} {completedOrders[tableNum].length === 1 ? 'order' : 'orders'})
+                        </option>
+                      ))}
+                  </Form.Select>
+                </Form.Group>
 
-            {reimbursementTable && completedOrders[reimbursementTable] && (
-              <Form.Group className="mb-3">
-                <Form.Label><strong>Select Order</strong></Form.Label>
-                <Form.Select
-                  value={reimbursementOrder}
-                  onChange={(e) => setReimbursementOrder(e.target.value)}
-                  required
-                >
-                  <option value="">Choose an order...</option>
-                  {completedOrders[reimbursementTable].map(order => (
-                    <option key={order.id} value={order.id}>
-                      Order #{order.orderNumber || order.id.slice(0, 8)} - ${(order.total || 0).toFixed(2)} - {formatDate(order.createdAt)}
-                      {order.paymentDetails?.paymentMethod === 'card' ? ' (Card)' : ' (Cash)'}
-                    </option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
+                {reimbursementTable && completedOrders[reimbursementTable] && (
+                  <Form.Group className="mb-3">
+                    <Form.Label><strong>Select Order</strong></Form.Label>
+                    <Form.Select
+                      value={reimbursementOrder}
+                      onChange={(e) => setReimbursementOrder(e.target.value)}
+                      required
+                    >
+                      <option value="">Choose an order...</option>
+                      {completedOrders[reimbursementTable].map(order => (
+                        <option key={order.id} value={order.id}>
+                          Order #{order.orderNumber || order.id.slice(0, 8)} - ${(order.total || 0).toFixed(2)} - {formatDate(order.createdAt)}
+                          {order.paymentDetails?.paymentMethod === 'card' ? ' (Card)' : ' (Cash)'}
+                          {order.source === 'website' ? ' 🌐' : ''}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                )}
+              </>
             )}
 
             {reimbursementOrderData && (

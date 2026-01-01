@@ -1,0 +1,46 @@
+{
+  "templates": [
+    {
+      "id": "modern-bistro",
+      "name": "Modern Bistro",
+      "description": "A clean, contemporary design perfect for modern restaurants, cafes, and bistros. Features a vibrant hero section, smooth animations, and a sleek ordering experience.",
+      "preview": "/templates/modern-bistro/preview.png",
+      "category": "modern",
+      "colors": {
+        "primary": "#2c3e50",
+        "secondary": "#3498db",
+        "accent": "#e74c3c"
+      },
+      "fonts": ["Poppins", "Inter", "Montserrat", "Open Sans"],
+      "features": ["Animated hero", "Smooth scrolling", "Mobile-first design", "Modern cart sidebar"]
+    },
+    {
+      "id": "italian-trattoria",
+      "name": "Italian Trattoria",
+      "description": "An elegant, sophisticated design with serif fonts and classic styling. Perfect for Italian restaurants, fine dining, and upscale establishments.",
+      "preview": "/templates/italian-trattoria/preview.png",
+      "category": "elegant",
+      "colors": {
+        "primary": "#1a1a1a",
+        "secondary": "#2d2d2d",
+        "accent": "#c9a962"
+      },
+      "fonts": ["Playfair Display", "Lora", "Cormorant Garamond", "Libre Baskerville"],
+      "features": ["Elegant typography", "Gold accents", "Parallax hero", "Classic styling"]
+    },
+    {
+      "id": "fresh-cafe",
+      "name": "Fresh Cafe",
+      "description": "A bright, cheerful design with playful elements. Ideal for cafes, bakeries, juice bars, and casual dining spots.",
+      "preview": "/templates/fresh-cafe/preview.png",
+      "category": "casual",
+      "colors": {
+        "primary": "#2d6a4f",
+        "secondary": "#40916c",
+        "accent": "#ff6b6b"
+      },
+      "fonts": ["Nunito", "Quicksand", "Comfortaa", "Varela Round"],
+      "features": ["Bright colors", "Rounded elements", "Fun animations", "Friendly vibe"]
+    }
+  ]
+}

@@ -106,10 +106,30 @@
   gap: 10px;
 }
 
+.order-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .order-status-badge {
   font-size: 0.85rem;
   padding: 6px 12px;
   font-weight: 600;
+}
+
+.order-type-badge {
+  font-size: 0.8rem;
+  padding: 5px 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.order-type-badge i {
+  font-size: 0.9rem;
 }
 
 .order-number {
@@ -135,14 +155,6 @@
   margin-top: 4px;
 }
 
-.order-header-bottom {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-}
-
 .table-info {
   display: flex;
   align-items: center;
@@ -152,6 +164,41 @@
 
 .table-info i {
   font-size: 1rem;
+}
+
+.customer-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95rem;
+}
+
+.customer-info i {
+  font-size: 1rem;
+}
+
+.pickup-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.pickup-time i {
+  font-size: 0.9rem;
+}
+
+.order-header-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  flex-wrap: wrap;
 }
 
 .kitchen-order-card .card-body {

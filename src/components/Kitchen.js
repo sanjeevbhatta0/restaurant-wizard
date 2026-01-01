@@ -26,11 +26,12 @@ const Kitchen = () => {
       return;
     }
 
-    // Query for orders that are sent to kitchen or being prepared
+    // Query for orders that are new (from website), sent to kitchen, or being prepared
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
     
     // Build query based on location
     // Note: For single-location, we still filter by locationId (currentUser.uid) to ensure consistency
+    // Include 'new' status to capture website orders
     let q;
     try {
       if (isMultiLocation && selectedLocation) {
@@ -38,7 +39,7 @@ const Kitchen = () => {
         q = query(
           ordersRef,
           where('locationId', '==', selectedLocation),
-          where('status', 'in', ['sent_to_kitchen', 'preparing']),
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing']),
           orderBy('createdAt', 'asc') // Oldest first (FIFO)
         );
       } else {
@@ -47,7 +48,7 @@ const Kitchen = () => {
         q = query(
           ordersRef,
           where('locationId', '==', currentUser.uid),
-          where('status', 'in', ['sent_to_kitchen', 'preparing']),
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing']),
           orderBy('createdAt', 'asc')
         );
       }
@@ -59,13 +60,13 @@ const Kitchen = () => {
           q = query(
             ordersRef,
             where('locationId', '==', selectedLocation),
-            where('status', 'in', ['sent_to_kitchen', 'preparing'])
+            where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
           );
         } else {
           q = query(
             ordersRef,
             where('locationId', '==', currentUser.uid),
-            where('status', 'in', ['sent_to_kitchen', 'preparing'])
+            where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
           );
         }
       } catch (fallbackError) {
@@ -203,6 +204,20 @@ const Kitchen = () => {
     return tableNumber || 'N/A';
   };
 
+  // Format order type for display
+  const getOrderTypeInfo = (orderType) => {
+    switch (orderType) {
+      case 'dine_in':
+        return { label: 'Dine-In', icon: 'bi-cup-hot', variant: 'info' };
+      case 'pickup':
+        return { label: 'Pickup', icon: 'bi-bag-check', variant: 'success' };
+      case 'delivery':
+        return { label: 'Delivery', icon: 'bi-truck', variant: 'warning' };
+      default:
+        return { label: 'Dine-In', icon: 'bi-cup-hot', variant: 'info' };
+    }
+  };
+
   // Show warning if multi-location but no location selected
   if (isMultiLocation && !selectedLocation && !loading) {
     return (
@@ -257,14 +272,19 @@ const Kitchen = () => {
           {orders.map(order => {
             const isUpdating = updatingOrders.has(order.id);
             const isPreparing = order.status === 'preparing';
+            const orderTypeInfo = getOrderTypeInfo(order.orderType);
+            const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
             
             return (
               <Card key={order.id} className={`kitchen-order-card ${isPreparing ? 'preparing' : ''}`}>
                 <Card.Header className="kitchen-order-header">
                   <div className="order-header-top">
-                    <div>
+                    <div className="order-badges">
                       <Badge bg={isPreparing ? 'warning' : 'primary'} className="order-status-badge">
                         {isPreparing ? 'Preparing' : 'New Order'}
+                      </Badge>
+                      <Badge bg={orderTypeInfo.variant} className="order-type-badge">
+                        <i className={`bi ${orderTypeInfo.icon}`}></i> {orderTypeInfo.label}
                       </Badge>
                       <span className="order-number">#{order.orderNumber || order.id}</span>
                     </div>
@@ -275,10 +295,23 @@ const Kitchen = () => {
                     </div>
                   </div>
                   <div className="order-header-bottom">
-                    <span className="table-info">
-                      <i className="bi bi-table"></i>
-                      Table: {formatTableNumber(order.tableNumber)}
-                    </span>
+                    {isWebsiteOrder && order.customer ? (
+                      <span className="customer-info">
+                        <i className="bi bi-person"></i>
+                        {order.customer.name} {order.customer.phone && `• ${order.customer.phone}`}
+                      </span>
+                    ) : (
+                      <span className="table-info">
+                        <i className="bi bi-table"></i>
+                        Table: {formatTableNumber(order.tableNumber)}
+                      </span>
+                    )}
+                    {order.pickupTime && (
+                      <span className="pickup-time">
+                        <i className="bi bi-clock-history"></i>
+                        Pickup: {order.pickupTime}
+                      </span>
+                    )}
                   </div>
                 </Card.Header>
                 <Card.Body>

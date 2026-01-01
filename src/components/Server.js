@@ -236,6 +236,20 @@ const Server = () => {
     return tableNumber || 'N/A';
   };
 
+  // Format order type for display
+  const getOrderTypeInfo = (orderType) => {
+    switch (orderType) {
+      case 'dine_in':
+        return { label: 'Dine-In', icon: 'bi-cup-hot', variant: 'info' };
+      case 'pickup':
+        return { label: 'Pickup', icon: 'bi-bag-check', variant: 'success' };
+      case 'delivery':
+        return { label: 'Delivery', icon: 'bi-truck', variant: 'warning' };
+      default:
+        return { label: 'Dine-In', icon: 'bi-cup-hot', variant: 'info' };
+    }
+  };
+
   const getTimeInStatus = (order) => {
     let startTime;
     if (order.status === 'ready' && order.readyAt) {
@@ -334,13 +348,18 @@ const Server = () => {
                 {readyClaimedOrders.map(order => {
                   const isUpdating = updatingOrders.has(order.id);
                   const timeInStatus = getTimeInStatus(order);
+                  const orderTypeInfo = getOrderTypeInfo(order.orderType);
+                  const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
                   
                   return (
                     <Card key={order.id} className="server-order-card urgent-card">
                       <Card.Header className="server-order-header urgent-header">
                         <div className="order-header-top">
-                          <div>
+                          <div className="order-badges">
                             <Badge bg="danger" className="order-status-badge">READY</Badge>
+                            <Badge bg={orderTypeInfo.variant} className="order-type-badge">
+                              <i className={`bi ${orderTypeInfo.icon}`}></i> {orderTypeInfo.label}
+                            </Badge>
                             <span className="order-number">#{order.orderNumber || order.id}</span>
                           </div>
                           <div className="order-timer urgent-timer">
@@ -349,10 +368,17 @@ const Server = () => {
                           </div>
                         </div>
                         <div className="order-header-bottom">
-                          <span className="table-info">
-                            <i className="bi bi-table"></i>
-                            Table: {formatTableNumber(order.tableNumber)}
-                          </span>
+                          {isWebsiteOrder && order.customer ? (
+                            <span className="customer-info">
+                              <i className="bi bi-person"></i>
+                              {order.customer.name} {order.customer.phone && `• ${order.customer.phone}`}
+                            </span>
+                          ) : (
+                            <span className="table-info">
+                              <i className="bi bi-table"></i>
+                              Table: {formatTableNumber(order.tableNumber)}
+                            </span>
+                          )}
                         </div>
                       </Card.Header>
                       <Card.Body>
@@ -405,13 +431,18 @@ const Server = () => {
               <div className="server-orders-grid">
                 {myClaimedOrders.filter(order => order.status === 'preparing').map(order => {
                   const timeInStatus = getTimeInStatus(order);
+                  const orderTypeInfo = getOrderTypeInfo(order.orderType);
+                  const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
                   
                   return (
                     <Card key={order.id} className="server-order-card claimed-card">
                       <Card.Header className="server-order-header">
                         <div className="order-header-top">
-                          <div>
+                          <div className="order-badges">
                             <Badge bg="warning" className="order-status-badge">Preparing</Badge>
+                            <Badge bg={orderTypeInfo.variant} className="order-type-badge">
+                              <i className={`bi ${orderTypeInfo.icon}`}></i> {orderTypeInfo.label}
+                            </Badge>
                             <span className="order-number">#{order.orderNumber || order.id}</span>
                           </div>
                           <div className="order-timer">
@@ -420,10 +451,17 @@ const Server = () => {
                           </div>
                         </div>
                         <div className="order-header-bottom">
-                          <span className="table-info">
-                            <i className="bi bi-table"></i>
-                            Table: {formatTableNumber(order.tableNumber)}
-                          </span>
+                          {isWebsiteOrder && order.customer ? (
+                            <span className="customer-info">
+                              <i className="bi bi-person"></i>
+                              {order.customer.name}
+                            </span>
+                          ) : (
+                            <span className="table-info">
+                              <i className="bi bi-table"></i>
+                              Table: {formatTableNumber(order.tableNumber)}
+                            </span>
+                          )}
                           <Button
                             variant="outline-secondary"
                             size="sm"
@@ -467,14 +505,19 @@ const Server = () => {
                 {unclaimedOrders.map(order => {
                   const isClaimed = claimedOrders[order.id] === currentUser.uid;
                   const timeInStatus = getTimeInStatus(order);
+                  const orderTypeInfo = getOrderTypeInfo(order.orderType);
+                  const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
                   
                   return (
                     <Card key={order.id} className={`server-order-card ${order.status === 'ready' ? 'ready-unclaimed' : ''}`}>
                       <Card.Header className={`server-order-header ${order.status === 'ready' ? 'ready-header' : ''}`}>
                         <div className="order-header-top">
-                          <div>
+                          <div className="order-badges">
                             <Badge bg={order.status === 'ready' ? 'success' : 'warning'} className="order-status-badge">
                               {order.status === 'ready' ? 'Ready' : 'Preparing'}
+                            </Badge>
+                            <Badge bg={orderTypeInfo.variant} className="order-type-badge">
+                              <i className={`bi ${orderTypeInfo.icon}`}></i> {orderTypeInfo.label}
                             </Badge>
                             <span className="order-number">#{order.orderNumber || order.id}</span>
                           </div>
@@ -484,10 +527,17 @@ const Server = () => {
                           </div>
                         </div>
                         <div className="order-header-bottom">
-                          <span className="table-info">
-                            <i className="bi bi-table"></i>
-                            Table: {formatTableNumber(order.tableNumber)}
-                          </span>
+                          {isWebsiteOrder && order.customer ? (
+                            <span className="customer-info">
+                              <i className="bi bi-person"></i>
+                              {order.customer.name} {order.customer.phone && `• ${order.customer.phone}`}
+                            </span>
+                          ) : (
+                            <span className="table-info">
+                              <i className="bi bi-table"></i>
+                              Table: {formatTableNumber(order.tableNumber)}
+                            </span>
+                          )}
                         </div>
                       </Card.Header>
                       <Card.Body>

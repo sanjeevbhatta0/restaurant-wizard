@@ -1,29 +1,79 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Tabs, Tab, Form, Button, Alert } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Container, Row, Col, Card, Form, Button, Alert, Tabs, Tab, Spinner, Badge } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useLocation } from '../contexts/LocationContext';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { db, functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { updateWebsiteData } from '../services/websiteService';
+import './WebsiteBuilder.css';
+
+// Template definitions
+const TEMPLATES = [
+  {
+    id: 'modern-bistro',
+    name: 'Modern Bistro',
+    description: 'Clean, contemporary design with smooth animations. Perfect for modern restaurants and cafes.',
+    preview: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&h=250&fit=crop',
+    colors: { primary: '#2c3e50', secondary: '#3498db', accent: '#e74c3c' },
+    fonts: ['Poppins', 'Inter', 'Montserrat', 'Open Sans'],
+    category: 'Modern'
+  },
+  {
+    id: 'italian-trattoria',
+    name: 'Italian Trattoria',
+    description: 'Elegant, sophisticated design with serif fonts. Ideal for Italian restaurants and fine dining.',
+    preview: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=400&h=250&fit=crop',
+    colors: { primary: '#1a1a1a', secondary: '#2d2d2d', accent: '#c9a962' },
+    fonts: ['Playfair Display', 'Lora', 'Cormorant Garamond', 'Libre Baskerville'],
+    category: 'Elegant'
+  },
+  {
+    id: 'fresh-cafe',
+    name: 'Fresh Cafe',
+    description: 'Bright, cheerful design with playful elements. Great for cafes, bakeries, and juice bars.',
+    preview: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&h=250&fit=crop',
+    colors: { primary: '#2d6a4f', secondary: '#40916c', accent: '#ff6b6b' },
+    fonts: ['Nunito', 'Quicksand', 'Comfortaa', 'Varela Round'],
+    category: 'Casual'
+  }
+];
 
 export default function WebsiteBuilder() {
   const { currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('home');
+  const { selectedLocation, isMultiLocation, locations } = useLocation();
+  const [activeTab, setActiveTab] = useState('template');
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  const [websiteData, setWebsiteData] = useState({
-    home: {
-      title: '',
-      subtitle: '',
-      content: '',
-      heroImage: ''
-    },
-    contact: {
+  const [loading, setLoading] = useState(true);
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [isPublished, setIsPublished] = useState(false);
+  const [allLocations, setAllLocations] = useState([]);
+  const [selectedWebsiteLocation, setSelectedWebsiteLocation] = useState('');
+  
+  const [config, setConfig] = useState({
+    template: 'modern-bistro',
+    restaurantName: '',
+    tagline: '',
+    description: '',
+    heroImage: '',
+    aboutImage: '',
+    aboutContent: '',
+    address: '',
       phone: '',
       email: '',
-      address: '',
+    logo: '',
+    primaryColor: '#2c3e50',
+    secondaryColor: '#3498db',
+    accentColor: '#e74c3c',
+    fontFamily: 'Poppins',
+    facebook: '',
+    instagram: '',
+    twitter: '',
       hours: {
         monday: { open: '11:00', close: '22:00' },
         tuesday: { open: '11:00', close: '22:00' },
@@ -32,162 +82,459 @@ export default function WebsiteBuilder() {
         friday: { open: '11:00', close: '23:00' },
         saturday: { open: '12:00', close: '23:00' },
         sunday: { open: '12:00', close: '21:00' }
-      },
-      socialMedia: {
-        facebook: '',
-        instagram: '',
-        twitter: ''
-      }
-    },
-    theme: {
-      primaryColor: '#2c3e50',
-      secondaryColor: '#3498db',
-      fontFamily: 'Poppins',
-      logo: ''
     }
   });
 
-  // Load website data
+  // Load locations for multi-location restaurants
   useEffect(() => {
-    const loadWebsiteData = async () => {
+    const loadLocations = async () => {
+      if (!currentUser || !isMultiLocation) return;
+      
       try {
-        const websiteDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/website/data`));
-        if (websiteDoc.exists()) {
-          setWebsiteData(prevData => ({
-            ...prevData,
-            ...websiteDoc.data()
-          }));
+        const locationsRef = collection(db, `restaurants/${currentUser.uid}/locations`);
+        const snapshot = await getDocs(locationsRef);
+        const locationsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setAllLocations(locationsData);
+        
+        // Auto-select first location if none selected
+        if (locationsData.length > 0 && !selectedWebsiteLocation) {
+          setSelectedWebsiteLocation(locationsData[0].id);
         }
-      } catch (error) {
-        console.error('Error loading website data:', error);
-        setError('Failed to load website data');
+      } catch (err) {
+        console.error('Error loading locations:', err);
       }
     };
 
-    if (currentUser) {
-      loadWebsiteData();
-    }
-  }, [currentUser]);
+    loadLocations();
+  }, [currentUser, isMultiLocation, selectedWebsiteLocation]);
 
-  // Save website data
+  // Load existing configuration
+  useEffect(() => {
+    const loadConfig = async () => {
+      if (!currentUser) return;
+      
+      // For multi-location, wait for location selection
+      if (isMultiLocation && !selectedWebsiteLocation) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        
+        // For multi-location, use location-specific config path
+        const configPath = isMultiLocation 
+          ? `restaurants/${currentUser.uid}/locations/${selectedWebsiteLocation}/website/config`
+          : `restaurants/${currentUser.uid}/website/config`;
+        
+        // Load website config
+        const configDoc = await getDoc(doc(db, configPath));
+        if (configDoc.exists()) {
+          const data = configDoc.data();
+          setConfig(prev => ({ ...prev, ...data }));
+          setIsPublished(data.isPublished || false);
+        } else {
+          // Reset config for new location
+          setConfig(prev => ({
+            ...prev,
+            template: 'modern-bistro',
+            restaurantName: '',
+            tagline: '',
+            description: '',
+            isPublished: false
+          }));
+          setIsPublished(false);
+        }
+        
+        // Load restaurant/location data for defaults
+        const restaurantDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}`));
+        let locationData = null;
+        
+        if (isMultiLocation && selectedWebsiteLocation) {
+          const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedWebsiteLocation}`));
+          if (locationDoc.exists()) {
+            locationData = locationDoc.data();
+          }
+        }
+        
+        if (restaurantDoc.exists()) {
+          const data = restaurantDoc.data();
+          // For multi-location, create slug with location identifier
+          const locationInfo = locationData || {};
+          const locationSlug = locationData?.slug || selectedWebsiteLocation || '';
+          const baseSlug = data.slug || currentUser.uid;
+          const slug = isMultiLocation ? `${baseSlug}-${locationSlug}` : baseSlug;
+          
+          setWebsiteUrl(`https://${slug}.restaurant-portal-6b147.web.app`);
+          
+          // Use emulator URL when running locally
+          const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
+          const baseUrl = isEmulator 
+            ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/serveWebsite'
+            : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite';
+          
+          // Include locationId in preview URL for multi-location
+          const locationParam = isMultiLocation ? `&locationId=${selectedWebsiteLocation}` : '';
+          setPreviewUrl(`${baseUrl}?restaurant=${slug}&preview=true${locationParam}`);
+          
+          // Set defaults from restaurant/location data if not already set
+          setConfig(prev => ({
+            ...prev,
+            restaurantName: prev.restaurantName || locationInfo.name || data.name || '',
+            address: prev.address || locationInfo.address || data.address || '',
+            phone: prev.phone || locationInfo.phone || data.phone || '',
+            email: prev.email || locationInfo.email || data.email || '',
+            locationId: isMultiLocation ? selectedWebsiteLocation : currentUser.uid
+          }));
+        }
+      } catch (err) {
+        console.error('Error loading config:', err);
+        setError('Failed to load website configuration');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadConfig();
+  }, [currentUser, isMultiLocation, selectedWebsiteLocation]);
+
+  // Update colors when template changes
+  const handleTemplateChange = useCallback((templateId) => {
+    const template = TEMPLATES.find(t => t.id === templateId);
+    if (template) {
+      setConfig(prev => ({
+        ...prev,
+        template: templateId,
+        primaryColor: template.colors.primary,
+        secondaryColor: template.colors.secondary,
+        accentColor: template.colors.accent,
+        fontFamily: template.fonts[0]
+      }));
+    }
+  }, []);
+
+  // Save configuration
   const handleSave = async () => {
     setSaving(true);
     setError('');
     setSuccess('');
 
     try {
-      const websiteUrl = await updateWebsiteData(currentUser.uid, websiteData);
-      setSuccess(`Changes saved successfully! View your website at ${websiteUrl}`);
-    } catch (error) {
-      console.error('Error saving website data:', error);
-      setError('Failed to save changes');
+      const saveWebsiteConfig = httpsCallable(functions, 'saveWebsiteConfig');
+      // Include locationId for multi-location restaurants
+      const configWithLocation = {
+        ...config,
+        locationId: isMultiLocation ? selectedWebsiteLocation : currentUser.uid
+      };
+      const result = await saveWebsiteConfig({ 
+        config: configWithLocation,
+        locationId: isMultiLocation ? selectedWebsiteLocation : null
+      });
+      
+      if (result.data.success) {
+        setWebsiteUrl(result.data.websiteUrl);
+        
+        // Use emulator URL when running locally
+        const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
+        const slug = result.data.slug;
+        const locationParam = isMultiLocation ? `&locationId=${selectedWebsiteLocation}` : '';
+        if (isEmulator && slug) {
+          setPreviewUrl(`http://localhost:5001/restaurant-portal-6b147/us-central1/serveWebsite?restaurant=${slug}&preview=true${locationParam}`);
+        } else {
+          setPreviewUrl(result.data.previewUrl);
+        }
+        setSuccess('Configuration saved successfully!');
+      }
+    } catch (err) {
+      console.error('Error saving config:', err);
+      setError('Failed to save configuration: ' + err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  // Update website data
-  const handleChange = (section, field, value) => {
-    setWebsiteData(prevData => ({
-      ...prevData,
-      [section]: {
-        ...prevData[section],
-        [field]: value
+  // Publish website
+  const handlePublish = async () => {
+    setPublishing(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      // First save the config
+      await handleSave();
+      
+      // Then publish
+      const publishWebsite = httpsCallable(functions, 'publishWebsite');
+      const result = await publishWebsite({});
+      
+      if (result.data.success) {
+        setIsPublished(true);
+        setWebsiteUrl(result.data.websiteUrl);
+        setSuccess(`🎉 Website published! View it at: ${result.data.websiteUrl}`);
+      }
+    } catch (err) {
+      console.error('Error publishing:', err);
+      setError('Failed to publish website: ' + err.message);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleHoursChange = (day, type, value) => {
+    setConfig(prev => ({
+      ...prev,
+      hours: {
+        ...prev.hours,
+        [day]: { ...prev.hours[day], [type]: value }
       }
     }));
   };
 
+  const selectedTemplate = TEMPLATES.find(t => t.id === config.template) || TEMPLATES[0];
+
+  if (loading) {
+    return (
+      <Container className="py-5 text-center">
+        <Spinner animation="border" variant="primary" />
+        <p className="mt-3">Loading website builder...</p>
+      </Container>
+    );
+  }
+
   return (
-    <Container className="py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h1>Website Builder</h1>
+    <Container fluid className="website-builder py-4">
+      {/* Header */}
+      <div className="builder-header mb-4">
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
         <div>
+            <h1 className="mb-1">
+              <i className="bi bi-globe me-2"></i>
+              Website Builder
+            </h1>
+            <p className="text-muted mb-0">
+              Create a beautiful website for your restaurant
+              {isPublished && (
+                <Badge bg="success" className="ms-2">Published</Badge>
+              )}
+              {isMultiLocation && selectedWebsiteLocation && (
+                <Badge bg="info" className="ms-2">
+                  <i className="bi bi-geo-alt me-1"></i>
+                  {allLocations.find(l => l.id === selectedWebsiteLocation)?.name || 'Location'}
+                </Badge>
+              )}
+            </p>
+          </div>
+          <div className="d-flex gap-2 flex-wrap">
+            {previewUrl && (
+              <Button 
+                variant="outline-secondary" 
+                href={previewUrl}
+                target="_blank"
+              >
+                <i className="bi bi-eye me-1"></i> Preview
+              </Button>
+            )}
           <Button 
-            variant="primary" 
+              variant="outline-primary" 
             onClick={handleSave} 
             disabled={saving}
           >
-            {saving ? 'Saving...' : 'Save Changes'}
+              {saving ? (
+                <>
+                  <Spinner size="sm" animation="border" className="me-1" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-save me-1"></i> Save Draft
+                </>
+              )}
           </Button>
           <Button 
-            variant="outline-primary" 
-            className="ms-2"
-            href={`https://${currentUser.uid}.restaurant-portal-6b147.web.app`}
-            target="_blank"
-          >
-            View Website
+              variant="primary" 
+              onClick={handlePublish} 
+              disabled={publishing || saving}
+            >
+              {publishing ? (
+                <>
+                  <Spinner size="sm" animation="border" className="me-1" />
+                  Publishing...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-rocket-takeoff me-1"></i> Publish
+                </>
+              )}
           </Button>
+          </div>
         </div>
       </div>
+
+      {/* Location Selector for Multi-Location Restaurants */}
+      {isMultiLocation && (
+        <Alert variant="light" className="mb-4 location-selector-alert">
+          <Row className="align-items-center">
+            <Col xs="auto">
+              <i className="bi bi-geo-alt-fill text-primary" style={{ fontSize: '1.5rem' }}></i>
+            </Col>
+            <Col>
+              <Form.Label className="mb-1 fw-bold">Select Location</Form.Label>
+              <p className="text-muted mb-2 small">Each location can have its own website with a unique URL</p>
+              <Form.Select 
+                value={selectedWebsiteLocation}
+                onChange={(e) => setSelectedWebsiteLocation(e.target.value)}
+                style={{ maxWidth: '400px' }}
+              >
+                <option value="">Choose a location...</option>
+                {allLocations.map(location => (
+                  <option key={location.id} value={location.id}>
+                    {location.name} {location.address && `- ${location.address}`}
+                  </option>
+                ))}
+              </Form.Select>
+            </Col>
+          </Row>
+        </Alert>
+      )}
 
       {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert variant="success" dismissible onClose={() => setSuccess('')}>{success}</Alert>}
 
+      {websiteUrl && isPublished && (
+        <Alert variant="info" className="mb-4">
+          <i className="bi bi-link-45deg me-2"></i>
+          Your website is live at: <a href={websiteUrl} target="_blank" rel="noopener noreferrer"><strong>{websiteUrl}</strong></a>
+        </Alert>
+      )}
+
+      <Row>
+        {/* Settings Panel */}
+        <Col lg={5} xl={4}>
+          <Card className="builder-panel">
+            <Card.Body className="p-0">
       <Tabs
         activeKey={activeTab}
         onSelect={(k) => setActiveTab(k)}
-        className="mb-4"
-      >
-        <Tab eventKey="home" title="Home">
-          <Form>
+                className="builder-tabs"
+              >
+                {/* Template Selection */}
+                <Tab eventKey="template" title={<><i className="bi bi-palette me-1"></i> Template</>}>
+                  <div className="p-3">
+                    <h5 className="mb-3">Choose Your Template</h5>
+                    <div className="template-grid">
+                      {TEMPLATES.map(template => (
+                        <div 
+                          key={template.id}
+                          className={`template-card ${config.template === template.id ? 'selected' : ''}`}
+                          onClick={() => handleTemplateChange(template.id)}
+                        >
+                          <div className="template-preview">
+                            <img src={template.preview} alt={template.name} />
+                            {config.template === template.id && (
+                              <div className="template-selected-badge">
+                                <i className="bi bi-check-circle-fill"></i>
+                              </div>
+                            )}
+                          </div>
+                          <div className="template-info">
+                            <h6>{template.name}</h6>
+                            <Badge bg="secondary" size="sm">{template.category}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-muted small mt-3">
+                      {selectedTemplate.description}
+                    </p>
+                  </div>
+                </Tab>
+
+                {/* Basic Info */}
+                <Tab eventKey="content" title={<><i className="bi bi-pencil me-1"></i> Content</>}>
+                  <div className="p-3">
             <Form.Group className="mb-3">
-              <Form.Label>Page Title</Form.Label>
+                      <Form.Label>Restaurant Name</Form.Label>
               <Form.Control
                 type="text"
-                value={websiteData.home.title}
-                onChange={(e) => handleChange('home', 'title', e.target.value)}
-                placeholder="Enter your restaurant name"
+                        value={config.restaurantName}
+                        onChange={(e) => handleChange('restaurantName', e.target.value)}
+                        placeholder="Your Restaurant Name"
               />
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Subtitle</Form.Label>
+                      <Form.Label>Tagline</Form.Label>
               <Form.Control
                 type="text"
-                value={websiteData.home.subtitle}
-                onChange={(e) => handleChange('home', 'subtitle', e.target.value)}
-                placeholder="Enter a catchy subtitle"
+                        value={config.tagline}
+                        onChange={(e) => handleChange('tagline', e.target.value)}
+                        placeholder="e.g., Authentic Italian Since 1985"
               />
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Content</Form.Label>
-              <ReactQuill
-                value={websiteData.home.content}
-                onChange={(content) => handleChange('home', 'content', content)}
-                placeholder="Tell your restaurant's story..."
+                      <Form.Label>Description</Form.Label>
+                      <Form.Control
+                        as="textarea"
+                        rows={3}
+                        value={config.description}
+                        onChange={(e) => handleChange('description', e.target.value)}
+                        placeholder="Brief description for the hero section"
               />
             </Form.Group>
 
             <Form.Group className="mb-3">
               <Form.Label>Hero Image URL</Form.Label>
               <Form.Control
-                type="text"
-                value={websiteData.home.heroImage}
-                onChange={(e) => handleChange('home', 'heroImage', e.target.value)}
-                placeholder="Enter the URL of your hero image"
+                        type="url"
+                        value={config.heroImage}
+                        onChange={(e) => handleChange('heroImage', e.target.value)}
+                        placeholder="https://example.com/hero.jpg"
+                      />
+                      <Form.Text className="text-muted">
+                        Recommended: 1920x1080px or larger
+                      </Form.Text>
+                    </Form.Group>
+
+                    <Form.Group className="mb-3">
+                      <Form.Label>About Section Image URL</Form.Label>
+                      <Form.Control
+                        type="url"
+                        value={config.aboutImage}
+                        onChange={(e) => handleChange('aboutImage', e.target.value)}
+                        placeholder="https://example.com/about.jpg"
               />
             </Form.Group>
-          </Form>
-        </Tab>
 
-        <Tab eventKey="menu" title="Menu">
-          <div className="p-4 bg-light rounded">
-            <h3>Menu Configuration</h3>
-            <p>Your menu is automatically synchronized with your Menu Management section.</p>
-            <p>Any changes you make in Menu Management will be reflected on your website immediately.</p>
+                    <Form.Group className="mb-3">
+                      <Form.Label>About Us Content</Form.Label>
+                      <ReactQuill
+                        value={config.aboutContent}
+                        onChange={(content) => handleChange('aboutContent', content)}
+                        placeholder="Tell your restaurant's story..."
+                        theme="snow"
+                      />
+                    </Form.Group>
           </div>
         </Tab>
 
-        <Tab eventKey="contact" title="Contact">
-          <Form>
+                {/* Contact Info */}
+                <Tab eventKey="contact" title={<><i className="bi bi-geo-alt me-1"></i> Contact</>}>
+                  <div className="p-3">
             <Form.Group className="mb-3">
               <Form.Label>Phone Number</Form.Label>
               <Form.Control
                 type="tel"
-                value={websiteData.contact.phone}
-                onChange={(e) => handleChange('contact', 'phone', e.target.value)}
-                placeholder="Enter your phone number"
+                        value={config.phone}
+                        onChange={(e) => handleChange('phone', e.target.value)}
+                        placeholder="(555) 123-4567"
               />
             </Form.Group>
 
@@ -195,9 +542,9 @@ export default function WebsiteBuilder() {
               <Form.Label>Email</Form.Label>
               <Form.Control
                 type="email"
-                value={websiteData.contact.email}
-                onChange={(e) => handleChange('contact', 'email', e.target.value)}
-                placeholder="Enter your email address"
+                        value={config.email}
+                        onChange={(e) => handleChange('email', e.target.value)}
+                        placeholder="hello@restaurant.com"
               />
             </Form.Group>
 
@@ -205,131 +552,210 @@ export default function WebsiteBuilder() {
               <Form.Label>Address</Form.Label>
               <Form.Control
                 as="textarea"
-                rows={3}
-                value={websiteData.contact.address}
-                onChange={(e) => handleChange('contact', 'address', e.target.value)}
-                placeholder="Enter your restaurant's address"
+                        rows={2}
+                        value={config.address}
+                        onChange={(e) => handleChange('address', e.target.value)}
+                        placeholder="123 Main Street, City, State 12345"
               />
             </Form.Group>
 
-            <h4 className="mt-4">Business Hours</h4>
-            {Object.entries(websiteData.contact.hours).map(([day, hours]) => (
-              <div key={day} className="d-flex gap-3 mb-2">
-                <div style={{width: '100px'}}>{day.charAt(0).toUpperCase() + day.slice(1)}</div>
+                    <h6 className="mt-4 mb-3">Business Hours</h6>
+                    {Object.entries(config.hours).map(([day, hours]) => (
+                      <div key={day} className="d-flex align-items-center gap-2 mb-2">
+                        <span className="hours-day">{day.charAt(0).toUpperCase() + day.slice(1)}</span>
                 <Form.Control
                   type="time"
                   value={hours.open}
-                  onChange={(e) => handleChange('contact', 'hours', {
-                    ...websiteData.contact.hours,
-                    [day]: { ...hours, open: e.target.value }
-                  })}
-                />
+                          onChange={(e) => handleHoursChange(day, 'open', e.target.value)}
+                          size="sm"
+                        />
+                        <span>to</span>
                 <Form.Control
                   type="time"
                   value={hours.close}
-                  onChange={(e) => handleChange('contact', 'hours', {
-                    ...websiteData.contact.hours,
-                    [day]: { ...hours, close: e.target.value }
-                  })}
+                          onChange={(e) => handleHoursChange(day, 'close', e.target.value)}
+                          size="sm"
                 />
               </div>
             ))}
 
-            <h4 className="mt-4">Social Media</h4>
-            <Form.Group className="mb-3">
-              <Form.Label>Facebook URL</Form.Label>
+                    <h6 className="mt-4 mb-3">Social Media</h6>
+                    <Form.Group className="mb-2">
+                      <div className="input-group">
+                        <span className="input-group-text"><i className="bi bi-facebook"></i></span>
               <Form.Control
                 type="url"
-                value={websiteData.contact.socialMedia.facebook}
-                onChange={(e) => handleChange('contact', 'socialMedia', {
-                  ...websiteData.contact.socialMedia,
-                  facebook: e.target.value
-                })}
-                placeholder="Enter your Facebook page URL"
-              />
+                          value={config.facebook}
+                          onChange={(e) => handleChange('facebook', e.target.value)}
+                          placeholder="Facebook URL"
+                        />
+                      </div>
             </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Instagram URL</Form.Label>
+                    <Form.Group className="mb-2">
+                      <div className="input-group">
+                        <span className="input-group-text"><i className="bi bi-instagram"></i></span>
               <Form.Control
                 type="url"
-                value={websiteData.contact.socialMedia.instagram}
-                onChange={(e) => handleChange('contact', 'socialMedia', {
-                  ...websiteData.contact.socialMedia,
-                  instagram: e.target.value
-                })}
-                placeholder="Enter your Instagram profile URL"
-              />
+                          value={config.instagram}
+                          onChange={(e) => handleChange('instagram', e.target.value)}
+                          placeholder="Instagram URL"
+                        />
+                      </div>
             </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Twitter URL</Form.Label>
+                    <Form.Group className="mb-2">
+                      <div className="input-group">
+                        <span className="input-group-text"><i className="bi bi-twitter-x"></i></span>
               <Form.Control
                 type="url"
-                value={websiteData.contact.socialMedia.twitter}
-                onChange={(e) => handleChange('contact', 'socialMedia', {
-                  ...websiteData.contact.socialMedia,
-                  twitter: e.target.value
-                })}
-                placeholder="Enter your Twitter profile URL"
-              />
+                          value={config.twitter}
+                          onChange={(e) => handleChange('twitter', e.target.value)}
+                          placeholder="Twitter/X URL"
+                        />
+                      </div>
             </Form.Group>
-          </Form>
-        </Tab>
-
-        <Tab eventKey="order" title="Order Online">
-          <div className="p-4 bg-light rounded">
-            <h3>Online Ordering</h3>
-            <p>The online ordering system is automatically integrated with your website.</p>
-            <p>Customers will be able to browse your menu, add items to cart, and place orders directly through your website.</p>
           </div>
         </Tab>
 
-        <Tab eventKey="theme" title="Theme">
-          <Form>
+                {/* Theme/Style */}
+                <Tab eventKey="theme" title={<><i className="bi bi-brush me-1"></i> Theme</>}>
+                  <div className="p-3">
             <Form.Group className="mb-3">
-              <Form.Label>Primary Color</Form.Label>
+                      <Form.Label>Logo URL</Form.Label>
               <Form.Control
-                type="color"
-                value={websiteData.theme.primaryColor}
-                onChange={(e) => handleChange('theme', 'primaryColor', e.target.value)}
+                        type="url"
+                        value={config.logo}
+                        onChange={(e) => handleChange('logo', e.target.value)}
+                        placeholder="https://example.com/logo.png"
               />
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Secondary Color</Form.Label>
+                    <h6 className="mt-4 mb-3">Colors</h6>
+                    <Row className="g-3">
+                      <Col xs={4}>
+                        <Form.Group>
+                          <Form.Label className="small">Primary</Form.Label>
+                          <Form.Control
+                            type="color"
+                            value={config.primaryColor}
+                            onChange={(e) => handleChange('primaryColor', e.target.value)}
+                            className="color-picker"
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col xs={4}>
+                        <Form.Group>
+                          <Form.Label className="small">Secondary</Form.Label>
+                          <Form.Control
+                            type="color"
+                            value={config.secondaryColor}
+                            onChange={(e) => handleChange('secondaryColor', e.target.value)}
+                            className="color-picker"
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col xs={4}>
+                        <Form.Group>
+                          <Form.Label className="small">Accent</Form.Label>
               <Form.Control
                 type="color"
-                value={websiteData.theme.secondaryColor}
-                onChange={(e) => handleChange('theme', 'secondaryColor', e.target.value)}
+                            value={config.accentColor}
+                            onChange={(e) => handleChange('accentColor', e.target.value)}
+                            className="color-picker"
               />
             </Form.Group>
+                      </Col>
+                    </Row>
 
-            <Form.Group className="mb-3">
+                    <Form.Group className="mt-4">
               <Form.Label>Font Family</Form.Label>
               <Form.Select
-                value={websiteData.theme.fontFamily}
-                onChange={(e) => handleChange('theme', 'fontFamily', e.target.value)}
-              >
-                <option value="Poppins">Poppins</option>
-                <option value="Roboto">Roboto</option>
-                <option value="Open Sans">Open Sans</option>
-                <option value="Lato">Lato</option>
+                        value={config.fontFamily}
+                        onChange={(e) => handleChange('fontFamily', e.target.value)}
+                      >
+                        {selectedTemplate.fonts.map(font => (
+                          <option key={font} value={font}>{font}</option>
+                        ))}
               </Form.Select>
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Logo URL</Form.Label>
-              <Form.Control
-                type="text"
-                value={websiteData.theme.logo}
-                onChange={(e) => handleChange('theme', 'logo', e.target.value)}
-                placeholder="Enter the URL of your logo"
-              />
-            </Form.Group>
-          </Form>
+                    <Button 
+                      variant="outline-secondary" 
+                      size="sm" 
+                      className="mt-3"
+                      onClick={() => handleTemplateChange(config.template)}
+                    >
+                      <i className="bi bi-arrow-counterclockwise me-1"></i>
+                      Reset to Template Defaults
+                    </Button>
+                  </div>
+                </Tab>
+
+                {/* Menu Tab */}
+                <Tab eventKey="menu" title={<><i className="bi bi-list-ul me-1"></i> Menu</>}>
+                  <div className="p-3">
+                    <div className="text-center py-4">
+                      <i className="bi bi-check-circle text-success" style={{ fontSize: '3rem' }}></i>
+                      <h5 className="mt-3">Menu Auto-Synced</h5>
+                      <p className="text-muted">
+                        Your menu is automatically synced from Menu Management. 
+                        Any changes you make there will appear on your website in real-time.
+                      </p>
+                      <Button 
+                        variant="outline-primary" 
+                        href="/menu-management"
+                      >
+                        <i className="bi bi-arrow-right me-1"></i>
+                        Go to Menu Management
+                      </Button>
+                    </div>
+                  </div>
         </Tab>
       </Tabs>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Live Preview */}
+        <Col lg={7} xl={8}>
+          <Card className="preview-panel">
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <div>
+                <i className="bi bi-display me-2"></i>
+                <strong>Live Preview</strong>
+              </div>
+              <div className="preview-controls">
+                <Button variant="outline-secondary" size="sm" className="me-1" title="Desktop">
+                  <i className="bi bi-display"></i>
+                </Button>
+                <Button variant="outline-secondary" size="sm" className="me-1" title="Tablet">
+                  <i className="bi bi-tablet"></i>
+                </Button>
+                <Button variant="outline-secondary" size="sm" title="Mobile">
+                  <i className="bi bi-phone"></i>
+                </Button>
+              </div>
+            </Card.Header>
+            <Card.Body className="p-0">
+              <div className="preview-frame-container">
+                {previewUrl ? (
+                  <iframe
+                    src={previewUrl}
+                    className="preview-frame"
+                    title="Website Preview"
+                  />
+                ) : (
+                  <div className="preview-placeholder">
+                    <i className="bi bi-globe" style={{ fontSize: '4rem', opacity: 0.3 }}></i>
+                    <p className="mt-3 text-muted">
+                      Save your configuration to see a live preview
+                    </p>
+                  </div>
+                )}
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
     </Container>
   );
 } 
