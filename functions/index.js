@@ -979,21 +979,54 @@ exports.publishWebsite = onCall(async (request) => {
         }
 
         const restaurantId = request.auth.uid;
+        const { locationId } = request.data || {};
         const db = admin.firestore();
 
-        // Mark website as published
-        await db.doc(`restaurants/${restaurantId}/website/config`).update({
-            isPublished: true,
-            publishedAt: FieldValue.serverTimestamp()
-        });
-
-        // Get slug for URL
+        // Check if multi-location restaurant
         const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
-        const slug = restaurantDoc.data().slug || restaurantId;
+        const restaurantData = restaurantDoc.data() || {};
+        const isMultiLocation = restaurantData.isMultiLocation === true;
+
+        // Determine config path
+        let configPath;
+        let slug;
+        
+        if (isMultiLocation && locationId) {
+            // Multi-location: use location-specific config
+            configPath = `restaurants/${restaurantId}/locations/${locationId}/website/config`;
+            
+            // Get location slug for URL
+            const locationDoc = await db.doc(`restaurants/${restaurantId}/locations/${locationId}`).get();
+            const locationData = locationDoc.data() || {};
+            const locationSlug = locationData.slug || locationId;
+            const baseSlug = restaurantData.slug || restaurantId;
+            slug = `${baseSlug}-${locationSlug}`;
+        } else {
+            // Single-location: use restaurant-level config
+            configPath = `restaurants/${restaurantId}/website/config`;
+            slug = restaurantData.slug || restaurantId;
+        }
+
+        // Check if config exists, if not create it
+        const configDoc = await db.doc(configPath).get();
+        if (!configDoc.exists) {
+            // Create the config document first
+            await db.doc(configPath).set({
+                isPublished: true,
+                publishedAt: FieldValue.serverTimestamp(),
+                template: 'modern-bistro'
+            });
+        } else {
+            // Update existing config
+            await db.doc(configPath).update({
+                isPublished: true,
+                publishedAt: FieldValue.serverTimestamp()
+            });
+        }
 
         return { 
             success: true, 
-            websiteUrl: `https://${slug}.restaurant-portal-6b147.web.app`,
+            websiteUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}`,
             message: 'Website published successfully!'
         };
     } catch (error) {

@@ -241,9 +241,11 @@ export default function WebsiteBuilder() {
       // First save the config
       await handleSave();
       
-      // Then publish
+      // Then publish - pass locationId for multi-location support
       const publishWebsite = httpsCallable(functions, 'publishWebsite');
-      const result = await publishWebsite({});
+      const result = await publishWebsite({
+        locationId: isMultiLocation ? selectedLocation : null
+      });
       
       if (result.data.success) {
         setIsPublished(true);
