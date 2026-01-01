@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   collection,
-  query,
-  orderBy,
-  onSnapshot,
   doc,
   setDoc,
   deleteDoc,
@@ -15,17 +12,19 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useMenu } from '../contexts/MenuContext';
 import { Button, Form, Alert, Spinner, Modal, Badge, ProgressBar } from 'react-bootstrap';
 import menuParserService from '../services/menuParserService';
 import './PageHeader.css';
 import './MenuManagement.css';
 
 const MenuManagement = () => {
-  const [categories, setCategories] = useState([]);
+  // Use shared menu data from context
+  const { categories, loading: menuLoading, refreshMenu } = useMenu();
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [saving, setSaving] = useState(false);
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, selectedLocation } = useLocation();
 
@@ -56,55 +55,12 @@ const MenuManagement = () => {
   const [uploadComplete, setUploadComplete] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
 
+  // Auto-select first category when categories load
   useEffect(() => {
-    if (!currentUser) return;
-
-    const categoriesRef = collection(db, `restaurants/${currentUser.uid}/menuCategories`);
-    const q = query(categoriesRef, orderBy('name'));
-
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const categoriesData = [];
-
-      for (const categoryDoc of snapshot.docs) {
-        const category = { id: categoryDoc.id, ...categoryDoc.data() };
-
-        // Fetch items for this category
-        const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${category.id}/items`);
-        const itemsQuery = query(itemsRef, orderBy('name'));
-        const itemsSnapshot = await getDocs(itemsQuery);
-
-        const allItems = itemsSnapshot.docs.map(itemDoc => ({
-          id: itemDoc.id,
-          categoryId: category.id,
-          ...itemDoc.data()
-        }));
-
-        // Filter items by selected location if multi-location
-        if (isMultiLocation && selectedLocation) {
-          category.items = allItems.filter(item => {
-            // If item has no locations array or empty array, it applies to all locations
-            if (!item.locations || item.locations.length === 0) {
-              return true;
-            }
-            // Otherwise, check if selected location is in the item's locations
-            return item.locations.includes(selectedLocation);
-          });
-        } else {
-          category.items = allItems;
-        }
-
-        categoriesData.push(category);
-      }
-
-      setCategories(categoriesData);
-      if (categoriesData.length > 0 && !selectedCategory) {
-        setSelectedCategory(categoriesData[0].id);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser, selectedCategory, isMultiLocation, selectedLocation]);
+    if (categories.length > 0 && !selectedCategory) {
+      setSelectedCategory(categories[0].id);
+    }
+  }, [categories, selectedCategory]);
 
   // Calculate item price after discount
   const calculateItemPrice = (item) => {
@@ -134,6 +90,7 @@ const MenuManagement = () => {
       setSuccess('Category added successfully');
       setCategoryForm({ name: '' });
       setShowCategoryModal(false);
+      refreshMenu(); // Refresh cached menu data
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to add category: ' + error.message);
@@ -170,6 +127,7 @@ const MenuManagement = () => {
         setSelectedCategory(null);
       }
 
+      refreshMenu(); // Refresh cached menu data
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to delete category: ' + error.message);
@@ -231,7 +189,7 @@ const MenuManagement = () => {
 
     try {
       setError('');
-      setLoading(true);
+      setSaving(true);
       let imageUrl = itemForm.imageUrl;
       let imageStoragePath = editingItem?.imageStoragePath || '';
 
@@ -291,11 +249,12 @@ const MenuManagement = () => {
         locations: []
       });
       setImagePreview(null);
+      refreshMenu(); // Refresh cached menu data
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to save item: ' + error.message);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -311,6 +270,7 @@ const MenuManagement = () => {
 
       await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemId}`));
       setSuccess('Item deleted successfully');
+      refreshMenu(); // Refresh cached menu data
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to delete item: ' + error.message);
@@ -449,7 +409,7 @@ const MenuManagement = () => {
   const currentCategoryData = categories.find(c => c.id === selectedCategory);
   const currentCategoryItems = currentCategoryData?.items || [];
 
-  if (loading && categories.length === 0) {
+  if (menuLoading && categories.length === 0) {
     return (
       <div className="menu-loading">
         <Spinner animation="border" role="status">
@@ -861,8 +821,8 @@ const MenuManagement = () => {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? 'Saving...' : (editingItem ? 'Update Item' : 'Add Item')}
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Saving...' : (editingItem ? 'Update Item' : 'Add Item')}
               </Button>
             </div>
           </Form>

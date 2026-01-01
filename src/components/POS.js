@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Spinner, Alert, Button, Badge } from 'react-bootstrap';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  onSnapshot,
-  addDoc,
-  getDocs
+import {
+  collection,
+  addDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useMenu } from '../contexts/MenuContext';
 import TableSelectionModal from './TableSelectionModal';
 import activityService from '../services/activityService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
@@ -18,12 +15,12 @@ import './PageHeader.css';
 import './POS.css';
 
 const POS = () => {
-  const [categories, setCategories] = useState([]);
+  // Use shared menu data from context (already filtered by location)
+  const { categories, loading: menuLoading } = useMenu();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
   const [selectedTables, setSelectedTables] = useState([]);
   const [showTableModal, setShowTableModal] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(null);
   const [sendingOrder, setSendingOrder] = useState(false);
@@ -50,57 +47,12 @@ const POS = () => {
     };
   }, []);
 
-  // Fetch categories and items
+  // Auto-select first category when categories load
   useEffect(() => {
-    if (!currentUser) return;
-
-    const categoriesRef = collection(db, `restaurants/${currentUser.uid}/menuCategories`);
-    const q = query(categoriesRef, orderBy('name'));
-    
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const categoriesData = [];
-      
-      for (const categoryDoc of snapshot.docs) {
-        const category = { id: categoryDoc.id, ...categoryDoc.data() };
-        
-        // Fetch items for this category
-        const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${category.id}/items`);
-        const itemsQuery = query(itemsRef, orderBy('name'));
-        const itemsSnapshot = await getDocs(itemsQuery);
-        
-        const allItems = itemsSnapshot.docs.map(itemDoc => ({
-          id: itemDoc.id,
-          categoryId: category.id,
-          categoryName: category.name,
-          ...itemDoc.data()
-        }));
-
-        // Filter items by selected location if multi-location
-        if (isMultiLocation && selectedLocation) {
-          category.items = allItems.filter(item => {
-            // If item has no locations array or empty array, it applies to all locations
-            if (!item.locations || item.locations.length === 0) {
-              return true;
-            }
-            // Otherwise, check if selected location is in the item's locations
-            return item.locations.includes(selectedLocation);
-          });
-        } else {
-          category.items = allItems;
-        }
-        
-        categoriesData.push(category);
-      }
-      
-      setCategories(categoriesData);
-      if (categoriesData.length > 0 && !selectedCategory) {
-        setSelectedCategory(categoriesData[0].id);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser, selectedCategory, isMultiLocation, selectedLocation]);
+    if (categories.length > 0 && !selectedCategory) {
+      setSelectedCategory(categories[0].id);
+    }
+  }, [categories, selectedCategory]);
 
   // Calculate item price after discount
   const calculateItemPrice = (item) => {
@@ -187,12 +139,12 @@ const POS = () => {
 
     try {
       const orderNumber = generateOrderNumber();
-      
+
       // Ensure locationId is set correctly for both single and multi-location
       // For single-location: use currentUser.uid (matches what Kitchen expects)
       // For multi-location: use selectedLocation
-      const orderLocationId = isMultiLocation && selectedLocation 
-        ? selectedLocation 
+      const orderLocationId = isMultiLocation && selectedLocation
+        ? selectedLocation
         : currentUser.uid;
 
       const orderData = {
@@ -220,16 +172,16 @@ const POS = () => {
         orderData
       );
 
-      const tableDisplay = selectedTables.length === 1 
-        ? selectedTables[0] 
+      const tableDisplay = selectedTables.length === 1
+        ? selectedTables[0]
         : selectedTables.sort((a, b) => {
-            const numA = parseInt(a);
-            const numB = parseInt(b);
-            if (!isNaN(numA) && !isNaN(numB)) {
-              return numA - numB;
-            }
-            return a.localeCompare(b);
-          }).join(' and ');
+          const numA = parseInt(a);
+          const numB = parseInt(b);
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return numA - numB;
+          }
+          return a.localeCompare(b);
+        }).join(' and ');
 
       // Log activity
       await activityService.logOrderActivity(currentUser.uid, 'received', {
@@ -262,7 +214,7 @@ const POS = () => {
   const currentCategoryItems = categories.find(c => c.id === selectedCategory)?.items || [];
 
   // Show warning if multi-location but no location selected
-  if (isMultiLocation && !selectedLocation && !loading) {
+  if (isMultiLocation && !selectedLocation && !menuLoading) {
     return (
       <div className="pos-wrapper">
         <div className="page-header-gradient">
@@ -285,7 +237,7 @@ const POS = () => {
     );
   }
 
-  if (loading) {
+  if (menuLoading) {
     return (
       <div className="pos-loading">
         <Spinner animation="border" role="status">
@@ -313,9 +265,9 @@ const POS = () => {
               <i className="bi bi-display"></i> Screen On
             </Badge>
           ) : showWakeLockPrompt && isWakeLockSupported() ? (
-            <Button 
-              variant="outline-light" 
-              size="sm" 
+            <Button
+              variant="outline-light"
+              size="sm"
               onClick={enableWakeLock}
               className="enable-notifications-btn"
             >
@@ -328,137 +280,137 @@ const POS = () => {
       <div className="pos-container">
         {/* Left Panel - Category Navigation */}
         <div className="pos-categories">
-        <h5>Categories</h5>
-        <ul className="category-nav">
-          {categories.map(category => (
-            <li
-              key={category.id}
-              className={`category-nav-item ${selectedCategory === category.id ? 'active' : ''}`}
-              onClick={() => setSelectedCategory(category.id)}
-            >
-              {category.name}
-              <span style={{ float: 'right', opacity: 0.7 }}>
-                ({category.items?.length || 0})
-              </span>
-            </li>
-          ))}
-        </ul>
-        {categories.length === 0 && (
-          <div style={{ padding: '15px', color: '#bdc3c7', fontSize: '0.9rem' }}>
-            No categories yet. Add categories in Menu Management.
-          </div>
-        )}
-      </div>
-
-      {/* Main Panel - Item Tiles */}
-      <div className="pos-main">
-        <div className="pos-header">
-          <h4>
-            {categories.find(c => c.id === selectedCategory)?.name || 'Select a Category'}
-          </h4>
-          {error && (
-            <Alert variant="danger" onClose={() => setError('')} dismissible style={{ margin: 0, padding: '8px 15px' }}>
-              {error}
-            </Alert>
-          )}
-        </div>
-        
-        <div className="pos-items-grid">
-          {currentCategoryItems.map(item => (
-            <div
-              key={item.id}
-              className="pos-item-tile"
-              onClick={() => addToOrder(item)}
-            >
-              {item.imageUrl ? (
-                <img
-                  src={item.imageUrl}
-                  alt={item.name}
-                  className="pos-item-image"
-                />
-              ) : (
-                <div className="pos-item-placeholder">
-                  <i className="bi bi-cup-straw"></i>
-                </div>
-              )}
-              <div className="pos-item-name">{item.name}</div>
-              <div className="pos-item-price">
-                ${calculateItemPrice(item).toFixed(2)}
-                {item.discount > 0 && (
-                  <span className="pos-item-discount">${item.price.toFixed(2)}</span>
-                )}
-              </div>
-            </div>
-          ))}
-          {currentCategoryItems.length === 0 && selectedCategory && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#7f8c8d', padding: '40px' }}>
-              <i className="bi bi-inbox" style={{ fontSize: '3rem', marginBottom: '10px', display: 'block' }}></i>
-              No items in this category
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Right Panel - Current Order */}
-      <div className="pos-order-panel">
-        <div className="pos-order-header">
-          <h5>Current Order</h5>
-          <span>{orderItems.length} item(s)</span>
-        </div>
-
-        <div className="pos-order-items">
-          {orderItems.length === 0 ? (
-            <div className="pos-order-empty">
-              <i className="bi bi-cart3"></i>
-              <p>No items in order</p>
-              <small>Click items to add them</small>
-            </div>
-          ) : (
-            orderItems.map(item => (
-              <div key={item.id} className="pos-order-item">
-                <div className="pos-order-item-info">
-                  <div className="pos-order-item-name">{item.name}</div>
-                  <div className="pos-order-item-price">
-                    ${calculateItemPrice(item).toFixed(2)} each
-                  </div>
-                </div>
-                <div className="pos-order-item-quantity">
-                  <button onClick={() => updateQuantity(item.id, -1)}>−</button>
-                  <span>{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.id, 1)}>+</button>
-                </div>
-                <div className="pos-order-item-total">
-                  ${(calculateItemPrice(item) * item.quantity).toFixed(2)}
-                </div>
-                <span
-                  className="pos-order-item-remove"
-                  onClick={() => removeItem(item.id)}
-                >
-                  <i className="bi bi-x-circle"></i>
+          <h5>Categories</h5>
+          <ul className="category-nav">
+            {categories.map(category => (
+              <li
+                key={category.id}
+                className={`category-nav-item ${selectedCategory === category.id ? 'active' : ''}`}
+                onClick={() => setSelectedCategory(category.id)}
+              >
+                {category.name}
+                <span style={{ float: 'right', opacity: 0.7 }}>
+                  ({category.items?.length || 0})
                 </span>
-              </div>
-            ))
+              </li>
+            ))}
+          </ul>
+          {categories.length === 0 && (
+            <div style={{ padding: '15px', color: '#bdc3c7', fontSize: '0.9rem' }}>
+              No categories yet. Add categories in Menu Management.
+            </div>
           )}
         </div>
 
-        <div className="pos-order-footer">
-          <div className="pos-order-total">
-            <span>Total:</span>
-            <span>${calculateTotal().toFixed(2)}</span>
+        {/* Main Panel - Item Tiles */}
+        <div className="pos-main">
+          <div className="pos-header">
+            <h4>
+              {categories.find(c => c.id === selectedCategory)?.name || 'Select a Category'}
+            </h4>
+            {error && (
+              <Alert variant="danger" onClose={() => setError('')} dismissible style={{ margin: 0, padding: '8px 15px' }}>
+                {error}
+              </Alert>
+            )}
           </div>
 
-          <div className="pos-table-selection">
-            <label>Table(s)</label>
-            <button
-              className="pos-assign-table-btn"
-              onClick={() => setShowTableModal(true)}
-            >
-              <i className="bi bi-grid-3x3-gap"></i>
-              {selectedTables.length === 0 
-                ? 'Assign Table' 
-                : selectedTables.length === 1
-                  ? `Table ${selectedTables[0]}`
-                  : `Tables ${selectedTables.sort((a, b) => {
+          <div className="pos-items-grid">
+            {currentCategoryItems.map(item => (
+              <div
+                key={item.id}
+                className="pos-item-tile"
+                onClick={() => addToOrder(item)}
+              >
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="pos-item-image"
+                  />
+                ) : (
+                  <div className="pos-item-placeholder">
+                    <i className="bi bi-cup-straw"></i>
+                  </div>
+                )}
+                <div className="pos-item-name">{item.name}</div>
+                <div className="pos-item-price">
+                  ${calculateItemPrice(item).toFixed(2)}
+                  {item.discount > 0 && (
+                    <span className="pos-item-discount">${item.price.toFixed(2)}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {currentCategoryItems.length === 0 && selectedCategory && (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#7f8c8d', padding: '40px' }}>
+                <i className="bi bi-inbox" style={{ fontSize: '3rem', marginBottom: '10px', display: 'block' }}></i>
+                No items in this category
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Panel - Current Order */}
+        <div className="pos-order-panel">
+          <div className="pos-order-header">
+            <h5>Current Order</h5>
+            <span>{orderItems.length} item(s)</span>
+          </div>
+
+          <div className="pos-order-items">
+            {orderItems.length === 0 ? (
+              <div className="pos-order-empty">
+                <i className="bi bi-cart3"></i>
+                <p>No items in order</p>
+                <small>Click items to add them</small>
+              </div>
+            ) : (
+              orderItems.map(item => (
+                <div key={item.id} className="pos-order-item">
+                  <div className="pos-order-item-info">
+                    <div className="pos-order-item-name">{item.name}</div>
+                    <div className="pos-order-item-price">
+                      ${calculateItemPrice(item).toFixed(2)} each
+                    </div>
+                  </div>
+                  <div className="pos-order-item-quantity">
+                    <button onClick={() => updateQuantity(item.id, -1)}>−</button>
+                    <span>{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.id, 1)}>+</button>
+                  </div>
+                  <div className="pos-order-item-total">
+                    ${(calculateItemPrice(item) * item.quantity).toFixed(2)}
+                  </div>
+                  <span
+                    className="pos-order-item-remove"
+                    onClick={() => removeItem(item.id)}
+                  >
+                    <i className="bi bi-x-circle"></i>
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="pos-order-footer">
+            <div className="pos-order-total">
+              <span>Total:</span>
+              <span>${calculateTotal().toFixed(2)}</span>
+            </div>
+
+            <div className="pos-table-selection">
+              <label>Table(s)</label>
+              <button
+                className="pos-assign-table-btn"
+                onClick={() => setShowTableModal(true)}
+              >
+                <i className="bi bi-grid-3x3-gap"></i>
+                {selectedTables.length === 0
+                  ? 'Assign Table'
+                  : selectedTables.length === 1
+                    ? `Table ${selectedTables[0]}`
+                    : `Tables ${selectedTables.sort((a, b) => {
                       const numA = parseInt(a);
                       const numB = parseInt(b);
                       if (!isNaN(numA) && !isNaN(numB)) {
@@ -466,57 +418,57 @@ const POS = () => {
                       }
                       return a.localeCompare(b);
                     }).join(' and ')}`}
-            </button>
-          </div>
-
-          <button
-            className="pos-send-button"
-            onClick={sendToKitchen}
-            disabled={orderItems.length === 0 || selectedTables.length === 0 || sendingOrder}
-          >
-            {sendingOrder ? (
-              <>
-                <Spinner animation="border" size="sm" /> Sending...
-              </>
-            ) : (
-              <>
-                <i className="bi bi-send"></i> Send to Kitchen
-              </>
-            )}
-          </button>
-
-          {orderItems.length > 0 && (
-            <button className="pos-clear-button" onClick={clearOrder}>
-              Clear Order
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Order Success Modal */}
-      {orderSuccess && (
-        <div className="pos-order-success">
-          <div className="pos-order-success-content">
-            <div className="pos-order-success-icon">
-              <i className="bi bi-check-lg"></i>
+              </button>
             </div>
-            <h3>Order Sent to Kitchen!</h3>
-            <div className="order-number">{orderSuccess.orderNumber}</div>
-            <div className="table-number">Table #{orderSuccess.tableNumber}</div>
-            <button onClick={() => setOrderSuccess(null)}>
-              New Order
+
+            <button
+              className="pos-send-button"
+              onClick={sendToKitchen}
+              disabled={orderItems.length === 0 || selectedTables.length === 0 || sendingOrder}
+            >
+              {sendingOrder ? (
+                <>
+                  <Spinner animation="border" size="sm" /> Sending...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-send"></i> Send to Kitchen
+                </>
+              )}
             </button>
+
+            {orderItems.length > 0 && (
+              <button className="pos-clear-button" onClick={clearOrder}>
+                Clear Order
+              </button>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Table Selection Modal */}
-      <TableSelectionModal
-        show={showTableModal}
-        onHide={() => setShowTableModal(false)}
-        onSelect={handleTableSelect}
-        selectedTables={selectedTables}
-      />
+        {/* Order Success Modal */}
+        {orderSuccess && (
+          <div className="pos-order-success">
+            <div className="pos-order-success-content">
+              <div className="pos-order-success-icon">
+                <i className="bi bi-check-lg"></i>
+              </div>
+              <h3>Order Sent to Kitchen!</h3>
+              <div className="order-number">{orderSuccess.orderNumber}</div>
+              <div className="table-number">Table #{orderSuccess.tableNumber}</div>
+              <button onClick={() => setOrderSuccess(null)}>
+                New Order
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Table Selection Modal */}
+        <TableSelectionModal
+          show={showTableModal}
+          onHide={() => setShowTableModal(false)}
+          onSelect={handleTableSelect}
+          selectedTables={selectedTables}
+        />
       </div>
     </div>
   );
