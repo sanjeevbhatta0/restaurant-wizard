@@ -3,7 +3,8 @@ import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
-import { Container, Row, Col, Card, Spinner, ProgressBar, Form, Button, ButtonGroup, Modal } from 'react-bootstrap';
+import { Container, Row, Col, Card, Spinner, ProgressBar, Form, Button, ButtonGroup, Modal, Dropdown } from 'react-bootstrap';
+import AIAnalytics from './AIAnalytics';
 import './Dashboard.css';
 import './PageHeader.css';
 
@@ -32,6 +33,7 @@ const Dashboard = () => {
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0, show: false });
   const [loading, setLoading] = useState(true);
+  const [analyticsMode, setAnalyticsMode] = useState('classic'); // 'classic' or 'ai'
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
 
@@ -151,7 +153,7 @@ const Dashboard = () => {
   const calculateStats = (ordersData) => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     // Filter reimbursements by date range
     let filteredReimbursements = reimbursements;
     if (dateRange === 'last10hours') {
@@ -176,7 +178,7 @@ const Dashboard = () => {
         return reimbDate >= startDate && reimbDate < endDate;
       });
     }
-    
+
     const todayOrders = ordersData.filter(order => {
       const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
       return orderDate >= todayStart;
@@ -266,7 +268,7 @@ const Dashboard = () => {
     // Process orders
     ordersData.forEach(order => {
       const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
-      
+
       if (bucketFormat === 'hour') {
         const hour = orderDate.getHours();
         const bucket = timeBuckets.find(b => b.time === hour);
@@ -302,7 +304,7 @@ const Dashboard = () => {
 
     reimbursements.forEach(reimb => {
       const reimbDate = reimb.processedAt?.toDate ? reimb.processedAt.toDate() : new Date(reimb.processedAt);
-      
+
       if (startDate && reimbDate < startDate) return;
 
       if (bucketFormat === 'hour') {
@@ -379,9 +381,9 @@ const Dashboard = () => {
   };
 
   const calculateAverageOrderTime = (ordersData) => {
-    const completedOrders = ordersData.filter(order => 
-      order.status === 'completed' && 
-      order.createdAt && 
+    const completedOrders = ordersData.filter(order =>
+      order.status === 'completed' &&
+      order.createdAt &&
       order.paymentDate
     );
 
@@ -414,7 +416,7 @@ const Dashboard = () => {
         subtotal += order.paymentDetails.subtotal || 0;
         tax += order.paymentDetails.taxAmount || 0;
         tips += order.paymentDetails.tipAmount || 0;
-        
+
         // Calculate discount amount
         if (order.paymentDetails.discountAmount > 0) {
           if (order.paymentDetails.discountType === 'percentage') {
@@ -477,7 +479,7 @@ const Dashboard = () => {
     // Count orders per bucket
     ordersData.forEach(order => {
       const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
-      
+
       if (bucketFormat === 'hour') {
         const orderHourKey = `${orderDate.getFullYear()}-${orderDate.getMonth()}-${orderDate.getDate()}-${orderDate.getHours()}`;
         const bucket = timeBuckets.find(b => b.time === orderHourKey);
@@ -600,8 +602,8 @@ const Dashboard = () => {
               onMouseEnter={(e) => handleMouseEnter(segment, e)}
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
-              transform={hoveredSegment && hoveredSegment.chartId === chartId && hoveredSegment.index === segment.index 
-                ? `translate(${radius * 0.05 * Math.cos((segment.midAngle * Math.PI) / 180)}, ${radius * 0.05 * Math.sin((segment.midAngle * Math.PI) / 180)})` 
+              transform={hoveredSegment && hoveredSegment.chartId === chartId && hoveredSegment.index === segment.index
+                ? `translate(${radius * 0.05 * Math.cos((segment.midAngle * Math.PI) / 180)}, ${radius * 0.05 * Math.sin((segment.midAngle * Math.PI) / 180)})`
                 : ''}
             />
           </g>
@@ -636,7 +638,7 @@ const Dashboard = () => {
             strokeWidth="1"
           />
         ))}
-        
+
         {/* Order count line */}
         {(() => {
           const ordersPath = orderTrendData.map((data, index) => {
@@ -694,7 +696,7 @@ const Dashboard = () => {
             </g>
           );
         })()}
-        
+
         {/* Gradient definition */}
         <defs>
           <linearGradient id="orderGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -741,35 +743,35 @@ const Dashboard = () => {
             strokeWidth="1"
           />
         ))}
-        
+
         {/* Calculate max values for scaling */}
         {(() => {
           const maxRevenue = Math.max(...revenueData.map(d => d.revenue), 1);
           const maxReimbursement = Math.max(...revenueData.map(d => d.reimbursement), 1);
           const maxOrders = Math.max(...revenueData.map(d => d.orders), 1);
           const maxValue = Math.max(maxRevenue, maxReimbursement, maxOrders * 10);
-          
+
           // Draw revenue line
           const revenuePath = revenueData.map((data, index) => {
             const x = padding + (index * (chartAreaWidth / revenueData.length));
             const y = chartHeight - 50 - (data.revenue / maxValue) * chartAreaHeight;
             return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
           }).join(' ');
-          
+
           // Draw reimbursement line
           const reimbursementPath = revenueData.map((data, index) => {
             const x = padding + (index * (chartAreaWidth / revenueData.length));
             const y = chartHeight - 50 - (data.reimbursement / maxValue) * chartAreaHeight;
             return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
           }).join(' ');
-          
+
           // Draw orders line (scaled)
           const ordersPath = revenueData.map((data, index) => {
             const x = padding + (index * (chartAreaWidth / revenueData.length));
             const y = chartHeight - 50 - ((data.orders * 10) / maxValue) * chartAreaHeight;
             return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
           }).join(' ');
-          
+
           return (
             <g>
               {/* Revenue area */}
@@ -836,7 +838,7 @@ const Dashboard = () => {
             </g>
           );
         })()}
-        
+
         {/* Legend */}
         <g>
           <rect x={chartWidth - 200} y="20" width="15" height="3" fill="#667eea" />
@@ -868,192 +870,175 @@ const Dashboard = () => {
             <p>Track your restaurant's performance and insights</p>
           </div>
         </div>
+        <div className="notification-status">
+          <Dropdown>
+            <Dropdown.Toggle
+              variant={analyticsMode === 'ai' ? 'light' : 'outline-light'}
+              className="analytics-mode-toggle"
+              style={{
+                borderRadius: '50px',
+                fontWeight: '600',
+                background: analyticsMode === 'ai' ? 'white' : 'transparent',
+                color: analyticsMode === 'ai' ? '#667eea' : 'white'
+              }}
+            >
+              {analyticsMode === 'classic' ? (
+                <><i className="bi bi-bar-chart-line me-2"></i>Classic Analytics</>
+              ) : (
+                <><i className="bi bi-stars me-2"></i>AI Analytics ✨</>
+              )}
+            </Dropdown.Toggle>
+            <Dropdown.Menu>
+              <Dropdown.Item
+                active={analyticsMode === 'classic'}
+                onClick={() => setAnalyticsMode('classic')}
+              >
+                <i className="bi bi-bar-chart-line me-2"></i>
+                Classic Analytics
+              </Dropdown.Item>
+              <Dropdown.Item
+                active={analyticsMode === 'ai'}
+                onClick={() => setAnalyticsMode('ai')}
+              >
+                <i className="bi bi-stars me-2"></i>
+                AI Analytics ✨
+                <span className="badge bg-primary ms-2">NEW</span>
+              </Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown>
+        </div>
       </div>
 
-      {/* Date Range Selector */}
-      <Card className="mb-4">
-        <Card.Body>
-          <Row className="align-items-center">
-            <Col md={6}>
-              <Form.Label className="mb-0"><strong>Date Range:</strong></Form.Label>
-              <ButtonGroup className="mt-2">
-                <Button
-                  variant={dateRange === 'last10hours' ? 'primary' : 'outline-primary'}
-                  onClick={() => setDateRange('last10hours')}
-                  size="sm"
-                >
-                  Last 10 Hours
-                </Button>
-                <Button
-                  variant={dateRange === 'last7days' ? 'primary' : 'outline-primary'}
-                  onClick={() => setDateRange('last7days')}
-                  size="sm"
-                >
-                  Last 7 Days
-                </Button>
-                <Button
-                  variant={dateRange === 'custom' ? 'primary' : 'outline-primary'}
-                  onClick={() => setDateRange('custom')}
-                  size="sm"
-                >
-                  Select Date
-                </Button>
-              </ButtonGroup>
+      {/* Render AI Analytics or Classic Analytics based on mode */}
+      {analyticsMode === 'ai' ? (
+        <AIAnalytics />
+      ) : (
+        <>
+          {/* Date Range Selector */}
+          <Card className="mb-4">
+            <Card.Body>
+              <Row className="align-items-center">
+                <Col md={6}>
+                  <Form.Label className="mb-0"><strong>Date Range:</strong></Form.Label>
+                  <ButtonGroup className="mt-2">
+                    <Button
+                      variant={dateRange === 'last10hours' ? 'primary' : 'outline-primary'}
+                      onClick={() => setDateRange('last10hours')}
+                      size="sm"
+                    >
+                      Last 10 Hours
+                    </Button>
+                    <Button
+                      variant={dateRange === 'last7days' ? 'primary' : 'outline-primary'}
+                      onClick={() => setDateRange('last7days')}
+                      size="sm"
+                    >
+                      Last 7 Days
+                    </Button>
+                    <Button
+                      variant={dateRange === 'custom' ? 'primary' : 'outline-primary'}
+                      onClick={() => setDateRange('custom')}
+                      size="sm"
+                    >
+                      Select Date
+                    </Button>
+                  </ButtonGroup>
+                </Col>
+                <Col md={6}>
+                  {dateRange === 'custom' && (
+                    <div>
+                      <Form.Label className="mb-0"><strong>Select Date:</strong></Form.Label>
+                      <Form.Control
+                        type="date"
+                        value={customDate}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        className="mt-2"
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+                  )}
+                  {dateRange !== 'custom' && (
+                    <div className="text-muted mt-2">
+                      <i className="bi bi-calendar3"></i> Showing: <strong>{getDateRangeLabel()}</strong>
+                    </div>
+                  )}
+                </Col>
+              </Row>
+            </Card.Body>
+          </Card>
+
+          {/* Stats Cards */}
+          <Row className="mb-4">
+            <Col md={2} className="mb-3">
+              <Card className="text-center stats-card">
+                <Card.Body>
+                  <Card.Title className="text-muted small">Total Revenue</Card.Title>
+                  <h3 className="text-primary">${stats.totalRevenue.toFixed(2)}</h3>
+                </Card.Body>
+              </Card>
             </Col>
-            <Col md={6}>
-              {dateRange === 'custom' && (
-                <div>
-                  <Form.Label className="mb-0"><strong>Select Date:</strong></Form.Label>
-                  <Form.Control
-                    type="date"
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    className="mt-2"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-              )}
-              {dateRange !== 'custom' && (
-                <div className="text-muted mt-2">
-                  <i className="bi bi-calendar3"></i> Showing: <strong>{getDateRangeLabel()}</strong>
-                </div>
-              )}
+            <Col md={2} className="mb-3">
+              <Card className="text-center stats-card">
+                <Card.Body>
+                  <Card.Title className="text-muted small">Reimbursements</Card.Title>
+                  <h3 className="text-warning">${stats.totalReimbursements.toFixed(2)}</h3>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={2} className="mb-3">
+              <Card className="text-center stats-card">
+                <Card.Body>
+                  <Card.Title className="text-muted small">Net Revenue</Card.Title>
+                  <h3 className="text-success">${stats.netRevenue.toFixed(2)}</h3>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={2} className="mb-3">
+              <Card className="text-center stats-card">
+                <Card.Body>
+                  <Card.Title className="text-muted small">Total Orders</Card.Title>
+                  <h3 className="text-info">{stats.totalOrders}</h3>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={2} className="mb-3">
+              <Card className="text-center stats-card">
+                <Card.Body>
+                  <Card.Title className="text-muted small">Today's Revenue</Card.Title>
+                  <h3 className="text-success">${stats.todayRevenue.toFixed(2)}</h3>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={2} className="mb-3">
+              <Card className="text-center stats-card">
+                <Card.Body>
+                  <Card.Title className="text-muted small">Avg Order Value</Card.Title>
+                  <h3 className="text-warning">${stats.averageOrderValue.toFixed(2)}</h3>
+                </Card.Body>
+              </Card>
             </Col>
           </Row>
-        </Card.Body>
-      </Card>
 
-      {/* Stats Cards */}
-      <Row className="mb-4">
-        <Col md={2} className="mb-3">
-          <Card className="text-center stats-card">
-            <Card.Body>
-              <Card.Title className="text-muted small">Total Revenue</Card.Title>
-              <h3 className="text-primary">${stats.totalRevenue.toFixed(2)}</h3>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={2} className="mb-3">
-          <Card className="text-center stats-card">
-            <Card.Body>
-              <Card.Title className="text-muted small">Reimbursements</Card.Title>
-              <h3 className="text-warning">${stats.totalReimbursements.toFixed(2)}</h3>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={2} className="mb-3">
-          <Card className="text-center stats-card">
-            <Card.Body>
-              <Card.Title className="text-muted small">Net Revenue</Card.Title>
-              <h3 className="text-success">${stats.netRevenue.toFixed(2)}</h3>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={2} className="mb-3">
-          <Card className="text-center stats-card">
-            <Card.Body>
-              <Card.Title className="text-muted small">Total Orders</Card.Title>
-              <h3 className="text-info">{stats.totalOrders}</h3>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={2} className="mb-3">
-          <Card className="text-center stats-card">
-            <Card.Body>
-              <Card.Title className="text-muted small">Today's Revenue</Card.Title>
-              <h3 className="text-success">${stats.todayRevenue.toFixed(2)}</h3>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={2} className="mb-3">
-          <Card className="text-center stats-card">
-            <Card.Body>
-              <Card.Title className="text-muted small">Avg Order Value</Card.Title>
-              <h3 className="text-warning">${stats.averageOrderValue.toFixed(2)}</h3>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Charts Row */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card>
-            <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Revenue Breakdown</h5>
-              <Button
-                variant="link"
-                className="p-0"
-                onClick={() => setShowChartModal(true)}
-                style={{ color: '#667eea', textDecoration: 'none' }}
-                title="Expand chart"
-              >
-                <i className="bi bi-arrows-fullscreen" style={{ fontSize: '1.2rem' }}></i>
-              </Button>
-            </Card.Header>
-            <Card.Body style={{ position: 'relative' }}>
-              <div className="d-flex justify-content-center align-items-center pie-chart-container" style={{ minHeight: '300px', position: 'relative' }}>
-                <svg 
-                  viewBox="0 0 300 300" 
-                  style={{ width: '100%', maxWidth: '400px', height: 'auto' }}
-                  onMouseLeave={() => {
-                    setHoveredSegment(null);
-                    setTooltipPosition({ x: 0, y: 0, show: false });
-                  }}
-                >
-                  {renderPieChart([
-                    { label: 'Subtotal', value: revenueBreakdown.subtotal, color: '#667eea' },
-                    { label: 'Tax', value: revenueBreakdown.tax, color: '#4facfe' },
-                    { label: 'Tips', value: revenueBreakdown.tips, color: '#f093fb' },
-                    { label: 'Discounts', value: revenueBreakdown.discounts, color: '#f5576c' }
-                  ].filter(item => item.value > 0), 150, 150, 120, false, 'revenue')}
-                </svg>
-                {/* Tooltip */}
-                {hoveredSegment && hoveredSegment.chartId === 'revenue' && tooltipPosition.show && (
-                  <div
-                    className="pie-tooltip"
-                    style={{
-                      position: 'absolute',
-                      left: `${tooltipPosition.x + 15}px`,
-                      top: `${tooltipPosition.y - 90}px`,
-                      background: 'rgba(0, 0, 0, 0.9)',
-                      color: '#fff',
-                      padding: '12px 16px',
-                      borderRadius: '10px',
-                      border: `3px solid ${hoveredSegment.color}`,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                      pointerEvents: 'none',
-                      zIndex: 1000,
-                      minWidth: '180px',
-                      transform: tooltipPosition.x > 200 ? 'translateX(-100%)' : 'none'
-                    }}
+          {/* Charts Row */}
+          <Row className="mb-4">
+            <Col md={6}>
+              <Card>
+                <Card.Header className="d-flex justify-content-between align-items-center">
+                  <h5 className="mb-0">Revenue Breakdown</h5>
+                  <Button
+                    variant="link"
+                    className="p-0"
+                    onClick={() => setShowChartModal(true)}
+                    style={{ color: '#667eea', textDecoration: 'none' }}
+                    title="Expand chart"
                   >
-                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
-                      {hoveredSegment.label}
-                    </div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: hoveredSegment.color, marginBottom: '4px' }}>
-                      ${hoveredSegment.value.toFixed(2)}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#ccc' }}>
-                      {hoveredSegment.percentage.toFixed(1)}% of total
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={6}>
-          <Card>
-            <Card.Header>
-              <h5>Reimbursement</h5>
-            </Card.Header>
-            <Card.Body style={{ position: 'relative' }}>
-              <div className="d-flex justify-content-center align-items-center pie-chart-container" style={{ minHeight: '300px', position: 'relative' }}>
-                {stats.totalReimbursements > 0 ? (
-                  <>
-                    <svg 
-                      viewBox="0 0 300 300" 
+                    <i className="bi bi-arrows-fullscreen" style={{ fontSize: '1.2rem' }}></i>
+                  </Button>
+                </Card.Header>
+                <Card.Body style={{ position: 'relative' }}>
+                  <div className="d-flex justify-content-center align-items-center pie-chart-container" style={{ minHeight: '300px', position: 'relative' }}>
+                    <svg
+                      viewBox="0 0 300 300"
                       style={{ width: '100%', maxWidth: '400px', height: 'auto' }}
                       onMouseLeave={() => {
                         setHoveredSegment(null);
@@ -1061,12 +1046,14 @@ const Dashboard = () => {
                       }}
                     >
                       {renderPieChart([
-                        { label: 'Reimbursed', value: stats.totalReimbursements, color: '#f5576c' },
-                        { label: 'Net Revenue', value: stats.netRevenue, color: '#43e97b' }
-                      ], 150, 150, 120, false, 'reimbursement')}
+                        { label: 'Subtotal', value: revenueBreakdown.subtotal, color: '#667eea' },
+                        { label: 'Tax', value: revenueBreakdown.tax, color: '#4facfe' },
+                        { label: 'Tips', value: revenueBreakdown.tips, color: '#f093fb' },
+                        { label: 'Discounts', value: revenueBreakdown.discounts, color: '#f5576c' }
+                      ].filter(item => item.value > 0), 150, 150, 120, false, 'revenue')}
                     </svg>
                     {/* Tooltip */}
-                    {hoveredSegment && hoveredSegment.chartId === 'reimbursement' && tooltipPosition.show && (
+                    {hoveredSegment && hoveredSegment.chartId === 'revenue' && tooltipPosition.show && (
                       <div
                         className="pie-tooltip"
                         style={{
@@ -1096,195 +1083,254 @@ const Dashboard = () => {
                         </div>
                       </div>
                     )}
-                  </>
-                ) : (
-                  <div className="text-center text-muted">
-                    <h3 className="text-success">${stats.netRevenue.toFixed(2)}</h3>
-                    <p>No reimbursements</p>
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={6}>
+              <Card>
+                <Card.Header>
+                  <h5>Reimbursement</h5>
+                </Card.Header>
+                <Card.Body style={{ position: 'relative' }}>
+                  <div className="d-flex justify-content-center align-items-center pie-chart-container" style={{ minHeight: '300px', position: 'relative' }}>
+                    {stats.totalReimbursements > 0 ? (
+                      <>
+                        <svg
+                          viewBox="0 0 300 300"
+                          style={{ width: '100%', maxWidth: '400px', height: 'auto' }}
+                          onMouseLeave={() => {
+                            setHoveredSegment(null);
+                            setTooltipPosition({ x: 0, y: 0, show: false });
+                          }}
+                        >
+                          {renderPieChart([
+                            { label: 'Reimbursed', value: stats.totalReimbursements, color: '#f5576c' },
+                            { label: 'Net Revenue', value: stats.netRevenue, color: '#43e97b' }
+                          ], 150, 150, 120, false, 'reimbursement')}
+                        </svg>
+                        {/* Tooltip */}
+                        {hoveredSegment && hoveredSegment.chartId === 'reimbursement' && tooltipPosition.show && (
+                          <div
+                            className="pie-tooltip"
+                            style={{
+                              position: 'absolute',
+                              left: `${tooltipPosition.x + 15}px`,
+                              top: `${tooltipPosition.y - 90}px`,
+                              background: 'rgba(0, 0, 0, 0.9)',
+                              color: '#fff',
+                              padding: '12px 16px',
+                              borderRadius: '10px',
+                              border: `3px solid ${hoveredSegment.color}`,
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                              pointerEvents: 'none',
+                              zIndex: 1000,
+                              minWidth: '180px',
+                              transform: tooltipPosition.x > 200 ? 'translateX(-100%)' : 'none'
+                            }}
+                          >
+                            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
+                              {hoveredSegment.label}
+                            </div>
+                            <div style={{ fontSize: '18px', fontWeight: '700', color: hoveredSegment.color, marginBottom: '4px' }}>
+                              ${hoveredSegment.value.toFixed(2)}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#ccc' }}>
+                              {hoveredSegment.percentage.toFixed(1)}% of total
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-center text-muted">
+                        <h3 className="text-success">${stats.netRevenue.toFixed(2)}</h3>
+                        <p>No reimbursements</p>
+                      </div>
+                    )}
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Order Trend Chart */}
+          <Row className="mb-4">
+            <Col md={8}>
+              <Card>
+                <Card.Header>
+                  <h5>Order Trend ({getDateRangeLabel()})</h5>
+                </Card.Header>
+                <Card.Body>
+                  <div className="revenue-chart" style={{ height: '300px', overflow: 'hidden' }}>
+                    {renderOrderTrendChart(800, 250, false)}
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={4}>
+              <Card>
+                <Card.Header>
+                  <h5>Orders by Status</h5>
+                </Card.Header>
+                <Card.Body>
+                  {totalStatusOrders > 0 ? (
+                    <div className="status-chart">
+                      {orderStatusData.map((item, index) => {
+                        const percentage = (item.value / totalStatusOrders) * 100;
+                        return (
+                          <div key={index} className="status-item mb-3">
+                            <div className="d-flex justify-content-between mb-1">
+                              <span className="status-label">{item.name}</span>
+                              <span className="status-value">{item.value} ({percentage.toFixed(0)}%)</span>
+                            </div>
+                            <ProgressBar
+                              now={percentage}
+                              variant="info"
+                              style={{ backgroundColor: item.color, height: '20px' }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted py-5">No orders yet</div>
+                  )}
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Full Screen Chart Modal */}
+          <Modal
+            show={showChartModal}
+            onHide={() => setShowChartModal(false)}
+            size="xl"
+            fullscreen
+            centered
+          >
+            <Modal.Header className="d-flex justify-content-between align-items-center">
+              <Modal.Title>Revenue Breakdown ({getDateRangeLabel()})</Modal.Title>
+              <Button
+                variant="link"
+                className="p-0"
+                onClick={() => setShowChartModal(false)}
+                style={{ color: '#666', textDecoration: 'none', fontSize: '1.5rem' }}
+                title="Close"
+              >
+                <i className="bi bi-x-lg"></i>
+              </Button>
+            </Modal.Header>
+            <Modal.Body style={{ height: '80vh', padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+              <div className="pie-chart-container" style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                <svg
+                  viewBox="0 0 600 600"
+                  style={{ width: '100%', maxWidth: '600px', height: 'auto' }}
+                  onMouseLeave={() => {
+                    setHoveredSegment(null);
+                    setTooltipPosition({ x: 0, y: 0, show: false });
+                  }}
+                >
+                  {renderPieChart([
+                    { label: 'Subtotal', value: revenueBreakdown.subtotal, color: '#667eea' },
+                    { label: 'Tax', value: revenueBreakdown.tax, color: '#4facfe' },
+                    { label: 'Tips', value: revenueBreakdown.tips, color: '#f093fb' },
+                    { label: 'Discounts', value: revenueBreakdown.discounts, color: '#f5576c' }
+                  ].filter(item => item.value > 0), 300, 300, 200, true, 'revenue-modal')}
+                </svg>
+                {/* Tooltip */}
+                {hoveredSegment && hoveredSegment.chartId === 'revenue-modal' && tooltipPosition.show && (
+                  <div
+                    className="pie-tooltip"
+                    style={{
+                      position: 'absolute',
+                      left: `${tooltipPosition.x + 15}px`,
+                      top: `${tooltipPosition.y - 90}px`,
+                      background: 'rgba(0, 0, 0, 0.9)',
+                      color: '#fff',
+                      padding: '15px 20px',
+                      borderRadius: '10px',
+                      border: `3px solid ${hoveredSegment.color}`,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      pointerEvents: 'none',
+                      zIndex: 1000,
+                      minWidth: '200px',
+                      transform: tooltipPosition.x > 400 ? 'translateX(-100%)' : 'none'
+                    }}
+                  >
+                    <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
+                      {hoveredSegment.label}
+                    </div>
+                    <div style={{ fontSize: '22px', fontWeight: '700', color: hoveredSegment.color, marginBottom: '6px' }}>
+                      ${hoveredSegment.value.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#ccc' }}>
+                      {hoveredSegment.percentage.toFixed(1)}% of total
+                    </div>
                   </div>
                 )}
               </div>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+            </Modal.Body>
+          </Modal>
 
-      {/* Order Trend Chart */}
-      <Row className="mb-4">
-        <Col md={8}>
-          <Card>
-            <Card.Header>
-              <h5>Order Trend ({getDateRangeLabel()})</h5>
-            </Card.Header>
-            <Card.Body>
-              <div className="revenue-chart" style={{ height: '300px', overflow: 'hidden' }}>
-                {renderOrderTrendChart(800, 250, false)}
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={4}>
-          <Card>
-            <Card.Header>
-              <h5>Orders by Status</h5>
-            </Card.Header>
-            <Card.Body>
-              {totalStatusOrders > 0 ? (
-                <div className="status-chart">
-                  {orderStatusData.map((item, index) => {
-                    const percentage = (item.value / totalStatusOrders) * 100;
-                    return (
-                      <div key={index} className="status-item mb-3">
-                        <div className="d-flex justify-content-between mb-1">
-                          <span className="status-label">{item.name}</span>
-                          <span className="status-value">{item.value} ({percentage.toFixed(0)}%)</span>
-                        </div>
-                        <ProgressBar
-                          now={percentage}
-                          variant="info"
-                          style={{ backgroundColor: item.color, height: '20px' }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center text-muted py-5">No orders yet</div>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+          {/* Top Selling Items and Average Order Time */}
+          <Row className="mb-4">
+            <Col md={8}>
+              <Card>
+                <Card.Header>
+                  <h5>Top Selling Items</h5>
+                </Card.Header>
+                <Card.Body>
+                  {topSellingItems.length > 0 ? (
+                    <div className="top-items-chart">
+                      {topSellingItems.map((item, index) => {
+                        const maxCount = topSellingItems[0]?.count || 1;
+                        const percentage = (item.count / maxCount) * 100;
+                        return (
+                          <div key={index} className="mb-3">
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <span className="item-name">{item.name}</span>
+                              <span className="item-count"><strong>{item.count}</strong> sold</span>
+                            </div>
+                            <ProgressBar
+                              now={percentage}
+                              variant="success"
+                              style={{ height: '25px', backgroundColor: '#e9ecef' }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted py-5">No items sold yet</div>
+                  )}
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={4}>
+              <Card>
+                <Card.Header>
+                  <h5>Average Order Time</h5>
+                </Card.Header>
+                <Card.Body className="text-center">
+                  {averageOrderTime > 0 ? (
+                    <div>
+                      <h2 className="display-4 text-primary mb-3">{averageOrderTime}</h2>
+                      <p className="text-muted mb-0">minutes</p>
+                      <small className="text-muted">From order placement to payment cleared</small>
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted py-5">
+                      <p>No completed orders yet</p>
+                      <small>Average time will appear once orders are completed</small>
+                    </div>
+                  )}
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
 
-      {/* Full Screen Chart Modal */}
-      <Modal 
-        show={showChartModal} 
-        onHide={() => setShowChartModal(false)} 
-        size="xl" 
-        fullscreen
-        centered
-      >
-        <Modal.Header className="d-flex justify-content-between align-items-center">
-          <Modal.Title>Revenue Breakdown ({getDateRangeLabel()})</Modal.Title>
-          <Button
-            variant="link"
-            className="p-0"
-            onClick={() => setShowChartModal(false)}
-            style={{ color: '#666', textDecoration: 'none', fontSize: '1.5rem' }}
-            title="Close"
-          >
-            <i className="bi bi-x-lg"></i>
-          </Button>
-        </Modal.Header>
-        <Modal.Body style={{ height: '80vh', padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
-          <div className="pie-chart-container" style={{ position: 'relative', width: '100%', display: 'flex', justifyContent: 'center' }}>
-            <svg 
-              viewBox="0 0 600 600" 
-              style={{ width: '100%', maxWidth: '600px', height: 'auto' }}
-              onMouseLeave={() => {
-                setHoveredSegment(null);
-                setTooltipPosition({ x: 0, y: 0, show: false });
-              }}
-            >
-              {renderPieChart([
-                { label: 'Subtotal', value: revenueBreakdown.subtotal, color: '#667eea' },
-                { label: 'Tax', value: revenueBreakdown.tax, color: '#4facfe' },
-                { label: 'Tips', value: revenueBreakdown.tips, color: '#f093fb' },
-                { label: 'Discounts', value: revenueBreakdown.discounts, color: '#f5576c' }
-              ].filter(item => item.value > 0), 300, 300, 200, true, 'revenue-modal')}
-            </svg>
-            {/* Tooltip */}
-            {hoveredSegment && hoveredSegment.chartId === 'revenue-modal' && tooltipPosition.show && (
-              <div
-                className="pie-tooltip"
-                style={{
-                  position: 'absolute',
-                  left: `${tooltipPosition.x + 15}px`,
-                  top: `${tooltipPosition.y - 90}px`,
-                  background: 'rgba(0, 0, 0, 0.9)',
-                  color: '#fff',
-                  padding: '15px 20px',
-                  borderRadius: '10px',
-                  border: `3px solid ${hoveredSegment.color}`,
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                  pointerEvents: 'none',
-                  zIndex: 1000,
-                  minWidth: '200px',
-                  transform: tooltipPosition.x > 400 ? 'translateX(-100%)' : 'none'
-                }}
-              >
-                <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '10px' }}>
-                  {hoveredSegment.label}
-                </div>
-                <div style={{ fontSize: '22px', fontWeight: '700', color: hoveredSegment.color, marginBottom: '6px' }}>
-                  ${hoveredSegment.value.toFixed(2)}
-                </div>
-                <div style={{ fontSize: '13px', color: '#ccc' }}>
-                  {hoveredSegment.percentage.toFixed(1)}% of total
-                </div>
-              </div>
-            )}
-          </div>
-        </Modal.Body>
-      </Modal>
-
-      {/* Top Selling Items and Average Order Time */}
-      <Row className="mb-4">
-        <Col md={8}>
-          <Card>
-            <Card.Header>
-              <h5>Top Selling Items</h5>
-            </Card.Header>
-            <Card.Body>
-              {topSellingItems.length > 0 ? (
-                <div className="top-items-chart">
-                  {topSellingItems.map((item, index) => {
-                    const maxCount = topSellingItems[0]?.count || 1;
-                    const percentage = (item.count / maxCount) * 100;
-                    return (
-                      <div key={index} className="mb-3">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <span className="item-name">{item.name}</span>
-                          <span className="item-count"><strong>{item.count}</strong> sold</span>
-                        </div>
-                        <ProgressBar
-                          now={percentage}
-                          variant="success"
-                          style={{ height: '25px', backgroundColor: '#e9ecef' }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center text-muted py-5">No items sold yet</div>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={4}>
-          <Card>
-            <Card.Header>
-              <h5>Average Order Time</h5>
-            </Card.Header>
-            <Card.Body className="text-center">
-              {averageOrderTime > 0 ? (
-                <div>
-                  <h2 className="display-4 text-primary mb-3">{averageOrderTime}</h2>
-                  <p className="text-muted mb-0">minutes</p>
-                  <small className="text-muted">From order placement to payment cleared</small>
-                </div>
-              ) : (
-                <div className="text-center text-muted py-5">
-                  <p>No completed orders yet</p>
-                  <small>Average time will appear once orders are completed</small>
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
+        </>
+      )}
     </Container>
   );
 };

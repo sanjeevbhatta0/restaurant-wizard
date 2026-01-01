@@ -1924,4 +1924,360 @@ Return ONLY the JSON, no other text.`
     }
     throw new HttpsError('internal', error.message || 'Failed to parse menu image');
   }
+});
+
+// ============================================
+// AI ANALYTICS
+// ============================================
+
+/**
+ * Get AI-powered analytics insights
+ * Supports 3 tiers: essential, differentiation, premium
+ */
+exports.getAIAnalytics = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { tier, analysisType, orderData, menuData, question } = request.data;
+
+    if (!GEMINI_API_KEY) {
+      throw new HttpsError('failed-precondition', 'Gemini API key not configured');
+    }
+
+    let prompt = '';
+    let systemContext = `You are an expert restaurant business analyst. Analyze the provided data and give actionable insights. Be specific with numbers and percentages. Use a friendly, professional tone suitable for restaurant owners.`;
+
+    // Build context from order data
+    const orderSummary = orderData ? `
+Restaurant Order Data Summary:
+- Total Orders: ${orderData.totalOrders || 0}
+- Total Revenue: $${(orderData.totalRevenue || 0).toFixed(2)}
+- Average Order Value: $${(orderData.avgOrderValue || 0).toFixed(2)}
+- Top Selling Items: ${(orderData.topItems || []).slice(0, 5).map(i => `${i.name} (${i.count})`).join(', ')}
+- Orders by Day: ${JSON.stringify(orderData.ordersByDay || {})}
+- Orders by Hour: ${JSON.stringify(orderData.ordersByHour || {})}
+- Recent Order Trend: ${orderData.trend || 'stable'}
+` : 'No order data available.';
+
+    const menuSummary = menuData ? `
+Menu Data:
+- Total Categories: ${menuData.categoryCount || 0}
+- Total Items: ${menuData.itemCount || 0}
+- Price Range: $${menuData.minPrice || 0} - $${menuData.maxPrice || 0}
+- Average Item Price: $${(menuData.avgPrice || 0).toFixed(2)}
+- Items with Discounts: ${menuData.discountedItems || 0}
+` : 'No menu data available.';
+
+    // Tier 1: Essential Insights
+    if (tier === 1) {
+      switch (analysisType) {
+        case 'businessSummary':
+          prompt = `${systemContext}
+
+${orderSummary}
+${menuSummary}
+
+Provide a brief business performance summary in this JSON format:
+{
+  "headline": "One impactful headline (max 10 words)",
+  "summary": "2-3 sentence executive summary of overall performance",
+  "keyMetrics": [
+    {"label": "metric name", "value": "value with unit", "trend": "up/down/stable", "insight": "brief context"}
+  ],
+  "topInsight": "The single most important insight the owner should know"
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        case 'salesPrediction':
+          prompt = `${systemContext}
+
+${orderSummary}
+
+Based on the historical order patterns, predict sales for the next 7 days.
+
+Return your prediction in this JSON format:
+{
+  "prediction": {
+    "nextWeekRevenue": 1500.00,
+    "dailyBreakdown": [
+      {"day": "Monday", "predicted": 200, "confidence": "high/medium/low"}
+    ],
+    "peakDay": "Saturday",
+    "slowestDay": "Tuesday"
+  },
+  "methodology": "Brief explanation of how you made this prediction",
+  "recommendations": ["actionable tip 1", "actionable tip 2"]
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        case 'anomalyAlerts':
+          prompt = `${systemContext}
+
+${orderSummary}
+${menuSummary}
+
+Analyze the data for any unusual patterns, anomalies, or concerning trends.
+
+Return your findings in this JSON format:
+{
+  "alerts": [
+    {
+      "severity": "high/medium/low",
+      "title": "Brief alert title",
+      "description": "What you noticed and why it matters",
+      "recommendation": "What to do about it"
+    }
+  ],
+  "healthScore": 85,
+  "healthDescription": "Overall assessment of business health"
+}
+
+If no anomalies found, return an empty alerts array with a positive health assessment.
+Return ONLY valid JSON.`;
+          break;
+
+        default:
+          throw new HttpsError('invalid-argument', 'Invalid analysis type for Tier 1');
+      }
+    }
+
+    // Tier 2: Differentiation
+    else if (tier === 2) {
+      switch (analysisType) {
+        case 'menuOptimization':
+          prompt = `${systemContext}
+
+${orderSummary}
+${menuSummary}
+
+Analyze the menu performance and suggest optimizations.
+
+Return your recommendations in this JSON format:
+{
+  "recommendations": [
+    {
+      "type": "remove/promote/reprice/bundle",
+      "item": "item name",
+      "reason": "why this change",
+      "expectedImpact": "what improvement to expect",
+      "priority": "high/medium/low"
+    }
+  ],
+  "menuHealthScore": 75,
+  "quickWins": ["easy change 1", "easy change 2"],
+  "underperformers": ["item that needs attention"],
+  "stars": ["your best performing items"]
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        case 'staffInsights':
+          prompt = `${systemContext}
+
+${orderSummary}
+
+Analyze order timing patterns to provide staff scheduling insights.
+
+Return your analysis in this JSON format:
+{
+  "peakHours": [
+    {"hour": "6 PM - 7 PM", "orderVolume": "high", "recommendation": "full staff"}
+  ],
+  "slowPeriods": [
+    {"hour": "2 PM - 4 PM", "recommendation": "reduced staff"}
+  ],
+  "optimalSchedule": {
+    "weekday": "Brief scheduling recommendation for weekdays",
+    "weekend": "Brief scheduling recommendation for weekends"
+  },
+  "efficiencyTips": ["tip 1", "tip 2"],
+  "averageOrderTime": "estimated minutes per order"
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        case 'orderCombos':
+          prompt = `${systemContext}
+
+${orderSummary}
+
+Analyze order patterns to find popular item combinations.
+
+Return your findings in this JSON format:
+{
+  "popularCombos": [
+    {
+      "items": ["item 1", "item 2"],
+      "frequency": "how often ordered together",
+      "suggestion": "combo deal idea"
+    }
+  ],
+  "bundleOpportunities": [
+    {
+      "name": "suggested bundle name",
+      "items": ["item 1", "item 2", "item 3"],
+      "suggestedPrice": 19.99,
+      "expectedUplift": "percentage increase in orders"
+    }
+  ],
+  "crossSellOpportunities": ["when someone orders X, suggest Y"]
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        default:
+          throw new HttpsError('invalid-argument', 'Invalid analysis type for Tier 2');
+      }
+    }
+
+    // Tier 3: Premium
+    else if (tier === 3) {
+      switch (analysisType) {
+        case 'marketPosition':
+          prompt = `${systemContext}
+
+${menuSummary}
+
+Based on the menu pricing, provide competitive positioning insights.
+
+Return your analysis in this JSON format:
+{
+  "pricePosition": "budget/mid-range/premium",
+  "insights": [
+    {
+      "category": "category name",
+      "assessment": "how pricing compares to typical restaurants",
+      "recommendation": "pricing suggestion"
+    }
+  ],
+  "opportunities": ["market opportunity 1", "market opportunity 2"],
+  "competitiveAdvantages": ["what makes this menu stand out"],
+  "pricingStrategy": "overall recommendation for pricing approach"
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        case 'aiChat':
+          prompt = `${systemContext}
+
+${orderSummary}
+${menuSummary}
+
+The restaurant owner asks: "${question || 'How is my business doing?'}"
+
+Provide a helpful, conversational response. Be specific with data when available. Keep response under 200 words.
+
+Return in this JSON format:
+{
+  "response": "Your conversational answer here",
+  "followUpQuestions": ["related question they might ask next"]
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        case 'weeklyReport':
+          prompt = `${systemContext}
+
+${orderSummary}
+${menuSummary}
+
+Generate a comprehensive weekly business report.
+
+Return in this JSON format:
+{
+  "reportTitle": "Weekly Performance Report",
+  "period": "report period description",
+  "executiveSummary": "3-4 sentence summary for busy owners",
+  "sections": [
+    {
+      "title": "Revenue Performance",
+      "content": "detailed analysis",
+      "highlight": "key number or achievement"
+    },
+    {
+      "title": "Top Performers",
+      "content": "what's working well",
+      "highlight": "standout item or trend"
+    },
+    {
+      "title": "Areas for Improvement",
+      "content": "growth opportunities",
+      "highlight": "priority action item"
+    }
+  ],
+  "actionItems": [
+    {"priority": "high/medium/low", "task": "specific action to take", "expectedImpact": "why it matters"}
+  ],
+  "nextWeekFocus": "one thing to prioritize next week"
+}
+
+Return ONLY valid JSON.`;
+          break;
+
+        default:
+          throw new HttpsError('invalid-argument', 'Invalid analysis type for Tier 3');
+      }
+    } else {
+      throw new HttpsError('invalid-argument', 'Invalid tier. Must be 1, 2, or 3');
+    }
+
+    // Call Gemini API
+    const response = await axios.post(
+      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048
+        }
+      },
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error('Invalid response from Gemini API');
+    }
+
+    const resultText = response.data.candidates[0].content.parts[0].text;
+
+    // Parse and return the response
+    try {
+      let jsonStr = resultText;
+      const jsonMatch = resultText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+
+      const parsed = JSON.parse(jsonStr.trim());
+      return { success: true, data: parsed, tier, analysisType };
+    } catch (parseError) {
+      console.error('JSON parsing error:', parseError);
+      // Return raw text if JSON parsing fails
+      return { success: true, data: { rawResponse: resultText }, tier, analysisType };
+    }
+
+  } catch (error) {
+    console.error('Error in AI Analytics:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message || 'Failed to generate AI analytics');
+  }
 }); 
