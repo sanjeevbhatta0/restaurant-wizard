@@ -53,8 +53,9 @@ const LandingPage = () => {
                     <li><a href="#hero" onClick={(e) => { e.preventDefault(); scrollToSection('hero'); }}>Meet Koda Carte</a></li>
                     <li><a href="#who-we-are" onClick={(e) => { e.preventDefault(); scrollToSection('who-we-are'); }}>Who We Are</a></li>
                     <li><a href="#why-we-are" onClick={(e) => { e.preventDefault(); scrollToSection('why-we-are'); }}>Why We Are</a></li>
-                    <li><a href="#pricing" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }}>Our Offerings</a></li>
                     <li><a href="#contact" onClick={(e) => { e.preventDefault(); scrollToSection('contact'); }}>Where We Are</a></li>
+                    <li><a href="#pricing" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }}>Our Offerings</a></li>
+                    <li><a href="#customers" onClick={(e) => { e.preventDefault(); scrollToSection('customers'); }}>Our Customers</a></li>
                 </ul>
 
                 <div className="nav-right">
@@ -227,6 +228,59 @@ const LandingPage = () => {
                     Choose the tier that fits your journey. Upgrade anytime as your restaurant grows.
                 </p>
                 <PricingTiers />
+            </section>
+
+            {/* Customers Section */}
+            <section className="section section-dark" id="customers">
+                <div className="section-content">
+                    <h2 className="section-title">Our <span>Customers</span></h2>
+                    <p className="section-subtitle">
+                        See how top restaurants are transforming their business with Koda Carte.
+                    </p>
+
+                    <div className="customer-testimonial" style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        backdropFilter: 'blur(10px)',
+                        padding: '3rem',
+                        borderRadius: '24px',
+                        maxWidth: '800px',
+                        margin: '0 auto',
+                        textAlign: 'center',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                        <div className="customer-logo" style={{ marginBottom: '2rem' }}>
+                            <a href="https://thegurkhaskitchen.com/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                                <h3 style={{
+                                    fontFamily: 'serif',
+                                    fontSize: '2rem',
+                                    color: '#d4956a',
+                                    margin: 0,
+                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                }}>The Gurkha Kitchen</h3>
+                                <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', letterSpacing: '2px', marginTop: '0.5rem' }}>BAY AREA, CA</div>
+                            </a>
+                        </div>
+
+                        <blockquote style={{
+                            fontSize: '1.4rem',
+                            fontStyle: 'italic',
+                            color: 'rgba(255,255,255,0.9)',
+                            lineHeight: '1.6',
+                            marginBottom: '2rem',
+                            position: 'relative'
+                        }}>
+                            "Koda Carte has brought the latest tech to enhance our business sales and visibility. We highly recommend everyone to try Koda Carte."
+                        </blockquote>
+
+                        <div className="customer-rating" style={{ color: '#ffd700', fontSize: '1.5rem', marginBottom: '1.5rem' }}>
+                            ★★★★★
+                        </div>
+
+                        <a href="https://thegurkhaskitchen.com/" target="_blank" rel="noopener noreferrer" className="hero-btn-secondary">
+                            Visit Website
+                        </a>
+                    </div>
+                </div>
             </section>
 
             {/* Contact Section */}
