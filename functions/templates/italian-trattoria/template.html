@@ -14,9 +14,29 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         :root {
-            --primary-color: {{primaryColor}};
-            --secondary-color: {{secondaryColor}};
-            --accent-color: {{accentColor}};
+            --primary-color: {
+                    {
+                    primaryColor
+                }
+            }
+
+            ;
+
+            --secondary-color: {
+                    {
+                    secondaryColor
+                }
+            }
+
+            ;
+
+            --accent-color: {
+                    {
+                    accentColor
+                }
+            }
+
+            ;
             --cream: #faf6f0;
             --dark: #1a1a1a;
             --gold: #c9a962;
@@ -1301,7 +1321,7 @@
             taxRate: {{taxRate}} / 100
         };
 
-        const hours = {{ hoursJson }};
+        const hours = {{hoursJson}};
         let cart = [];
         let menuData = [];
         let selectedCategory = 'all';
