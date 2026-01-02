@@ -1,4 +1,5 @@
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -1337,21 +1338,27 @@ exports.updateWebsite = onCall(async (request) => {
 // AI CONTENT GENERATION FUNCTIONS
 // ============================================
 
-// Gemini API key - set via Firebase Functions config or environment
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+// Gemini API key - set via Firebase Secrets or .env file
+const geminiApiKeySecret = defineSecret('GEMINI_API_KEY');
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+// Helper to get Gemini API key (from secret or env)
+function getGeminiApiKey() {
+  return geminiApiKeySecret.value() || process.env.GEMINI_API_KEY || '';
+}
 
 /**
  * Helper function to call Gemini API
  */
 async function callGeminiAPI(prompt) {
-  if (!GEMINI_API_KEY) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
     throw new Error('Gemini API key not configured. Please set GEMINI_API_KEY environment variable.');
   }
 
   try {
     const response = await axios.post(
-      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
+      `${GEMINI_API_URL}?key=${apiKey}`,
       {
         contents: [{
           parts: [{ text: prompt }]
@@ -1907,7 +1914,8 @@ exports.parseMenuImage = onCall(async (request) => {
       throw new HttpsError('invalid-argument', 'Image data is required');
     }
 
-    if (!GEMINI_API_KEY) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
       throw new HttpsError('failed-precondition', 'Gemini API key not configured');
     }
 
@@ -1915,7 +1923,7 @@ exports.parseMenuImage = onCall(async (request) => {
 
     // Use Gemini Vision API to parse the menu
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         contents: [{
           parts: [
@@ -2044,7 +2052,8 @@ exports.getAIAnalytics = onCall(async (request) => {
 
     const { tier, analysisType, orderData, menuData, question } = request.data;
 
-    if (!GEMINI_API_KEY) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
       throw new HttpsError('failed-precondition', 'Gemini API key not configured');
     }
 
@@ -2336,7 +2345,7 @@ Return ONLY valid JSON.`;
 
     // Call Gemini API
     const response = await axios.post(
-      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
+      `${GEMINI_API_URL}?key=${apiKey}`,
       {
         contents: [{
           parts: [{ text: prompt }]
