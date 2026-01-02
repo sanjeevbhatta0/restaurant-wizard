@@ -249,15 +249,26 @@ const LandingPage = () => {
                         border: '1px solid rgba(255, 255, 255, 0.1)'
                     }}>
                         <div className="customer-logo" style={{ marginBottom: '2rem' }}>
-                            <a href="https://thegurkhaskitchen.com/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
-                                <h3 style={{
-                                    fontFamily: 'serif',
-                                    fontSize: '2rem',
-                                    color: '#d4956a',
-                                    margin: 0,
-                                    textShadow: '0 2px 4px rgba(0,0,0,0.3)'
-                                }}>The Gurkha Kitchen</h3>
-                                <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', letterSpacing: '2px', marginTop: '0.5rem' }}>BAY AREA, CA</div>
+                            <a href="https://thegurkhaskitchen.com/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                                <img
+                                    src="https://static.spotapps.co/website_images/ab_websites/159127_website/logo.png"
+                                    alt="The Gurkha Kitchen Logo"
+                                    style={{
+                                        maxHeight: '100px',
+                                        maxWidth: '100%',
+                                        filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.2))'
+                                    }}
+                                />
+                                <div>
+                                    <h3 style={{
+                                        fontFamily: 'serif',
+                                        fontSize: '2rem',
+                                        color: '#d4956a',
+                                        margin: 0,
+                                        textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                    }}>The Gurkha Kitchen</h3>
+                                    <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', letterSpacing: '2px', marginTop: '0.5rem' }}>BAY AREA, CA</div>
+                                </div>
                             </a>
                         </div>
 
