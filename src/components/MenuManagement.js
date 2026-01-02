@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   collection,
   doc,
@@ -12,6 +13,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { useMenu } from '../contexts/MenuContext';
 import { Button, Form, Alert, Spinner, Modal, Badge, ProgressBar } from 'react-bootstrap';
 import menuParserService from '../services/menuParserService';
@@ -27,6 +29,7 @@ const MenuManagement = () => {
   const [saving, setSaving] = useState(false);
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, selectedLocation } = useLocation();
+  const { getCurrentTier } = useSubscription();
 
   // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
@@ -446,6 +449,38 @@ const MenuManagement = () => {
           <Badge bg="warning" text="dark" style={{ fontSize: '0.7em' }}>AI</Badge>
         </Button>
       </div>
+
+      {/* Premium Feature Promo Banner for Ally Tier */}
+      {getCurrentTier() === 'ally' && (
+        <div className="premium-promo-banner">
+          <div className="promo-glow"></div>
+          <div className="promo-content">
+            <div className="promo-icon-container">
+              <div className="promo-icon-bg">
+                <i className="bi bi-stars"></i>
+              </div>
+              <div className="promo-sparkle promo-sparkle-1">✦</div>
+              <div className="promo-sparkle promo-sparkle-2">✧</div>
+              <div className="promo-sparkle promo-sparkle-3">✦</div>
+            </div>
+            <div className="promo-text-content">
+              <div className="promo-badge">
+                <span className="promo-badge-icon">🎁</span>
+                <span>Limited Time Bonus</span>
+              </div>
+              <h3 className="promo-title">AI Menu Upload Included!</h3>
+              <p className="promo-description">
+                You're enjoying AI-powered menu uploads as a special bonus. 
+                <strong> Upgrade to Guide</strong> to unlock unlimited uploads and keep this premium feature forever.
+              </p>
+            </div>
+            <Link to="/account" className="promo-cta-button">
+              <span>View Plans</span>
+              <i className="bi bi-arrow-right-circle-fill"></i>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible className="menu-alert">{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible className="menu-alert">{success}</Alert>}

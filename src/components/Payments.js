@@ -8,6 +8,7 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 import activityService from '../services/activityService';
 import { getStripe, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
 import { initializeNotifications, notifyPayments, unlockAudio } from '../services/notificationService';
+import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './Payments.css';
 
@@ -171,6 +172,10 @@ const Payments = () => {
   const [selectedOnlineOrder, setSelectedOnlineOrder] = useState(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState(''); // For reimbursement search
   const [onlineOrderPaymentMethod, setOnlineOrderPaymentMethod] = useState('cash'); // Payment method for pay-at-store orders
+
+  // Fullscreen mode
+  const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
+  const paymentsContainerRef = useRef(null);
 
   // Payment details
   const [subtotal, setSubtotal] = useState(0);
@@ -1144,7 +1149,7 @@ const Payments = () => {
   };
 
   return (
-    <Container fluid className="payments-container">
+    <Container fluid className={`payments-container ${isFullscreen ? 'fullscreen-mode' : ''}`} ref={paymentsContainerRef}>
       {/* Page Header */}
       <div className="page-header-gradient">
         <div className="header-content">
@@ -1175,6 +1180,19 @@ const Payments = () => {
             </Badge>
           )}
         </div>
+        {/* Fullscreen Toggle */}
+        {isFullscreenAvailable && (
+          <Button
+            variant={isFullscreen ? "light" : "outline-light"}
+            size="sm"
+            onClick={() => toggleFullscreen(paymentsContainerRef.current)}
+            className="ms-2"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            <i className={`bi ${isFullscreen ? 'bi-fullscreen-exit' : 'bi-fullscreen'}`}></i>
+            {isFullscreen ? ' Exit' : ' Fullscreen'}
+          </Button>
+        )}
       </div>
 
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}

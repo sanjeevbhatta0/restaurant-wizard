@@ -52,6 +52,10 @@ const Account = () => {
   // Sidebar navigation
   const [activeSection, setActiveSection] = useState('account');
 
+  // Plan change modal state
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [pendingPlanChange, setPendingPlanChange] = useState(null);
+
   useEffect(() => {
     if (!currentUser?.uid) return;
 
@@ -601,42 +605,50 @@ const Account = () => {
 
         // All tier keys in order
         const allTiers = ['ally', 'guide', 'chief', 'elder'];
+        const billingOptions = [
+          { value: 'annual', label: 'Annual', discount: 'Best value - No markup', savings: 0 },
+          { value: 'quarterly', label: 'Quarterly', discount: '+10% markup', savings: 10 },
+          { value: 'monthly', label: 'Monthly', discount: '+20% markup', savings: 20 }
+        ];
 
-        const handleChangePlan = async (newTier) => {
-          if (newTier === currentTier) return;
+        const handleChangeBillingCycle = (newCycle) => {
+          if (newCycle === billingCycle) return;
+
+          const newPrice = calculatePrice(currentTier, newCycle);
+          const newCycleLabel = billingOptions.find(b => b.value === newCycle)?.label || newCycle;
+
+          setPendingPlanChange({
+            type: 'billing',
+            newTier: currentTier,
+            newCycle: newCycle,
+            cycleLabel: newCycleLabel,
+            newPrice: newPrice,
+            isUpgrade: false,
+            action: 'change billing cycle'
+          });
+          setShowPlanModal(true);
+        };
+
+        const handleChangePlan = (newTier, selectedBillingCycle = billingCycle) => {
+          if (newTier === currentTier && selectedBillingCycle === billingCycle) return;
 
           const isUpgrade = TIER_FEATURES[newTier].level > TIER_FEATURES[currentTier].level;
-          const action = isUpgrade ? 'upgrade' : 'downgrade';
-          const newPrice = calculatePrice(newTier, billingCycle);
+          const action = newTier === currentTier ? 'update billing for' : (isUpgrade ? 'upgrade' : 'downgrade');
+          const newPrice = calculatePrice(newTier, selectedBillingCycle);
+          const cycleLabel = billingOptions.find(b => b.value === selectedBillingCycle)?.label || selectedBillingCycle;
 
-          // TODO: Implement actual Stripe plan change
-          // For now, show confirmation and update Firestore directly
-          const confirmed = window.confirm(
-            `Are you sure you want to ${action} to the ${TIER_FEATURES[newTier].name} plan?\n\n` +
-            `New price: $${newPrice}/month per location\n` +
-            `Total: $${(parseFloat(newPrice) * locationCount).toFixed(2)}/month\n\n` +
-            (isUpgrade
-              ? 'You will be charged the difference for the remainder of your billing period.'
-              : 'Your new rate will apply at the start of your next billing period.')
-          );
-
-          if (confirmed) {
-            try {
-              setSaving(true);
-              // Update subscription tier in Firestore
-              // TODO: Replace with proper Stripe subscription update
-              await updateDoc(doc(db, 'restaurants', currentUser.uid), {
-                'subscription.tier': newTier,
-                'subscription.updatedAt': new Date().toISOString()
-              });
-              setSuccess(`Successfully ${action}d to ${TIER_FEATURES[newTier].name} plan!`);
-            } catch (error) {
-              setError(`Failed to ${action} plan: ${error.message}`);
-            } finally {
-              setSaving(false);
-            }
-          }
+          setPendingPlanChange({
+            type: 'plan',
+            newTier: newTier,
+            newCycle: selectedBillingCycle,
+            cycleLabel: cycleLabel,
+            newPrice: newPrice,
+            isUpgrade: isUpgrade,
+            action: action
+          });
+          setShowPlanModal(true);
         };
+
 
         return (
           <Card className="account-card">
@@ -837,43 +849,165 @@ const Account = () => {
                 </div>
               )}
 
+              {/* Billing Cycle Selector */}
+              <div style={{ 
+                marginTop: '24px', 
+                paddingTop: '24px', 
+                borderTop: '1px solid #e5e7eb'
+              }}>
+                <h5 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="bi bi-calendar3" style={{ color: '#667eea' }}></i>
+                  Billing Cycle
+                </h5>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '12px',
+                  marginBottom: '20px'
+                }}>
+                  {billingOptions.map((option) => {
+                    const isSelected = billingCycle === option.value;
+                    const optionPrice = calculatePrice(currentTier, option.value);
+                    return (
+                      <div
+                        key={option.value}
+                        onClick={() => !isSelected && !saving && handleChangeBillingCycle(option.value)}
+                        style={{
+                          position: 'relative',
+                          padding: '16px',
+                          borderRadius: '12px',
+                          border: isSelected ? '2px solid #667eea' : '1px solid #e5e7eb',
+                          background: isSelected ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)' : 'white',
+                          cursor: isSelected ? 'default' : 'pointer',
+                          transition: 'all 0.2s ease',
+                          textAlign: 'center'
+                        }}
+                      >
+                        {option.value === 'annual' && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '-10px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                            color: 'white',
+                            padding: '2px 10px',
+                            borderRadius: '10px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Best Value
+                          </div>
+                        )}
+                        <div style={{ 
+                          fontWeight: 700, 
+                          fontSize: '1rem',
+                          color: isSelected ? '#667eea' : '#1f2937',
+                          marginBottom: '4px'
+                        }}>
+                          {option.label}
+                        </div>
+                        <div style={{ 
+                          fontSize: '1.25rem', 
+                          fontWeight: 800,
+                          color: isSelected ? '#667eea' : '#374151'
+                        }}>
+                          ${optionPrice}
+                          <span style={{ fontSize: '0.75rem', fontWeight: 400, color: '#666' }}>/mo</span>
+                        </div>
+                        <div style={{ 
+                          fontSize: '0.75rem', 
+                          color: option.value === 'annual' ? '#22c55e' : '#f59e0b',
+                          fontWeight: 500,
+                          marginTop: '4px'
+                        }}>
+                          {option.discount}
+                        </div>
+                        {isSelected && (
+                          <div style={{
+                            marginTop: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            color: '#667eea',
+                            fontSize: '0.8rem',
+                            fontWeight: 600
+                          }}>
+                            <i className="bi bi-check-circle-fill"></i>
+                            Current
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Billing Info */}
-              <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid #e5e7eb' }}>
-                <h5 style={{ marginBottom: '16px' }}>Billing Information</h5>
-                <Table size="sm" borderless>
+              <div style={{ 
+                marginTop: '16px', 
+                padding: '20px',
+                background: '#f8fafc',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb'
+              }}>
+                <h5 style={{ marginBottom: '16px', fontSize: '0.95rem', color: '#374151' }}>
+                  <i className="bi bi-receipt" style={{ marginRight: '8px', color: '#667eea' }}></i>
+                  Billing Summary
+                </h5>
+                <Table size="sm" borderless style={{ marginBottom: 0 }}>
                   <tbody>
                     <tr>
-                      <td style={{ color: '#666' }}>Billing Cycle</td>
-                      <td style={{ fontWeight: 600, textTransform: 'capitalize' }}>{billingCycle}</td>
+                      <td style={{ color: '#666', padding: '8px 0' }}>Current Plan</td>
+                      <td style={{ fontWeight: 600, textAlign: 'right', padding: '8px 0' }}>
+                        {tierInfo?.icon} {tierInfo?.name}
+                      </td>
                     </tr>
                     <tr>
-                      <td style={{ color: '#666' }}>Locations</td>
-                      <td style={{ fontWeight: 600 }}>{locationCount}</td>
+                      <td style={{ color: '#666', padding: '8px 0' }}>Billing Cycle</td>
+                      <td style={{ fontWeight: 600, textTransform: 'capitalize', textAlign: 'right', padding: '8px 0' }}>{billingCycle}</td>
                     </tr>
                     <tr>
-                      <td style={{ color: '#666' }}>Price per Location</td>
-                      <td style={{ fontWeight: 600 }}>${currentPrice}/month</td>
+                      <td style={{ color: '#666', padding: '8px 0' }}>Locations</td>
+                      <td style={{ fontWeight: 600, textAlign: 'right', padding: '8px 0' }}>{locationCount}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ color: '#666', padding: '8px 0' }}>Price per Location</td>
+                      <td style={{ fontWeight: 600, textAlign: 'right', padding: '8px 0' }}>${currentPrice}/month</td>
                     </tr>
                     {billingCycle !== 'annual' && (
                       <tr>
-                        <td style={{ color: '#666' }}>Billing Adjustment</td>
-                        <td style={{ fontWeight: 600, color: '#ef4444' }}>
+                        <td style={{ color: '#666', padding: '8px 0' }}>Billing Adjustment</td>
+                        <td style={{ fontWeight: 600, color: '#f59e0b', textAlign: 'right', padding: '8px 0' }}>
                           +{((BILLING_MULTIPLIERS[billingCycle] - 1) * 100).toFixed(0)}%
                         </td>
                       </tr>
                     )}
-                    <tr>
-                      <td style={{ color: '#666' }}>Total Monthly</td>
-                      <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>
-                        ${(parseFloat(currentPrice) * locationCount).toFixed(2)}/month
+                    <tr style={{ borderTop: '1px solid #e5e7eb' }}>
+                      <td style={{ color: '#374151', fontWeight: 600, padding: '12px 0 8px' }}>Total Monthly</td>
+                      <td style={{ fontWeight: 800, fontSize: '1.2rem', color: '#667eea', textAlign: 'right', padding: '12px 0 8px' }}>
+                        ${(parseFloat(currentPrice) * locationCount).toFixed(2)}
                       </td>
                     </tr>
                   </tbody>
                 </Table>
-                <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '12px' }}>
-                  <i className="bi bi-info-circle"></i> Plan changes take effect immediately.
-                  Upgrades are prorated, downgrades apply at next billing period.
-                </p>
+                <div style={{ 
+                  marginTop: '12px', 
+                  padding: '10px 12px', 
+                  background: 'rgba(102, 126, 234, 0.08)', 
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px'
+                }}>
+                  <i className="bi bi-info-circle" style={{ color: '#667eea', marginTop: '2px' }}></i>
+                  <p style={{ fontSize: '0.8rem', color: '#555', margin: 0, lineHeight: 1.5 }}>
+                    Plan changes take effect immediately. Upgrades are prorated, downgrades and billing cycle changes apply at next billing period.
+                  </p>
+                </div>
               </div>
             </Card.Body>
           </Card>
@@ -1026,6 +1160,302 @@ const Account = () => {
             {saving ? 'Saving...' : (editingLocation ? 'Update' : 'Add')} Location
           </Button>
         </Modal.Footer>
+      </Modal>
+
+      {/* Plan Change Modal */}
+      <Modal 
+        show={showPlanModal} 
+        onHide={() => {
+          setShowPlanModal(false);
+          setPendingPlanChange(null);
+        }}
+        centered
+        className="plan-change-modal"
+      >
+        <div style={{
+          background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          border: 'none'
+        }}>
+          {/* Modal Header with Glow Effect */}
+          <div style={{
+            position: 'relative',
+            padding: '32px 32px 24px',
+            textAlign: 'center',
+            overflow: 'hidden'
+          }}>
+            {/* Background Glow */}
+            <div style={{
+              position: 'absolute',
+              top: '-50%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '300px',
+              height: '300px',
+              background: pendingPlanChange?.isUpgrade 
+                ? 'radial-gradient(circle, rgba(34, 197, 94, 0.3) 0%, transparent 70%)'
+                : 'radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%)',
+              pointerEvents: 'none'
+            }} />
+            
+            {/* Icon */}
+            <div style={{
+              width: '80px',
+              height: '80px',
+              margin: '0 auto 20px',
+              background: pendingPlanChange?.isUpgrade
+                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: pendingPlanChange?.isUpgrade
+                ? '0 8px 32px rgba(34, 197, 94, 0.4)'
+                : '0 8px 32px rgba(102, 126, 234, 0.4)',
+              position: 'relative',
+              zIndex: 1
+            }}>
+              <i 
+                className={`bi ${pendingPlanChange?.isUpgrade ? 'bi-rocket-takeoff-fill' : pendingPlanChange?.type === 'billing' ? 'bi-calendar-check-fill' : 'bi-arrow-down-circle-fill'}`}
+                style={{ fontSize: '36px', color: 'white' }}
+              />
+            </div>
+
+            {/* Title */}
+            <h3 style={{
+              color: 'white',
+              fontSize: '1.5rem',
+              fontWeight: 800,
+              margin: '0 0 8px',
+              position: 'relative',
+              zIndex: 1
+            }}>
+              {pendingPlanChange?.type === 'billing' 
+                ? 'Change Billing Cycle'
+                : pendingPlanChange?.isUpgrade 
+                  ? 'Upgrade Your Plan' 
+                  : 'Downgrade Plan'}
+            </h3>
+            <p style={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              margin: 0,
+              fontSize: '0.95rem',
+              position: 'relative',
+              zIndex: 1
+            }}>
+              {pendingPlanChange?.type === 'billing'
+                ? 'Review your new billing cycle'
+                : `You're about to ${pendingPlanChange?.action} to ${TIER_FEATURES[pendingPlanChange?.newTier]?.name}`}
+            </p>
+          </div>
+
+          {/* Plan Details Card */}
+          <div style={{ padding: '0 32px 24px' }}>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '16px',
+              padding: '24px',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              {/* New Plan Info */}
+              {pendingPlanChange?.type === 'plan' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '16px',
+                  marginBottom: '20px',
+                  paddingBottom: '20px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    borderRadius: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '28px'
+                  }}>
+                    {TIER_FEATURES[pendingPlanChange?.newTier]?.icon}
+                  </div>
+                  <div>
+                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.8rem', marginBottom: '2px' }}>
+                      New Plan
+                    </div>
+                    <div style={{ color: 'white', fontSize: '1.25rem', fontWeight: 700 }}>
+                      {TIER_FEATURES[pendingPlanChange?.newTier]?.name}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pricing Details */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem' }}>Billing Cycle</span>
+                  <span style={{ 
+                    color: 'white', 
+                    fontWeight: 600,
+                    background: 'rgba(102, 126, 234, 0.2)',
+                    padding: '4px 12px',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem'
+                  }}>
+                    {pendingPlanChange?.cycleLabel}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem' }}>Price per Location</span>
+                  <span style={{ color: 'white', fontWeight: 600 }}>${pendingPlanChange?.newPrice}/mo</span>
+                </div>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  paddingTop: '12px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                  marginTop: '4px'
+                }}>
+                  <span style={{ color: 'white', fontSize: '1rem', fontWeight: 600 }}>Total Monthly</span>
+                  <span style={{ 
+                    color: pendingPlanChange?.isUpgrade ? '#22c55e' : '#a5b4fc', 
+                    fontWeight: 800, 
+                    fontSize: '1.5rem' 
+                  }}>
+                    ${(parseFloat(pendingPlanChange?.newPrice || 0) * (subscription?.locationCount || 1)).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Info Note */}
+            <div style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              background: 'rgba(245, 158, 11, 0.1)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              border: '1px solid rgba(245, 158, 11, 0.2)'
+            }}>
+              <i className="bi bi-info-circle-fill" style={{ color: '#f59e0b', marginTop: '2px' }} />
+              <p style={{ 
+                color: 'rgba(255, 255, 255, 0.8)', 
+                fontSize: '0.8rem', 
+                margin: 0,
+                lineHeight: 1.5
+              }}>
+                {pendingPlanChange?.isUpgrade
+                  ? 'You will be charged the prorated difference for the remainder of your current billing period.'
+                  : 'Your new rate will apply at the start of your next billing period.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{
+            padding: '20px 32px 32px',
+            display: 'flex',
+            gap: '12px'
+          }}>
+            <Button
+              variant="outline-light"
+              onClick={() => {
+                setShowPlanModal(false);
+                setPendingPlanChange(null);
+              }}
+              style={{
+                flex: 1,
+                padding: '14px',
+                borderRadius: '12px',
+                fontWeight: 600,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'transparent',
+                color: 'rgba(255, 255, 255, 0.8)'
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                // Call the confirm function from subscription section
+                const confirmBtn = document.getElementById('confirm-plan-change-btn');
+                if (confirmBtn) confirmBtn.click();
+              }}
+              disabled={saving}
+              style={{
+                flex: 2,
+                padding: '14px',
+                borderRadius: '12px',
+                fontWeight: 700,
+                border: 'none',
+                background: pendingPlanChange?.isUpgrade
+                  ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                  : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                boxShadow: pendingPlanChange?.isUpgrade
+                  ? '0 4px 20px rgba(34, 197, 94, 0.4)'
+                  : '0 4px 20px rgba(102, 126, 234, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              {saving ? (
+                <>
+                  <Spinner animation="border" size="sm" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <i className={`bi ${pendingPlanChange?.isUpgrade ? 'bi-rocket-takeoff' : 'bi-check-lg'}`} />
+                  {pendingPlanChange?.type === 'billing' 
+                    ? 'Confirm Change'
+                    : pendingPlanChange?.isUpgrade 
+                      ? 'Upgrade Now' 
+                      : 'Confirm Downgrade'}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+        {/* Hidden button to trigger confirm from inside the subscription section */}
+        <button 
+          id="confirm-plan-change-btn" 
+          style={{ display: 'none' }}
+          onClick={async () => {
+            if (!pendingPlanChange) return;
+            try {
+              setSaving(true);
+              setShowPlanModal(false);
+              if (pendingPlanChange.type === 'billing') {
+                await updateDoc(doc(db, 'restaurants', currentUser.uid), {
+                  'subscription.billingCycle': pendingPlanChange.newCycle,
+                  'subscription.updatedAt': new Date().toISOString()
+                });
+                setSuccess(`Billing cycle changed to ${pendingPlanChange.cycleLabel}!`);
+              } else {
+                await updateDoc(doc(db, 'restaurants', currentUser.uid), {
+                  'subscription.tier': pendingPlanChange.newTier,
+                  'subscription.billingCycle': pendingPlanChange.newCycle,
+                  'subscription.updatedAt': new Date().toISOString()
+                });
+                const actionText = pendingPlanChange.action === 'update billing for' ? 'updated' : pendingPlanChange.action + 'd';
+                setSuccess(`Successfully ${actionText} to ${TIER_FEATURES[pendingPlanChange.newTier].name} plan!`);
+              }
+            } catch (error) {
+              setError(`Failed to ${pendingPlanChange.action}: ${error.message}`);
+            } finally {
+              setSaving(false);
+              setPendingPlanChange(null);
+            }
+          }}
+        />
       </Modal>
     </Container>
   );

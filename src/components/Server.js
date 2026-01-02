@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Container, Card, Button, Badge, Alert, Spinner } from 'react-bootstrap';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -7,6 +7,7 @@ import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
 import { initializeNotifications, notifyServer, unlockAudio } from '../services/notificationService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
+import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './Server.css';
 
@@ -23,19 +24,23 @@ const Server = () => {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
   const [wakeLockActive, setWakeLockActive] = useState(false);
 
+  // Fullscreen mode
+  const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
+  const serverContainerRef = useRef(null);
+
   // Enable notifications handler (with optional wake lock for tablets)
   const enableNotifications = useCallback(async () => {
     unlockAudio();
     const enabled = await initializeNotifications();
     setNotificationsEnabled(enabled);
     setShowNotificationPrompt(false);
-    
+
     // Enable wake lock for tablets (optional for servers on mobile)
     if (isWakeLockSupported()) {
       await initializeWakeLock(setWakeLockActive);
     }
   }, []);
-  
+
   // Cleanup wake lock on unmount
   useEffect(() => {
     return () => {
@@ -73,7 +78,7 @@ const Server = () => {
 
     // Query for orders that are preparing or ready
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    
+
     // Build query with consistent locationId filtering
     let q;
     try {
@@ -162,7 +167,7 @@ const Server = () => {
       console.error('Error fetching orders:', error);
       console.error('Error code:', error.code);
       console.error('Error message:', error.message);
-      
+
       // Check if it's an index error
       if (error.code === 'failed-precondition') {
         console.error('Missing Firestore index. Create index with:', {
@@ -189,7 +194,7 @@ const Server = () => {
       timestamp: new Date()
     };
     setNotifications(prev => [notification, ...prev].slice(0, 5)); // Keep last 5
-    
+
     // Auto-remove after 5 seconds
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== notification.id));
@@ -215,20 +220,20 @@ const Server = () => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
-      
+
       // Get order data for activity logging
       const order = orders.find(o => o.id === orderId);
-      
+
       await updateDoc(orderRef, {
         status: 'served',
         updatedAt: new Date(),
         servedAt: new Date()
       });
-      
+
       // Log activity
       if (order) {
-        const tableNumber = Array.isArray(order.tableNumber) 
-          ? order.tableNumber.join(' and ') 
+        const tableNumber = Array.isArray(order.tableNumber)
+          ? order.tableNumber.join(' and ')
           : order.tableNumber;
         await activityService.logOrderActivity(currentUser.uid, 'status_changed', {
           orderNumber: order.orderNumber || orderId,
@@ -238,9 +243,9 @@ const Server = () => {
           locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
         });
       }
-      
+
       addNotification('Order marked as served', 'success');
-      
+
       // Remove from claimed orders
       const newClaims = { ...claimedOrders };
       delete newClaims[orderId];
@@ -332,7 +337,7 @@ const Server = () => {
   }
 
   return (
-    <Container fluid className="server-container">
+    <Container fluid className={`server-container ${isFullscreen ? 'fullscreen-mode' : ''}`} ref={serverContainerRef}>
       <div className="page-header-gradient">
         <div className="header-content">
           <i className="bi bi-person-badge header-icon"></i>
@@ -353,9 +358,9 @@ const Server = () => {
               <i className="bi bi-bell-fill"></i> Alerts + Vibration
             </Badge>
           ) : showNotificationPrompt ? (
-            <Button 
-              variant="warning" 
-              size="sm" 
+            <Button
+              variant="warning"
+              size="sm"
               onClick={enableNotifications}
               className="enable-notifications-btn"
             >
@@ -367,14 +372,27 @@ const Server = () => {
             </Badge>
           )}
         </div>
+        {/* Fullscreen Toggle */}
+        {isFullscreenAvailable && (
+          <Button
+            variant={isFullscreen ? "light" : "outline-light"}
+            size="sm"
+            onClick={() => toggleFullscreen(serverContainerRef.current)}
+            className="ms-2"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            <i className={`bi ${isFullscreen ? 'bi-fullscreen-exit' : 'bi-fullscreen'}`}></i>
+            {isFullscreen ? ' Exit' : ' Fullscreen'}
+          </Button>
+        )}
       </div>
 
       {/* Notifications */}
       {notifications.length > 0 && (
         <div className="server-notifications">
           {notifications.map(notification => (
-            <Alert 
-              key={notification.id} 
+            <Alert
+              key={notification.id}
               variant={notification.type}
               className={`server-notification ${notification.urgent ? 'urgent' : ''}`}
               dismissible
@@ -405,7 +423,7 @@ const Server = () => {
                   const timeInStatus = getTimeInStatus(order);
                   const orderTypeInfo = getOrderTypeInfo(order.orderType);
                   const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
-                  
+
                   return (
                     <Card key={order.id} className="server-order-card urgent-card">
                       <Card.Header className="server-order-header urgent-header">
@@ -488,7 +506,7 @@ const Server = () => {
                   const timeInStatus = getTimeInStatus(order);
                   const orderTypeInfo = getOrderTypeInfo(order.orderType);
                   const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
-                  
+
                   return (
                     <Card key={order.id} className="server-order-card claimed-card">
                       <Card.Header className="server-order-header">
@@ -562,7 +580,7 @@ const Server = () => {
                   const timeInStatus = getTimeInStatus(order);
                   const orderTypeInfo = getOrderTypeInfo(order.orderType);
                   const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
-                  
+
                   return (
                     <Card key={order.id} className={`server-order-card ${order.status === 'ready' ? 'ready-unclaimed' : ''}`}>
                       <Card.Header className={`server-order-header ${order.status === 'ready' ? 'ready-header' : ''}`}>

@@ -405,3 +405,214 @@
     min-width: 150px;
   }
 }
+
+/* Premium Promo Banner Styles */
+.premium-promo-banner {
+  position: relative;
+  margin: 16px 20px;
+  padding: 24px 32px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 
+    0 10px 40px rgba(102, 126, 234, 0.2),
+    0 2px 10px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.promo-glow {
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(102, 126, 234, 0.4) 0%, transparent 70%);
+  pointer-events: none;
+  animation: glow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.promo-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  z-index: 1;
+}
+
+.promo-icon-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.promo-icon-bg {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+}
+
+.promo-icon-bg i {
+  font-size: 28px;
+  color: white;
+}
+
+.promo-sparkle {
+  position: absolute;
+  color: #ffd700;
+  font-size: 14px;
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+.promo-sparkle-1 {
+  top: -8px;
+  right: -8px;
+  animation-delay: 0s;
+}
+
+.promo-sparkle-2 {
+  bottom: -4px;
+  left: -10px;
+  animation-delay: 0.6s;
+  font-size: 10px;
+}
+
+.promo-sparkle-3 {
+  top: 50%;
+  right: -16px;
+  animation-delay: 1.2s;
+  font-size: 12px;
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.promo-text-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.promo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.promo-badge-icon {
+  font-size: 14px;
+}
+
+.promo-title {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: white;
+  letter-spacing: -0.5px;
+}
+
+.promo-description {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+}
+
+.promo-description strong {
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+.promo-cta-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+  flex-shrink: 0;
+}
+
+.promo-cta-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5);
+  color: white;
+  background: linear-gradient(135deg, #7c8ef5 0%, #8b5cb8 100%);
+}
+
+.promo-cta-button i {
+  font-size: 18px;
+  transition: transform 0.3s ease;
+}
+
+.promo-cta-button:hover i {
+  transform: translateX(4px);
+}
+
+/* Responsive adjustments for promo banner */
+@media (max-width: 768px) {
+  .premium-promo-banner {
+    margin: 12px 16px;
+    padding: 20px;
+  }
+
+  .promo-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
+
+  .promo-icon-bg {
+    width: 56px;
+    height: 56px;
+  }
+
+  .promo-icon-bg i {
+    font-size: 24px;
+  }
+
+  .promo-title {
+    font-size: 18px;
+  }
+
+  .promo-description {
+    font-size: 13px;
+  }
+
+  .promo-cta-button {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 24px;
+  }
+
+  .promo-glow {
+    display: none;
+  }
+}

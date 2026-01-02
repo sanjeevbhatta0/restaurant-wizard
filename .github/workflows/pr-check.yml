@@ -1,0 +1,59 @@
+# PR Validation Pipeline
+# Runs on every pull request to validate the build before merging
+
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # Step 4: Install functions dependencies
+      - name: Install functions dependencies
+        run: cd functions && npm ci
+
+      # Step 5: Build the React application (validates that build succeeds)
+      - name: Build React app
+        run: npm run build
+        env:
+          CI: false  # Prevents treating warnings as errors
+
+      # Step 6: Run tests (if any)
+      - name: Run tests
+        run: npm test -- --watchAll=false --passWithNoTests
+        env:
+          CI: true
+
+      # Step 7: Create preview deployment (optional)
+      - name: Deploy Preview to Firebase
+        if: github.event_name == 'pull_request'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: restaurant-portal-6b147
+          # Creates a preview URL for the PR
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
