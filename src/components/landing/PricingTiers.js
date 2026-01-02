@@ -260,7 +260,7 @@ const PricingTiers = () => {
                 <span className="hard-cap-badge">Hard cap</span>
               )}
               {ORDER_LIMITS[key].overageRate > 0 && (
-                <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage</span>
+                <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage per order</span>
               )}
             </div>
 

@@ -76,7 +76,7 @@ const LandingPage = () => {
             <section className="hero-section" id="hero">
                 <div className="hero-content">
                     <div className="hero-text">
-                        <div className="hero-badge">🎯 Native American-Inspired Restaurant Platform</div>
+                        <div className="hero-badge">✨ Guided by Wisdom, Powered by AI</div>
                         <h1 className="hero-title">
                             Manage Your Restaurant<br />
                             Like a <span>True Leader</span>
