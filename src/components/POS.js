@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Spinner, Alert, Button, Badge } from 'react-bootstrap';
 import {
   collection,
@@ -11,6 +11,7 @@ import { useMenu } from '../contexts/MenuContext';
 import TableSelectionModal from './TableSelectionModal';
 import activityService from '../services/activityService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
+import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './POS.css';
 
@@ -28,6 +29,10 @@ const POS = () => {
   const [showWakeLockPrompt, setShowWakeLockPrompt] = useState(true);
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
+
+  // Fullscreen mode
+  const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
+  const posWrapperRef = useRef(null);
 
   // Enable wake lock to keep POS screen on
   const enableWakeLock = useCallback(async () => {
@@ -248,7 +253,7 @@ const POS = () => {
   }
 
   return (
-    <div className="pos-wrapper">
+    <div className={`pos-wrapper ${isFullscreen ? 'fullscreen-mode' : ''}`} ref={posWrapperRef}>
       {/* Page Header */}
       <div className="page-header-gradient">
         <div className="header-content">
@@ -274,6 +279,19 @@ const POS = () => {
               <i className="bi bi-display"></i> Keep Screen On
             </Button>
           ) : null}
+          {/* Fullscreen Toggle */}
+          {isFullscreenAvailable && (
+            <Button
+              variant={isFullscreen ? "light" : "outline-light"}
+              size="sm"
+              onClick={() => toggleFullscreen(posWrapperRef.current)}
+              className="ms-2"
+              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+            >
+              <i className={`bi ${isFullscreen ? 'bi-fullscreen-exit' : 'bi-fullscreen'}`}></i>
+              {isFullscreen ? ' Exit Fullscreen' : ' Fullscreen'}
+            </Button>
+          )}
         </div>
       </div>
 

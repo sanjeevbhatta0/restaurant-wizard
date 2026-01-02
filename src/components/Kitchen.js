@@ -7,6 +7,7 @@ import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
 import { initializeNotifications, notifyKitchen, unlockAudio } from '../services/notificationService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
+import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './Kitchen.css';
 
@@ -20,7 +21,11 @@ const Kitchen = () => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(true);
   const [wakeLockActive, setWakeLockActive] = useState(false);
-  
+
+  // Fullscreen mode
+  const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
+  const kitchenContainerRef = useRef(null);
+
   // Track previous order IDs to detect new orders
   const prevOrderIds = useRef(new Set());
   const isInitialLoad = useRef(true);
@@ -31,7 +36,7 @@ const Kitchen = () => {
     const enabled = await initializeNotifications();
     setNotificationsEnabled(enabled);
     setShowNotificationPrompt(false);
-    
+
     // Also enable wake lock to keep screen on
     if (isWakeLockSupported()) {
       const wakeLockEnabled = await initializeWakeLock(setWakeLockActive);
@@ -39,12 +44,12 @@ const Kitchen = () => {
         console.log('Kitchen: Screen will stay on');
       }
     }
-    
+
     if (enabled) {
       console.log('Kitchen notifications enabled!');
     }
   }, []);
-  
+
   // Cleanup wake lock on unmount
   useEffect(() => {
     return () => {
@@ -64,7 +69,7 @@ const Kitchen = () => {
 
     // Query for orders that are new (from website), sent to kitchen, or being prepared
     const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
-    
+
     // Build query based on location
     // Note: For single-location, we still filter by locationId (currentUser.uid) to ensure consistency
     // Include 'new' status to capture website orders
@@ -124,11 +129,11 @@ const Kitchen = () => {
         const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return aTime - bTime; // Oldest first
       });
-      
+
       // Detect new orders and trigger notifications
       if (!isInitialLoad.current) {
         const currentOrderIds = new Set(ordersData.map(o => o.id));
-        
+
         // Find new orders (in current but not in previous)
         ordersData.forEach(order => {
           if (!prevOrderIds.current.has(order.id)) {
@@ -141,14 +146,14 @@ const Kitchen = () => {
             );
           }
         });
-        
+
         prevOrderIds.current = currentOrderIds;
       } else {
         // Initial load - just record the IDs without notifying
         prevOrderIds.current = new Set(ordersData.map(o => o.id));
         isInitialLoad.current = false;
       }
-      
+
       setOrders(ordersData);
       setLoading(false);
       setError(''); // Clear any previous errors
@@ -156,13 +161,13 @@ const Kitchen = () => {
       console.error('Error fetching orders:', error);
       console.error('Error code:', error.code);
       console.error('Error message:', error.message);
-      
+
       // Check if it's an index error
       if (error.code === 'failed-precondition') {
         // Extract index link from error message if available
         const indexLinkMatch = error.message?.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
         const indexLink = indexLinkMatch ? indexLinkMatch[0] : null;
-        
+
         if (indexLink) {
           console.error('Missing Firestore index. Click here to create it:', indexLink);
           setError(`Firestore index required. Click this link to create it: ${indexLink} (Also check browser console)`);
@@ -191,26 +196,26 @@ const Kitchen = () => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
       const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
-      
+
       // Get order data for activity logging
       const order = orders.find(o => o.id === orderId);
-      
+
       const updateData = {
         status: newStatus,
         updatedAt: new Date()
       };
-      
+
       // Set readyAt timestamp when marking as ready
       if (newStatus === 'ready') {
         updateData.readyAt = new Date();
       }
-      
+
       await updateDoc(orderRef, updateData);
-      
+
       // Log activity
       if (order) {
-        const tableNumber = Array.isArray(order.tableNumber) 
-          ? order.tableNumber.join(' and ') 
+        const tableNumber = Array.isArray(order.tableNumber)
+          ? order.tableNumber.join(' and ')
           : order.tableNumber;
         await activityService.logOrderActivity(currentUser.uid, 'status_changed', {
           orderNumber: order.orderNumber || orderId,
@@ -248,11 +253,11 @@ const Kitchen = () => {
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins === 1) return '1 minute ago';
     if (diffMins < 60) return `${diffMins} minutes ago`;
-    
+
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours === 1) return '1 hour ago';
     return `${diffHours} hours ago`;
@@ -300,7 +305,7 @@ const Kitchen = () => {
   }
 
   return (
-    <Container fluid className="kitchen-container">
+    <Container fluid className={`kitchen-container ${isFullscreen ? 'fullscreen-mode' : ''}`} ref={kitchenContainerRef}>
       <div className="page-header-gradient">
         <div className="header-content">
           <i className="bi bi-egg-fried header-icon"></i>
@@ -321,9 +326,9 @@ const Kitchen = () => {
               <i className="bi bi-bell-fill"></i> Alerts On
             </Badge>
           ) : showNotificationPrompt ? (
-            <Button 
-              variant="warning" 
-              size="sm" 
+            <Button
+              variant="warning"
+              size="sm"
               onClick={enableNotifications}
               className="enable-notifications-btn"
             >
@@ -335,6 +340,19 @@ const Kitchen = () => {
             </Badge>
           )}
         </div>
+        {/* Fullscreen Toggle */}
+        {isFullscreenAvailable && (
+          <Button
+            variant={isFullscreen ? "light" : "outline-light"}
+            size="sm"
+            onClick={() => toggleFullscreen(kitchenContainerRef.current)}
+            className="ms-2"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            <i className={`bi ${isFullscreen ? 'bi-fullscreen-exit' : 'bi-fullscreen'}`}></i>
+            {isFullscreen ? ' Exit' : ' Fullscreen'}
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -361,7 +379,7 @@ const Kitchen = () => {
             const isPreparing = order.status === 'preparing';
             const orderTypeInfo = getOrderTypeInfo(order.orderType);
             const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
-            
+
             return (
               <Card key={order.id} className={`kitchen-order-card ${isPreparing ? 'preparing' : ''}`}>
                 <Card.Header className="kitchen-order-header">
