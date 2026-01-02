@@ -117,7 +117,7 @@ export const BILLING_MULTIPLIERS = {
 
 // Order volume limits per tier (per billing cycle)
 export const ORDER_LIMITS = {
-    scout: { limit: 100, overageRate: 0, hardCap: true },  // 100 orders, hard cap - no overage
+    scout: { limit: 75, overageRate: 0, hardCap: true }, // Changed from 100 to 75, hard capped  // 100 orders, hard cap - no overage
     ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order overage
     guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order overage
     chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order overage
@@ -126,7 +126,7 @@ export const ORDER_LIMITS = {
 
 // Menu limits per tier
 export const MENU_LIMITS = {
-    scout: { items: 10, reads: 1000 },  // Free tier limits
+    scout: { items: 10, reads: Infinity }, // Removed menu view limit (was 1000)  // Free tier limits
     ally: { items: Infinity, reads: Infinity },
     guide: { items: Infinity, reads: Infinity },
     chief: { items: Infinity, reads: Infinity },

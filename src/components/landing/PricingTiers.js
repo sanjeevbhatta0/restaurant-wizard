@@ -22,7 +22,7 @@ const BILLING_MULTIPLIERS = {
 
 // Order volume limits per tier (per billing cycle)
 const ORDER_LIMITS = {
-  scout: { limit: 100, overageRate: 0, hardCap: true },  // 100 orders, hard cap
+  scout: { limit: 75, overageRate: 0, hardCap: true },  // 75 orders, hard cap
   ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order
   guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order
   chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order
@@ -42,17 +42,16 @@ const TIER_FEATURES = {
       { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly order taking' },
       { name: 'Kitchen Display', included: true, description: 'Real-time order display' },
       { name: 'Server View', included: true, description: 'Table management' },
-      { name: 'Order Management', included: true, description: 'Up to 100 orders/month' },
+      { name: 'Order Management', included: true, description: 'Up to 75 orders/month' },
       { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
       { name: 'AI Menu Upload', included: false, description: 'Available in Ally tier' },
       { name: 'Basic Analytics', included: false },
       { name: 'Website Builder', included: false },
     ],
     restrictions: [
-      { icon: '📍', text: 'Single location only' },
-      { icon: '🍽️', text: '10 menu items max' },
-      { icon: '📦', text: '100 orders/month' },
-      { icon: '👁️', text: '1,000 menu views/month' },
+      'Single location only',
+      '10 menu items max',
+      '75 orders/month',
     ]
   },
   ally: {
@@ -216,6 +215,13 @@ const PricingTiers = () => {
               <span className="tier-icon">{tier.icon}</span>
               <h3 className="tier-name">{tier.name}</h3>
               <p className="tier-tagline">{tier.tagline}</p>
+              {key === 'scout' && (
+                <div className="order-limit-badge" style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}>
+                  <i className="bi bi-shield-lock" style={{ color: '#64748b' }}></i>
+                  <span>75 orders/month</span>
+                  <span className="overage-rate" style={{ color: '#ef4444', fontSize: '0.7rem' }}>Hard cap</span>
+                </div>
+              )}
             </div>
 
             <div className="pricing-price">
