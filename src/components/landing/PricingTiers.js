@@ -6,6 +6,7 @@ const TRIAL_PERIOD_DAYS = 0;
 
 // Base prices (annual price - this is the advertised price)
 const BASE_PRICES = {
+  scout: 0,  // Free tier
   ally: 29,
   guide: 59,
   chief: 99,
@@ -21,6 +22,7 @@ const BILLING_MULTIPLIERS = {
 
 // Order volume limits per tier (per billing cycle)
 const ORDER_LIMITS = {
+  scout: { limit: 100, overageRate: 0, hardCap: true },  // 100 orders, hard cap
   ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order
   guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order
   chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order
@@ -29,6 +31,30 @@ const ORDER_LIMITS = {
 
 // Feature definitions
 const TIER_FEATURES = {
+  scout: {
+    name: 'Scout',
+    tagline: 'Start for free',
+    description: 'Perfect for testing the waters',
+    icon: '🔍',
+    color: '#6b7280',
+    features: [
+      { name: 'Menu Management', included: true, description: 'Up to 10 menu items' },
+      { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly order taking' },
+      { name: 'Kitchen Display', included: true, description: 'Real-time order display' },
+      { name: 'Server View', included: true, description: 'Table management' },
+      { name: 'Order Management', included: true, description: 'Up to 100 orders/month' },
+      { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
+      { name: 'AI Menu Upload', included: false, description: 'Available in Ally tier' },
+      { name: 'Basic Analytics', included: false },
+      { name: 'Website Builder', included: false },
+    ],
+    restrictions: [
+      { icon: '📍', text: 'Single location only' },
+      { icon: '🍽️', text: '10 menu items max' },
+      { icon: '📦', text: '100 orders/month' },
+      { icon: '👁️', text: '1,000 menu views/month' },
+    ]
+  },
   ally: {
     name: 'Ally',
     tagline: 'Start your journey',
@@ -42,6 +68,7 @@ const TIER_FEATURES = {
       { name: 'Server View', included: true, description: 'Table management and order status for servers' },
       { name: 'Order Management', included: true, description: 'Track orders from creation to completion' },
       { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
+      { name: 'AI Menu Upload', included: true, description: 'Limited time bonus!' },
       { name: 'Basic Analytics', included: false, description: 'Available in Guide tier and above' },
       { name: 'Website Builder', included: false },
       { name: 'Website Integration', included: false },
@@ -192,12 +219,21 @@ const PricingTiers = () => {
             </div>
 
             <div className="pricing-price">
-              <span className="currency">$</span>
-              <span className="amount">{calculatePrice(key)}</span>
-              <span className="period">/month</span>
+              {key === 'scout' ? (
+                <>
+                  <span className="amount free">Free</span>
+                  <span className="period">forever</span>
+                </>
+              ) : (
+                <>
+                  <span className="currency">$</span>
+                  <span className="amount">{calculatePrice(key)}</span>
+                  <span className="period">/month</span>
+                </>
+              )}
             </div>
 
-            {billingCycle === 'annual' && (
+            {billingCycle === 'annual' && key !== 'scout' && parseFloat(getAnnualSavings(key)) > 0 && (
               <div className="annual-savings">
                 Save ${getAnnualSavings(key)}/year
               </div>
@@ -211,18 +247,33 @@ const PricingTiers = () => {
               ) : (
                 <span>{ORDER_LIMITS[key].limit.toLocaleString()} orders/month</span>
               )}
+              {ORDER_LIMITS[key].hardCap && (
+                <span className="hard-cap-badge">Hard cap</span>
+              )}
               {ORDER_LIMITS[key].overageRate > 0 && (
                 <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage</span>
               )}
             </div>
 
+            {/* Restrictions for Scout */}
+            {tier.restrictions && (
+              <div className="restrictions-list">
+                {tier.restrictions.map((restriction, idx) => (
+                  <div key={idx} className="restriction-item">
+                    <span className="restriction-icon">{restriction.icon}</span>
+                    <span>{restriction.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <p className="tier-description">{tier.description}</p>
 
             <button
-              className="tier-cta"
+              className={`tier-cta ${key === 'scout' ? 'free-cta' : ''}`}
               onClick={() => handleSelectTier(key)}
             >
-              {TRIAL_PERIOD_DAYS > 0 ? 'Start Free Trial' : 'Get Started'}
+              {key === 'scout' ? 'Start Free' : (TRIAL_PERIOD_DAYS > 0 ? 'Start Free Trial' : 'Get Started')}
             </button>
 
             <ul className="feature-list">
@@ -394,8 +445,55 @@ const PricingTiers = () => {
 
         .pricing-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 1.5rem;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 1.25rem;
+          align-items: stretch;
+        }
+
+        .amount.free {
+          font-size: 2.5rem;
+          background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .free-cta {
+          background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+        }
+
+        .hard-cap-badge {
+          font-size: 0.7rem;
+          background: rgba(239, 68, 68, 0.1);
+          color: #ef4444;
+          padding: 2px 8px;
+          border-radius: 6px;
+          font-weight: 600;
+        }
+
+        .restrictions-list {
+          background: rgba(239, 68, 68, 0.05);
+          border: 1px solid rgba(239, 68, 68, 0.1);
+          border-radius: 10px;
+          padding: 12px;
+          margin-bottom: 1rem;
+        }
+
+        .restriction-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.8rem;
+          color: #666;
+          margin-bottom: 4px;
+        }
+
+        .restriction-item:last-child {
+          margin-bottom: 0;
+        }
+
+        .restriction-icon {
+          font-size: 0.9rem;
         }
 
         .pricing-card {
@@ -407,6 +505,7 @@ const PricingTiers = () => {
           transition: all 0.3s ease;
           display: flex;
           flex-direction: column;
+          height: 100%;
         }
 
         .pricing-card:hover {
@@ -539,6 +638,7 @@ const PricingTiers = () => {
           cursor: pointer;
           transition: all 0.3s ease;
           margin-bottom: 1.5rem;
+          margin-top: auto;
         }
 
         .tier-cta:hover {

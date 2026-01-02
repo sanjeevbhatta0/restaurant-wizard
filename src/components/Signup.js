@@ -55,10 +55,19 @@ const SignupForm = () => {
   const validTier = TIER_FEATURES[selectedTier] ? selectedTier : 'ally';
   const tierInfo = TIER_FEATURES[validTier];
 
-  // Calculate pricing based on locations
+  // Scout tier is free and single-location only
+  const isFreeTier = validTier === 'scout';
+
+  // For scout tier, force single location
+  const effectiveLocationCount = isFreeTier ? 1 : locationCount;
+
+  // Calculate pricing based on locations (0 for scout)
   const pricing = useMemo(() => {
-    return calculateTierPrice(validTier, billingCycle, locationCount);
-  }, [validTier, billingCycle, locationCount]);
+    if (isFreeTier) {
+      return { totalCharge: 0, monthlyPerLocation: 0, billingMonths: 0 };
+    }
+    return calculateTierPrice(validTier, billingCycle, effectiveLocationCount);
+  }, [validTier, billingCycle, effectiveLocationCount, isFreeTier]);
 
   const handleAccountSubmit = async (e) => {
     e.preventDefault();
@@ -79,9 +88,69 @@ const SignupForm = () => {
       return setError('Restaurant name is required');
     }
 
-    // Move to payment step
+    // For free tier, skip payment and create account directly
+    if (isFreeTier) {
+      await handleFreeSignup();
+      return;
+    }
+
+    // Move to payment step for paid tiers
     setError('');
     setStep(2);
+  };
+
+  // Handle free tier signup (no payment required)
+  const handleFreeSignup = async () => {
+    try {
+      setError('');
+      setLoading(true);
+
+      // Create the user account (no payment)
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update the user profile with the username
+      await updateProfile(user, {
+        displayName: username
+      });
+
+      // Calculate subscription period (monthly for free tier)
+      const now = new Date();
+      const periodEnd = new Date(now);
+      periodEnd.setMonth(periodEnd.getMonth() + 1); // Monthly cycle for free tier
+
+      // Store user data with free tier subscription info
+      await setDoc(doc(db, "restaurants", user.uid), {
+        restaurantName: restaurantName,
+        username: username,
+        usernameLower: username.toLowerCase(),
+        email: email,
+        isMultiLocation: false, // Scout tier is single location only
+        locationCount: 1,
+        createdAt: new Date().toISOString(),
+        // Free tier subscription data
+        subscription: {
+          tier: 'scout',
+          status: 'active',
+          billingCycle: 'monthly', // Free tier uses monthly billing cycle for usage tracking
+          locationCount: 1,
+          stripePaymentIntentId: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          currentPeriodStart: now.toISOString(),
+          currentPeriodEnd: periodEnd.toISOString(),
+          amountPaid: 0,
+          createdAt: new Date().toISOString()
+        }
+      });
+
+      navigate('/home');
+    } catch (err) {
+      console.error('Signup error:', err);
+      setError(err.message || 'Failed to complete signup. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePaymentSubmit = async (e) => {
@@ -239,88 +308,129 @@ const SignupForm = () => {
                     <span style={{ opacity: 0.7, fontSize: '0.85rem' }}>Selected Plan:</span>
                     <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>
                       {tierInfo?.icon} {tierInfo?.name}
-                      <Badge
-                        bg="light"
-                        text="dark"
-                        style={{ marginLeft: '8px', fontSize: '0.75rem' }}
-                      >
-                        {billingCycle}
-                      </Badge>
+                      {isFreeTier ? (
+                        <Badge
+                          bg="success"
+                          style={{ marginLeft: '8px', fontSize: '0.75rem' }}
+                        >
+                          FREE
+                        </Badge>
+                      ) : (
+                        <Badge
+                          bg="light"
+                          text="dark"
+                          style={{ marginLeft: '8px', fontSize: '0.75rem' }}
+                        >
+                          {billingCycle}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                      ${pricing.monthlyPerLocation}/mo per location
-                    </div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>
-                      {formatAmount(pricing.totalCharge)}
-                      <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>
-                        {' '}for {pricing.billingMonths} month{pricing.billingMonths > 1 ? 's' : ''}
-                      </span>
-                    </div>
+                    {isFreeTier ? (
+                      <>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#4ade80' }}>
+                          Free
+                        </div>
+                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                          No credit card required
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+                          ${pricing.monthlyPerLocation}/mo per location
+                        </div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>
+                          {formatAmount(pricing.totalCharge)}
+                          <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>
+                            {' '}for {pricing.billingMonths} month{pricing.billingMonths > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Location count adjuster */}
-                <div style={{
-                  marginTop: '12px',
-                  paddingTop: '12px',
-                  borderTop: '1px solid rgba(255,255,255,0.1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <span style={{ fontSize: '0.9rem' }}>Number of Locations:</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setLocationCount(Math.max(1, locationCount - 1))}
-                      disabled={locationCount <= 1}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.2)',
-                        color: 'white',
-                        fontSize: '1.2rem',
-                        cursor: locationCount <= 1 ? 'not-allowed' : 'pointer',
-                        opacity: locationCount <= 1 ? 0.5 : 1
-                      }}
-                    >
-                      −
-                    </button>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 700, minWidth: '32px', textAlign: 'center' }}>
-                      {locationCount}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setLocationCount(locationCount + 1)}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.2)',
-                        color: 'white',
-                        fontSize: '1.2rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                {locationCount > 1 && (
+                {/* Location count adjuster - disabled for scout tier */}
+                {isFreeTier ? (
                   <div style={{
-                    marginTop: '8px',
-                    fontSize: '0.8rem',
-                    opacity: 0.7,
-                    textAlign: 'center'
+                    marginTop: '12px',
+                    paddingTop: '12px',
+                    borderTop: '1px solid rgba(255,255,255,0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
                   }}>
-                    Total: {locationCount} locations × ${pricing.monthlyPerLocation}/mo × {pricing.billingMonths} months = {formatAmount(pricing.totalCharge)}
+                    <span style={{ fontSize: '0.9rem' }}>Number of Locations:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '1.2rem', fontWeight: 700 }}>1</span>
+                      <Badge bg="secondary" style={{ fontSize: '0.7rem' }}>Single location only</Badge>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    <div style={{
+                      marginTop: '12px',
+                      paddingTop: '12px',
+                      borderTop: '1px solid rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <span style={{ fontSize: '0.9rem' }}>Number of Locations:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setLocationCount(Math.max(1, locationCount - 1))}
+                          disabled={locationCount <= 1}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: 'rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '1.2rem',
+                            cursor: locationCount <= 1 ? 'not-allowed' : 'pointer',
+                            opacity: locationCount <= 1 ? 0.5 : 1
+                          }}
+                        >
+                          −
+                        </button>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 700, minWidth: '32px', textAlign: 'center' }}>
+                          {locationCount}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setLocationCount(locationCount + 1)}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: 'rgba(255,255,255,0.2)',
+                            color: 'white',
+                            fontSize: '1.2rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {locationCount > 1 && (
+                      <div style={{
+                        marginTop: '8px',
+                        fontSize: '0.8rem',
+                        opacity: 0.7,
+                        textAlign: 'center'
+                      }}>
+                        Total: {locationCount} locations × ${pricing.monthlyPerLocation}/mo × {pricing.billingMonths} months = {formatAmount(pricing.totalCharge)}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -396,8 +506,9 @@ const SignupForm = () => {
                   <Button
                     className="auth-button w-100"
                     type="submit"
+                    disabled={loading}
                   >
-                    Continue to Payment →
+                    {loading ? 'Creating Account...' : (isFreeTier ? 'Create Free Account →' : 'Continue to Payment →')}
                   </Button>
                 </Form>
               ) : (

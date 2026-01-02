@@ -8,6 +8,19 @@ export const TRIAL_PERIOD_DAYS = 0;
 
 // Tier definitions with feature access
 export const TIER_FEATURES = {
+    scout: {
+        name: 'Scout',
+        icon: '🔍',
+        level: 0,
+        features: [
+            'menu-management',
+            'pos',
+            'kitchen',
+            'server',
+            'orders',
+            'payments'
+        ]
+    },
     ally: {
         name: 'Ally',
         icon: '🌱',
@@ -89,6 +102,7 @@ export const TIER_FEATURES = {
 
 // Pricing configuration
 export const PRICING = {
+    scout: 0,  // Free tier
     ally: 29,
     guide: 59,
     chief: 99,
@@ -103,10 +117,20 @@ export const BILLING_MULTIPLIERS = {
 
 // Order volume limits per tier (per billing cycle)
 export const ORDER_LIMITS = {
+    scout: { limit: 100, overageRate: 0, hardCap: true },  // 100 orders, hard cap - no overage
     ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order overage
     guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order overage
     chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order overage
     elder: { limit: Infinity, overageRate: 0 }    // Unlimited, no overage
+};
+
+// Menu limits per tier
+export const MENU_LIMITS = {
+    scout: { items: 10, reads: 1000 },  // Free tier limits
+    ally: { items: Infinity, reads: Infinity },
+    guide: { items: Infinity, reads: Infinity },
+    chief: { items: Infinity, reads: Infinity },
+    elder: { items: Infinity, reads: Infinity }
 };
 
 const SubscriptionContext = createContext();
@@ -246,6 +270,18 @@ export const SubscriptionProvider = ({ children }) => {
         return currentCount > limit;
     };
 
+    // Get menu limits for current tier
+    const getMenuLimit = () => {
+        const tier = getCurrentTier();
+        return MENU_LIMITS[tier] || MENU_LIMITS.ally;
+    };
+
+    // Check if order is hard capped (no overage allowed)
+    const isOrderHardCapped = () => {
+        const tier = getCurrentTier();
+        return ORDER_LIMITS[tier]?.hardCap === true;
+    };
+
     const value = {
         subscription,
         loading,
@@ -262,9 +298,12 @@ export const SubscriptionProvider = ({ children }) => {
         PRICING,
         TRIAL_PERIOD_DAYS,
         ORDER_LIMITS,
+        MENU_LIMITS,
         getOrderLimit,
+        getMenuLimit,
         calculateOverageCharge,
-        isOverOrderLimit
+        isOverOrderLimit,
+        isOrderHardCapped
     };
 
     return (

@@ -29,7 +29,7 @@ const MenuManagement = () => {
   const [saving, setSaving] = useState(false);
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, selectedLocation } = useLocation();
-  const { getCurrentTier } = useSubscription();
+  const { getCurrentTier, getMenuLimit } = useSubscription();
 
   // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
@@ -57,6 +57,14 @@ const MenuManagement = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
+
+  // Menu limit modal for scout tier
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Calculate total menu items across all categories
+  const totalMenuItems = categories.reduce((sum, cat) => sum + (cat.items?.length || 0), 0);
+  const menuLimit = getMenuLimit();
+  const isAtMenuLimit = getCurrentTier() === 'scout' && totalMenuItems >= menuLimit.items;
 
   // Auto-select first category when categories load
   useEffect(() => {
@@ -138,6 +146,12 @@ const MenuManagement = () => {
   };
 
   const handleAddItem = (category) => {
+    // Check menu item limit for scout tier
+    if (isAtMenuLimit) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     setCurrentCategory(category);
     setItemForm({
       name: '',
@@ -430,27 +444,30 @@ const MenuManagement = () => {
           <i className="bi bi-menu-button-wide header-icon"></i>
           <div>
             <h2>Menu Management</h2>
-            <p>Create and organize your restaurant menu</p>
+            <p>Create and organize your restaurant menu{getCurrentTier() === 'scout' && <span className="text-warning ms-2">({totalMenuItems}/{menuLimit.items} items)</span>}</p>
           </div>
         </div>
-        <Button
-          variant="light"
-          className="ms-auto"
-          onClick={() => setShowUploadModal(true)}
-          style={{
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-        >
-          <i className="bi bi-cloud-upload"></i>
-          Upload Menu
-          <Badge bg="warning" text="dark" style={{ fontSize: '0.7em' }}>AI</Badge>
-        </Button>
+        {/* Only show AI upload for non-scout tiers */}
+        {getCurrentTier() !== 'scout' && (
+          <Button
+            variant="light"
+            className="ms-auto"
+            onClick={() => setShowUploadModal(true)}
+            style={{
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <i className="bi bi-cloud-upload"></i>
+            Upload Menu
+            <Badge bg="warning" text="dark" style={{ fontSize: '0.7em' }}>AI</Badge>
+          </Button>
+        )}
       </div>
 
-      {/* Premium Feature Promo Banner for Ally Tier */}
+      {/* Premium Feature Promo Banner for Ally Tier ONLY (not scout) */}
       {getCurrentTier() === 'ally' && (
         <div className="premium-promo-banner">
           <div className="promo-glow"></div>
@@ -470,7 +487,7 @@ const MenuManagement = () => {
               </div>
               <h3 className="promo-title">AI Menu Upload Included!</h3>
               <p className="promo-description">
-                You're enjoying AI-powered menu uploads as a special bonus. 
+                You're enjoying AI-powered menu uploads as a special bonus.
                 <strong> Upgrade to Guide</strong> to unlock unlimited uploads and keep this premium feature forever.
               </p>
             </div>
@@ -480,6 +497,18 @@ const MenuManagement = () => {
             </Link>
           </div>
         </div>
+      )}
+
+      {/* Scout tier limit warning */}
+      {getCurrentTier() === 'scout' && totalMenuItems >= menuLimit.items * 0.8 && (
+        <Alert variant={totalMenuItems >= menuLimit.items ? 'danger' : 'warning'} className="menu-alert">
+          <i className="bi bi-exclamation-triangle"></i>
+          {totalMenuItems >= menuLimit.items ? (
+            <>You've reached the {menuLimit.items} item limit on the free Scout plan. <Link to="/account">Upgrade now</Link> to add unlimited items.</>
+          ) : (
+            <>You're using {totalMenuItems} of {menuLimit.items} menu items on the free Scout plan. <Link to="/account">Upgrade</Link> for unlimited items.</>
+          )}
+        </Alert>
       )}
 
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible className="menu-alert">{error}</Alert>}
@@ -951,6 +980,64 @@ const MenuManagement = () => {
               Close
             </Button>
           )}
+        </Modal.Footer>
+      </Modal>
+
+      {/* Upgrade Modal for Scout Tier Menu Limit */}
+      <Modal show={showUpgradeModal} onHide={() => setShowUpgradeModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <i className="bi bi-arrow-up-circle text-primary me-2"></i>
+            Menu Item Limit Reached
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="text-center mb-4">
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1rem',
+              fontSize: '2.5rem'
+            }}>
+              🔍
+            </div>
+            <h4>You've reached {menuLimit.items} items!</h4>
+            <p className="text-muted">
+              The free Scout plan includes up to {menuLimit.items} menu items.
+              Upgrade to Ally or higher to add unlimited menu items and unlock AI-powered menu uploads.
+            </p>
+          </div>
+          <div style={{
+            background: '#f8f9fa',
+            borderRadius: '12px',
+            padding: '16px'
+          }}>
+            <h6><i className="bi bi-star-fill text-warning me-2"></i>Ally Plan Benefits:</h6>
+            <ul style={{ marginBottom: 0 }}>
+              <li>Unlimited menu items</li>
+              <li>AI-powered menu uploads</li>
+              <li>500 orders per month</li>
+              <li>All POS features</li>
+            </ul>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowUpgradeModal(false)}>
+            Maybe Later
+          </Button>
+          <Link to="/account" className="btn" style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            fontWeight: 600
+          }}>
+            <i className="bi bi-arrow-up-circle me-1"></i>
+            Upgrade Now
+          </Link>
         </Modal.Footer>
       </Modal>
     </div>

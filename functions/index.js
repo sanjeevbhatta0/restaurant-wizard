@@ -761,6 +761,23 @@ exports.serveWebsite = onRequest(async (req, res) => {
 
       const restaurantData = restaurantDoc.data();
 
+      // Track menu view for usage statistics (only for non-preview, scout tier)
+      // This is done asynchronously to not slow down page load
+      const isPreviewRequest = req.query.preview === 'true';
+      if (!isPreviewRequest && restaurantData.subscription?.tier === 'scout') {
+        // Increment menu view count in background (don't await)
+        db.doc(`restaurants/${restaurantId}`).get().then(async (doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            const currentCount = data.orderUsage?.menuViewCount || 0;
+            await db.doc(`restaurants/${restaurantId}`).update({
+              'orderUsage.menuViewCount': currentCount + 1,
+              'orderUsage.lastUpdated': new Date().toISOString()
+            });
+          }
+        }).catch(err => console.log('Menu view tracking error:', err));
+      }
+
       // Check if multi-location and get locationId from query, derived from slug, or config
       const isMultiLocation = restaurantData.isMultiLocation === true;
       const locationId = req.query.locationId || derivedLocationId || null;

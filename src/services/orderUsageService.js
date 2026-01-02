@@ -4,7 +4,7 @@
  */
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ORDER_LIMITS } from '../contexts/SubscriptionContext';
+import { ORDER_LIMITS, MENU_LIMITS } from '../contexts/SubscriptionContext';
 
 /**
  * Get or initialize order usage data for a restaurant
@@ -31,6 +31,7 @@ export const getOrderUsage = async (restaurantId) => {
             currentPeriodEnd: periodEnd.toISOString(),
             overageOrders: 0,
             overageCharges: 0,
+            menuViewCount: 0,  // Track menu views for scout tier
             lastUpdated: now.toISOString()
         };
 
@@ -52,11 +53,17 @@ export const getOrderUsage = async (restaurantId) => {
             currentPeriodEnd: newPeriodEnd.toISOString(),
             overageOrders: 0,
             overageCharges: 0,
+            menuViewCount: 0,  // Reset menu views
             lastUpdated: now.toISOString()
         };
 
         await updateDoc(restaurantRef, { orderUsage: resetUsage });
         return resetUsage;
+    }
+
+    // Ensure menuViewCount exists (for existing users without it)
+    if (usage.menuViewCount === undefined) {
+        usage.menuViewCount = 0;
     }
 
     return usage;
@@ -87,6 +94,7 @@ const calculatePeriodEnd = (startDate, billingCycle) => {
 /**
  * Increment order count and calculate any overage charges
  * Returns the overage charge for this order (if any)
+ * For hard-capped tiers (scout), blocks orders when limit is reached
  */
 export const incrementOrderCount = async (restaurantId, orderTotal) => {
     const restaurantRef = doc(db, 'restaurants', restaurantId);
@@ -104,12 +112,24 @@ export const incrementOrderCount = async (restaurantId, orderTotal) => {
     let usage = await getOrderUsage(restaurantId);
 
     const newCount = usage.currentPeriodCount + 1;
+
+    // Check if this is a hard-capped tier and limit is reached
+    if (tierLimits.hardCap && newCount > tierLimits.limit) {
+        return {
+            blocked: true,
+            reason: `Order limit of ${tierLimits.limit} reached. Please upgrade your plan to continue taking orders.`,
+            currentCount: usage.currentPeriodCount,
+            limit: tierLimits.limit,
+            isHardCapped: true
+        };
+    }
+
     let overageCharge = 0;
     let newOverageOrders = usage.overageOrders;
     let newOverageCharges = usage.overageCharges;
 
-    // Check if this order exceeds the limit
-    if (newCount > tierLimits.limit && tierLimits.limit !== Infinity) {
+    // Check if this order exceeds the limit (for overage-based tiers)
+    if (newCount > tierLimits.limit && tierLimits.limit !== Infinity && !tierLimits.hardCap) {
         // This is an overage order
         overageCharge = orderTotal * tierLimits.overageRate;
         newOverageOrders += 1;
@@ -125,11 +145,13 @@ export const incrementOrderCount = async (restaurantId, orderTotal) => {
     });
 
     return {
+        blocked: false,
         newCount,
         limit: tierLimits.limit,
         isOverLimit: newCount > tierLimits.limit,
         overageCharge,
-        totalOverageCharges: newOverageCharges
+        totalOverageCharges: newOverageCharges,
+        isHardCapped: tierLimits.hardCap || false
     };
 };
 
@@ -147,6 +169,7 @@ export const getUsageStats = async (restaurantId) => {
     const data = restaurantDoc.data();
     const tier = data.subscription?.tier || 'ally';
     const tierLimits = ORDER_LIMITS[tier] || ORDER_LIMITS.ally;
+    const menuLimits = MENU_LIMITS[tier] || MENU_LIMITS.ally;
     const usage = await getOrderUsage(restaurantId);
 
     const periodEnd = new Date(usage.currentPeriodEnd);
@@ -167,12 +190,50 @@ export const getUsageStats = async (restaurantId) => {
         periodStart: usage.currentPeriodStart,
         periodEnd: usage.currentPeriodEnd,
         daysRemaining,
-        isUnlimited: tierLimits.limit === Infinity
+        isUnlimited: tierLimits.limit === Infinity,
+        isHardCapped: tierLimits.hardCap || false,
+        // Menu view stats for scout tier
+        menuViewCount: usage.menuViewCount || 0,
+        menuViewLimit: menuLimits.reads,
+        menuViewPercentUsed: menuLimits.reads === Infinity
+            ? 0
+            : Math.min(100, ((usage.menuViewCount || 0) / menuLimits.reads) * 100),
+        hasMenuViewLimit: menuLimits.reads !== Infinity
+    };
+};
+
+/**
+ * Increment menu view count (for scout tier tracking)
+ * Called when a customer views the public menu
+ */
+export const incrementMenuViewCount = async (restaurantId) => {
+    const restaurantRef = doc(db, 'restaurants', restaurantId);
+    const restaurantDoc = await getDoc(restaurantRef);
+
+    if (!restaurantDoc.exists()) {
+        return { success: false, error: 'Restaurant not found' };
+    }
+
+    // Get current usage or initialize
+    const usage = await getOrderUsage(restaurantId);
+    const newCount = (usage.menuViewCount || 0) + 1;
+
+    // Update menu view count in Firestore
+    await updateDoc(restaurantRef, {
+        'orderUsage.menuViewCount': newCount,
+        'orderUsage.lastUpdated': new Date().toISOString()
+    });
+
+    return {
+        success: true,
+        newCount,
+        limit: 1000 // Scout tier limit
     };
 };
 
 export default {
     getOrderUsage,
     incrementOrderCount,
+    incrementMenuViewCount,
     getUsageStats
 };

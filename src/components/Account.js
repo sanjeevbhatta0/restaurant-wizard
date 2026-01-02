@@ -627,8 +627,8 @@ const Account = () => {
         const currentPrice = calculatePrice(currentTier, billingCycle);
         const locationCount = subscription?.locationCount || 1;
 
-        // All tier keys in order
-        const allTiers = ['ally', 'guide', 'chief', 'elder'];
+        // All tier keys in order (including scout free tier)
+        const allTiers = ['scout', 'ally', 'guide', 'chief', 'elder'];
         const billingOptions = [
           { value: 'annual', label: 'Annual', discount: 'Best value - No markup', savings: 0 },
           { value: 'quarterly', label: 'Quarterly', discount: '+10% markup', savings: 10 },
@@ -706,10 +706,10 @@ const Account = () => {
                   <div style={{ textAlign: 'right' }}>
                     <p style={{ opacity: 0.8, margin: 0, fontSize: '0.9rem' }}>Monthly Cost</p>
                     <h2 style={{ margin: '8px 0', fontSize: '2rem', fontWeight: 800 }}>
-                      ${(parseFloat(currentPrice) * locationCount).toFixed(2)}
+                      {currentTier === 'scout' ? 'Free' : `$${(parseFloat(currentPrice) * locationCount).toFixed(2)}`}
                     </h2>
                     <p style={{ opacity: 0.8, margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>
-                      Billed {billingCycle}
+                      {currentTier === 'scout' ? 'Forever free' : `Billed ${billingCycle}`}
                     </p>
                   </div>
                 </div>
@@ -1122,6 +1122,45 @@ const Account = () => {
                     </div>
                   )}
 
+                  {/* Menu Views Progress - Only for Scout tier */}
+                  {usageStats.hasMenuViewLimit && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <h5 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <i className="bi bi-eye" style={{ color: '#8b5cf6' }}></i>
+                        Menu Views This Period
+                      </h5>
+                      <div style={{
+                        padding: '20px',
+                        background: '#f8fafc',
+                        borderRadius: '12px',
+                        border: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                          <span style={{
+                            fontSize: '2rem',
+                            fontWeight: 800,
+                            color: usageStats.menuViewPercentUsed >= 100 ? '#dc3545' :
+                              usageStats.menuViewPercentUsed >= 80 ? '#f59e0b' : '#8b5cf6'
+                          }}>
+                            {usageStats.menuViewCount.toLocaleString()}
+                          </span>
+                          <span style={{ fontSize: '1.5rem', fontWeight: 600, color: '#666' }}>
+                            / {usageStats.menuViewLimit.toLocaleString()}
+                          </span>
+                        </div>
+                        <ProgressBar
+                          now={Math.min(usageStats.menuViewPercentUsed, 100)}
+                          variant={usageStats.menuViewPercentUsed >= 100 ? 'danger' :
+                            usageStats.menuViewPercentUsed >= 80 ? 'warning' : 'info'}
+                          style={{ height: '12px', borderRadius: '6px' }}
+                        />
+                        <p style={{ marginTop: '12px', marginBottom: 0, color: '#666', fontSize: '0.85rem' }}>
+                          {usageStats.menuViewPercentUsed.toFixed(1)}% of your monthly menu view limit used
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Elder - Unlimited Notice */}
                   {usageStats.isUnlimited && (
                     <div style={{
@@ -1140,8 +1179,48 @@ const Account = () => {
                     </div>
                   )}
 
-                  {/* Overage Section - Only show if there are overages or if approaching limit */}
-                  {!usageStats.isUnlimited && (
+                  {/* Hard Cap Notice for Scout - No overage, must upgrade */}
+                  {usageStats.isHardCapped && (
+                    <div style={{
+                      padding: '24px',
+                      background: usageStats.isOverLimit
+                        ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)'
+                        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      borderRadius: '12px',
+                      color: 'white',
+                      textAlign: 'center',
+                      marginBottom: '24px'
+                    }}>
+                      <i className="bi bi-exclamation-triangle" style={{ fontSize: '2.5rem', marginBottom: '12px', display: 'block' }}></i>
+                      {usageStats.isOverLimit ? (
+                        <>
+                          <h4 style={{ margin: '0 0 8px' }}>Order Limit Reached</h4>
+                          <p style={{ margin: '0 0 16px', opacity: 0.9 }}>
+                            You've reached the {tierLimits.limit} order limit on your Scout plan.
+                            Upgrade now to continue taking orders.
+                          </p>
+                          <Button
+                            variant="light"
+                            onClick={() => document.querySelector('[data-section="subscription"]')?.click()}
+                            style={{ fontWeight: 600 }}
+                          >
+                            <i className="bi bi-arrow-up-circle me-1"></i> Upgrade Now
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <h4 style={{ margin: '0 0 8px' }}>Hard Order Cap</h4>
+                          <p style={{ margin: 0, opacity: 0.9 }}>
+                            Your Scout plan includes {tierLimits.limit} orders per month.
+                            Orders will be blocked after reaching this limit.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Overage Section - Only show for non-hard-capped tiers */}
+                  {!usageStats.isUnlimited && !usageStats.isHardCapped && (
                     <div style={{ marginBottom: '24px' }}>
                       <h5 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <i className="bi bi-exclamation-triangle" style={{ color: usageStats.isOverLimit ? '#dc3545' : '#f59e0b' }}></i>
