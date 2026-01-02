@@ -18,8 +18,8 @@ export const TIER_FEATURES = {
             'kitchen',
             'server',
             'orders',
-            'payments',
-            'analytics' // Basic analytics only
+            'payments'
+            // Analytics moved to Guide tier
         ]
     },
     guide: {
@@ -42,6 +42,7 @@ export const TIER_FEATURES = {
         name: 'Chief',
         icon: '🦅',
         level: 3,
+        popular: true, // Most popular tier
         features: [
             'menu-management',
             'pos',
@@ -74,6 +75,14 @@ export const TIER_FEATURES = {
             'seo-social',
             'ai-analytics',
             'ai-content'
+        ],
+        // Coming soon features to entice upgrades
+        comingSoon: [
+            'inventory-tracking',
+            'ai-forecasting',
+            'supplier-management',
+            'smart-scheduling',
+            'advanced-reports'
         ]
     }
 };

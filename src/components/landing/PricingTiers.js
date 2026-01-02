@@ -6,266 +6,293 @@ const TRIAL_PERIOD_DAYS = 0;
 
 // Base prices (annual price - this is the advertised price)
 const BASE_PRICES = {
-    ally: 29,
-    guide: 59,
-    chief: 99,
-    elder: 229
+  ally: 29,
+  guide: 59,
+  chief: 99,
+  elder: 229
 };
 
 // Pricing multipliers for billing cycles
 const BILLING_MULTIPLIERS = {
-    monthly: 1.20,   // 20% extra
-    quarterly: 1.10, // 10% extra
-    annual: 1.00     // Base price (advertised)
+  monthly: 1.20,   // 20% extra
+  quarterly: 1.10, // 10% extra
+  annual: 1.00     // Base price (advertised)
 };
 
 // Feature definitions
 const TIER_FEATURES = {
-    ally: {
-        name: 'Ally',
-        tagline: 'Start your journey',
-        description: 'Essential tools for restaurant operations',
-        icon: '🌱',
-        color: '#4ade80',
-        features: [
-            { name: 'Menu Management', included: true, description: 'Create and manage your menu with categories and items' },
-            { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly order taking interface' },
-            { name: 'Kitchen Display', included: true, description: 'Real-time order display for kitchen staff' },
-            { name: 'Server View', included: true, description: 'Table management and order status for servers' },
-            { name: 'Order Management', included: true, description: 'Track orders from creation to completion' },
-            { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
-            { name: 'Basic Analytics', included: true, description: 'Sales reports and order insights' },
-            { name: 'Website Builder', included: false },
-            { name: 'Website Integration', included: false },
-            { name: 'SEO & Social', included: false },
-            { name: 'AI-Powered Analytics', included: false },
-        ]
-    },
-    guide: {
-        name: 'Guide',
-        tagline: 'Lead the way',
-        description: 'Expand your online presence',
-        icon: '🧭',
-        color: '#60a5fa',
-        popular: true,
-        features: [
-            { name: 'Menu Management', included: true },
-            { name: 'Point of Sale (POS)', included: true },
-            { name: 'Kitchen Display', included: true },
-            { name: 'Server View', included: true },
-            { name: 'Order Management', included: true },
-            { name: 'Payment Processing', included: true },
-            { name: 'Basic Analytics', included: true },
-            { name: 'Website Builder', included: true, description: 'Create a beautiful website for your restaurant' },
-            { name: 'Website Integration', included: true, description: 'Embed your menu on any external website' },
-            { name: 'SEO & Social', included: false },
-            { name: 'AI-Powered Analytics', included: false },
-        ]
-    },
-    chief: {
-        name: 'Chief',
-        tagline: 'Command respect',
-        description: 'Boost visibility with SEO & Social',
-        icon: '🦅',
-        color: '#f59e0b',
-        features: [
-            { name: 'Menu Management', included: true },
-            { name: 'Point of Sale (POS)', included: true },
-            { name: 'Kitchen Display', included: true },
-            { name: 'Server View', included: true },
-            { name: 'Order Management', included: true },
-            { name: 'Payment Processing', included: true },
-            { name: 'Basic Analytics', included: true },
-            { name: 'Website Builder', included: true },
-            { name: 'Website Integration', included: true },
-            { name: 'SEO & Social', included: true, description: 'Post to Facebook & Instagram (AI features excluded)' },
-            { name: 'AI-Powered Analytics', included: 'preview', description: 'View only - upgrade to Elder to unlock' },
-        ]
-    },
-    elder: {
-        name: 'Elder',
-        tagline: 'Achieve wisdom',
-        description: 'Unlock the full power of AI',
-        icon: '👑',
-        color: '#a855f7',
-        features: [
-            { name: 'Menu Management', included: true },
-            { name: 'Point of Sale (POS)', included: true },
-            { name: 'Kitchen Display', included: true },
-            { name: 'Server View', included: true },
-            { name: 'Order Management', included: true },
-            { name: 'Payment Processing', included: true },
-            { name: 'Basic Analytics', included: true },
-            { name: 'Website Builder', included: true },
-            { name: 'Website Integration', included: true },
-            { name: 'SEO & Social', included: true, description: 'Full access with AI content generation' },
-            { name: 'AI-Powered Analytics', included: true, description: 'AI insights, predictions, and recommendations' },
-        ]
-    }
+  ally: {
+    name: 'Ally',
+    tagline: 'Start your journey',
+    description: 'Essential tools for restaurant operations',
+    icon: '🌱',
+    color: '#4ade80',
+    features: [
+      { name: 'Menu Management', included: true, description: 'Create and manage your menu with categories and items' },
+      { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly order taking interface' },
+      { name: 'Kitchen Display', included: true, description: 'Real-time order display for kitchen staff' },
+      { name: 'Server View', included: true, description: 'Table management and order status for servers' },
+      { name: 'Order Management', included: true, description: 'Track orders from creation to completion' },
+      { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
+      { name: 'Basic Analytics', included: false, description: 'Available in Guide tier and above' },
+      { name: 'Website Builder', included: false },
+      { name: 'Website Integration', included: false },
+      { name: 'SEO & Social', included: false },
+      { name: 'AI-Powered Features', included: false },
+    ]
+  },
+  guide: {
+    name: 'Guide',
+    tagline: 'Lead the way',
+    description: 'Expand your online presence',
+    icon: '🧭',
+    color: '#60a5fa',
+    features: [
+      { name: 'Menu Management', included: true },
+      { name: 'Point of Sale (POS)', included: true },
+      { name: 'Kitchen Display', included: true },
+      { name: 'Server View', included: true },
+      { name: 'Order Management', included: true },
+      { name: 'Payment Processing', included: true },
+      { name: 'Basic Analytics', included: true, description: 'Sales reports and order insights' },
+      { name: 'Website Builder', included: true, description: 'Create a beautiful website for your restaurant' },
+      { name: 'Website Integration', included: true, description: 'Embed your menu on any external website' },
+      { name: 'SEO & Social', included: false },
+      { name: 'AI-Powered Features', included: false },
+    ]
+  },
+  chief: {
+    name: 'Chief',
+    tagline: 'Command respect',
+    description: 'Boost visibility with SEO & Social',
+    icon: '🦅',
+    color: '#f59e0b',
+    popular: true,
+    features: [
+      { name: 'Menu Management', included: true },
+      { name: 'Point of Sale (POS)', included: true },
+      { name: 'Kitchen Display', included: true },
+      { name: 'Server View', included: true },
+      { name: 'Order Management', included: true },
+      { name: 'Payment Processing', included: true },
+      { name: 'Basic Analytics', included: true },
+      { name: 'Website Builder', included: true },
+      { name: 'Website Integration', included: true },
+      { name: 'SEO & Social', included: true, description: 'Post to Facebook & Instagram (AI features excluded)' },
+      { name: 'AI-Powered Features', included: 'preview', description: 'View only - upgrade to Elder to unlock' },
+    ]
+  },
+  elder: {
+    name: 'Elder',
+    tagline: 'Achieve wisdom',
+    description: 'Unlock the full power of AI',
+    icon: '👑',
+    color: '#a855f7',
+    features: [
+      { name: 'Menu Management', included: true },
+      { name: 'Point of Sale (POS)', included: true },
+      { name: 'Kitchen Display', included: true },
+      { name: 'Server View', included: true },
+      { name: 'Order Management', included: true },
+      { name: 'Payment Processing', included: true },
+      { name: 'Basic Analytics', included: true },
+      { name: 'Website Builder', included: true },
+      { name: 'Website Integration', included: true },
+      { name: 'SEO & Social', included: true, description: 'Full access with AI content generation' },
+      { name: 'AI-Powered Analytics', included: true, description: 'AI insights, predictions, and recommendations' },
+    ],
+    comingSoon: [
+      { name: 'Inventory Tracking', icon: '📦', description: 'Real-time stock levels and alerts' },
+      { name: 'AI Demand Forecasting', icon: '🔮', description: 'Predict busy periods and prep needs' },
+      { name: 'Supplier Management', icon: '🤝', description: 'Manage vendors and automate ordering' },
+      { name: 'Smart Staff Scheduling', icon: '📅', description: 'AI-optimized shift planning' },
+      { name: 'Advanced Reporting', icon: '📊', description: 'Custom reports and dashboards' },
+    ]
+  }
 };
 
 const PricingTiers = () => {
-    const [billingCycle, setBillingCycle] = useState('annual');
-    const navigate = useNavigate();
+  const [billingCycle, setBillingCycle] = useState('annual');
+  const navigate = useNavigate();
 
-    const calculatePrice = (baseTier) => {
-        const basePrice = BASE_PRICES[baseTier];
-        const multiplier = BILLING_MULTIPLIERS[billingCycle];
-        return (basePrice * multiplier).toFixed(2);
-    };
+  const calculatePrice = (baseTier) => {
+    const basePrice = BASE_PRICES[baseTier];
+    const multiplier = BILLING_MULTIPLIERS[billingCycle];
+    return (basePrice * multiplier).toFixed(2);
+  };
 
-    const getAnnualSavings = (baseTier) => {
-        const basePrice = BASE_PRICES[baseTier];
-        const monthlyPrice = basePrice * BILLING_MULTIPLIERS.monthly;
-        const annualMonthly = basePrice;
-        return ((monthlyPrice - annualMonthly) * 12).toFixed(0);
-    };
+  const getAnnualSavings = (baseTier) => {
+    const basePrice = BASE_PRICES[baseTier];
+    const monthlyPrice = basePrice * BILLING_MULTIPLIERS.monthly;
+    const annualMonthly = basePrice;
+    return ((monthlyPrice - annualMonthly) * 12).toFixed(0);
+  };
 
-    const handleSelectTier = (tierKey) => {
-        navigate(`/signup?tier=${tierKey}&cycle=${billingCycle}`);
-    };
+  const handleSelectTier = (tierKey) => {
+    navigate(`/signup?tier=${tierKey}&cycle=${billingCycle}`);
+  };
 
-    return (
-        <div className="pricing-container">
-            {/* Trial Banner */}
-            {TRIAL_PERIOD_DAYS > 0 && (
-                <div className="trial-banner">
-                    <span className="trial-icon">🎁</span>
-                    <span>Start with a <strong>{TRIAL_PERIOD_DAYS}-day free trial</strong> on any plan!</span>
-                </div>
+  return (
+    <div className="pricing-container">
+      {/* Trial Banner */}
+      {TRIAL_PERIOD_DAYS > 0 && (
+        <div className="trial-banner">
+          <span className="trial-icon">🎁</span>
+          <span>Start with a <strong>{TRIAL_PERIOD_DAYS}-day free trial</strong> on any plan!</span>
+        </div>
+      )}
+
+      {/* Billing Toggle */}
+      <div className="billing-toggle">
+        <button
+          className={`toggle-btn ${billingCycle === 'monthly' ? 'active' : ''}`}
+          onClick={() => setBillingCycle('monthly')}
+        >
+          Monthly
+          <span className="toggle-badge red">+20%</span>
+        </button>
+        <button
+          className={`toggle-btn ${billingCycle === 'quarterly' ? 'active' : ''}`}
+          onClick={() => setBillingCycle('quarterly')}
+        >
+          Quarterly
+          <span className="toggle-badge yellow">+10%</span>
+        </button>
+        <button
+          className={`toggle-btn ${billingCycle === 'annual' ? 'active' : ''}`}
+          onClick={() => setBillingCycle('annual')}
+        >
+          Annual
+          <span className="toggle-badge green">Best Value</span>
+        </button>
+      </div>
+
+      {/* Tier Cards */}
+      <div className="pricing-grid">
+        {Object.entries(TIER_FEATURES).map(([key, tier]) => (
+          <div
+            key={key}
+            className={`pricing-card ${tier.popular ? 'popular' : ''}`}
+            style={{ '--tier-color': tier.color }}
+          >
+            {tier.popular && <div className="popular-badge">Most Popular</div>}
+
+            <div className="pricing-header">
+              <span className="tier-icon">{tier.icon}</span>
+              <h3 className="tier-name">{tier.name}</h3>
+              <p className="tier-tagline">{tier.tagline}</p>
+            </div>
+
+            <div className="pricing-price">
+              <span className="currency">$</span>
+              <span className="amount">{calculatePrice(key)}</span>
+              <span className="period">/month</span>
+            </div>
+
+            {billingCycle === 'annual' && (
+              <div className="annual-savings">
+                Save ${getAnnualSavings(key)}/year
+              </div>
             )}
 
-            {/* Billing Toggle */}
-            <div className="billing-toggle">
-                <button
-                    className={`toggle-btn ${billingCycle === 'monthly' ? 'active' : ''}`}
-                    onClick={() => setBillingCycle('monthly')}
+            <p className="tier-description">{tier.description}</p>
+
+            <button
+              className="tier-cta"
+              onClick={() => handleSelectTier(key)}
+            >
+              {TRIAL_PERIOD_DAYS > 0 ? 'Start Free Trial' : 'Get Started'}
+            </button>
+
+            <ul className="feature-list">
+              {tier.features.map((feature, idx) => (
+                <li
+                  key={idx}
+                  className={`feature-item ${feature.included === true ? 'included' :
+                    feature.included === 'preview' ? 'preview' : 'not-included'
+                    }`}
+                  title={feature.description || ''}
                 >
-                    Monthly
-                    <span className="toggle-badge red">+20%</span>
-                </button>
-                <button
-                    className={`toggle-btn ${billingCycle === 'quarterly' ? 'active' : ''}`}
-                    onClick={() => setBillingCycle('quarterly')}
-                >
-                    Quarterly
-                    <span className="toggle-badge yellow">+10%</span>
-                </button>
-                <button
-                    className={`toggle-btn ${billingCycle === 'annual' ? 'active' : ''}`}
-                    onClick={() => setBillingCycle('annual')}
-                >
-                    Annual
-                    <span className="toggle-badge green">Best Value</span>
-                </button>
-            </div>
-
-            {/* Tier Cards */}
-            <div className="pricing-grid">
-                {Object.entries(TIER_FEATURES).map(([key, tier]) => (
-                    <div
-                        key={key}
-                        className={`pricing-card ${tier.popular ? 'popular' : ''}`}
-                        style={{ '--tier-color': tier.color }}
-                    >
-                        {tier.popular && <div className="popular-badge">Most Popular</div>}
-
-                        <div className="pricing-header">
-                            <span className="tier-icon">{tier.icon}</span>
-                            <h3 className="tier-name">{tier.name}</h3>
-                            <p className="tier-tagline">{tier.tagline}</p>
-                        </div>
-
-                        <div className="pricing-price">
-                            <span className="currency">$</span>
-                            <span className="amount">{calculatePrice(key)}</span>
-                            <span className="period">/month</span>
-                        </div>
-
-                        {billingCycle === 'annual' && (
-                            <div className="annual-savings">
-                                Save ${getAnnualSavings(key)}/year
-                            </div>
-                        )}
-
-                        <p className="tier-description">{tier.description}</p>
-
-                        <button
-                            className="tier-cta"
-                            onClick={() => handleSelectTier(key)}
-                        >
-                            {TRIAL_PERIOD_DAYS > 0 ? 'Start Free Trial' : 'Get Started'}
-                        </button>
-
-                        <ul className="feature-list">
-                            {tier.features.map((feature, idx) => (
-                                <li
-                                    key={idx}
-                                    className={`feature-item ${feature.included === true ? 'included' :
-                                            feature.included === 'preview' ? 'preview' : 'not-included'
-                                        }`}
-                                    title={feature.description || ''}
-                                >
-                                    {feature.included === true && (
-                                        <svg className="feature-icon check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <polyline points="20 6 9 17 4 12" />
-                                        </svg>
-                                    )}
-                                    {feature.included === 'preview' && (
-                                        <svg className="feature-icon eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                            <circle cx="12" cy="12" r="3" />
-                                        </svg>
-                                    )}
-                                    {feature.included === false && (
-                                        <svg className="feature-icon x" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <line x1="18" y1="6" x2="6" y2="18" />
-                                            <line x1="6" y1="6" x2="18" y2="18" />
-                                        </svg>
-                                    )}
-                                    <span>{feature.name}</span>
-                                    {feature.description && (
-                                        <span className="feature-tooltip">
-                                            <svg className="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <circle cx="12" cy="12" r="10" />
-                                                <line x1="12" y1="16" x2="12" y2="12" />
-                                                <line x1="12" y1="8" x2="12.01" y2="8" />
-                                            </svg>
-                                            <span className="tooltip-text">{feature.description}</span>
-                                        </span>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                ))}
-            </div>
-
-            {/* Trust Badges */}
-            <div className="trust-section">
-                <div className="trust-item">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  {feature.included === true && (
+                    <svg className="feature-icon check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    <span>Secure Payments</span>
-                </div>
-                <div className="trust-item">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="4" width="18" height="16" rx="2" />
-                        <path d="M3 10h18" />
+                  )}
+                  {feature.included === 'preview' && (
+                    <svg className="feature-icon eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
                     </svg>
-                    <span>Cancel Anytime</span>
-                </div>
-                <div className="trust-item">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
+                  )}
+                  {feature.included === false && (
+                    <svg className="feature-icon x" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
-                    <span>Easy Upgrades</span>
-                </div>
-            </div>
+                  )}
+                  <span>{feature.name}</span>
+                  {feature.description && (
+                    <span className="feature-tooltip">
+                      <svg className="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="16" x2="12" y2="12" />
+                        <line x1="12" y1="8" x2="12.01" y2="8" />
+                      </svg>
+                      <span className="tooltip-text">{feature.description}</span>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
 
-            <style jsx>{`
+            {/* Coming Soon Section for Elder */}
+            {tier.comingSoon && (
+              <div className="coming-soon-section">
+                <div className="coming-soon-header">
+                  <span className="coming-soon-badge">🚀 Coming Soon</span>
+                </div>
+                <ul className="coming-soon-list">
+                  {tier.comingSoon.map((item, idx) => (
+                    <li key={idx} className="coming-soon-item">
+                      <span className="coming-soon-icon">{item.icon}</span>
+                      <div className="coming-soon-content">
+                        <span className="coming-soon-name">{item.name}</span>
+                        <span className="coming-soon-desc">{item.description}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Trust Badges */}
+      <div className="trust-section">
+        <div className="trust-item">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span>Secure Payments</span>
+        </div>
+        <div className="trust-item">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M3 10h18" />
+          </svg>
+          <span>Cancel Anytime</span>
+        </div>
+        <div className="trust-item">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span>Easy Upgrades</span>
+        </div>
+      </div>
+
+      <style jsx>{`
         .pricing-container {
           max-width: 1400px;
           margin: 0 auto;
@@ -557,6 +584,68 @@ const PricingTiers = () => {
           visibility: visible;
         }
 
+        /* Coming Soon Section */
+        .coming-soon-section {
+          margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 2px dashed rgba(168, 85, 247, 0.3);
+        }
+
+        .coming-soon-header {
+          text-align: center;
+          margin-bottom: 1rem;
+        }
+
+        .coming-soon-badge {
+          background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+          color: white;
+          padding: 6px 14px;
+          border-radius: 20px;
+          font-size: 0.8rem;
+          font-weight: 700;
+          display: inline-block;
+        }
+
+        .coming-soon-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
+
+        .coming-soon-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 8px 0;
+          border-bottom: 1px solid #f3f4f6;
+        }
+
+        .coming-soon-item:last-child {
+          border-bottom: none;
+        }
+
+        .coming-soon-icon {
+          font-size: 1.2rem;
+          flex-shrink: 0;
+        }
+
+        .coming-soon-content {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .coming-soon-name {
+          font-weight: 600;
+          color: #1a1a2e;
+          font-size: 0.85rem;
+        }
+
+        .coming-soon-desc {
+          font-size: 0.75rem;
+          color: #666;
+        }
+
         .trust-section {
           display: flex;
           justify-content: center;
@@ -616,8 +705,8 @@ const PricingTiers = () => {
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 };
 
 export default PricingTiers;
