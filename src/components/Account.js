@@ -4,6 +4,7 @@ import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, signOu
 import { db, auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useSubscription, TIER_FEATURES, PRICING, BILLING_MULTIPLIERS } from '../contexts/SubscriptionContext';
 import { useNavigate } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
@@ -14,6 +15,7 @@ import './Account.css';
 const Account = () => {
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, loadRestaurantData } = useLocation();
+  const { subscription, getCurrentTier, canUpgrade, getNextTier, calculatePrice } = useSubscription();
   const navigate = useNavigate();
   const [restaurantData, setRestaurantData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -590,6 +592,293 @@ const Account = () => {
           </Card>
         );
 
+      case 'subscription':
+        const currentTier = getCurrentTier();
+        const tierInfo = TIER_FEATURES[currentTier];
+        const billingCycle = subscription?.billingCycle || 'annual';
+        const currentPrice = calculatePrice(currentTier, billingCycle);
+        const locationCount = subscription?.locationCount || 1;
+
+        // All tier keys in order
+        const allTiers = ['ally', 'guide', 'chief', 'elder'];
+
+        const handleChangePlan = async (newTier) => {
+          if (newTier === currentTier) return;
+
+          const isUpgrade = TIER_FEATURES[newTier].level > TIER_FEATURES[currentTier].level;
+          const action = isUpgrade ? 'upgrade' : 'downgrade';
+          const newPrice = calculatePrice(newTier, billingCycle);
+
+          // TODO: Implement actual Stripe plan change
+          // For now, show confirmation and update Firestore directly
+          const confirmed = window.confirm(
+            `Are you sure you want to ${action} to the ${TIER_FEATURES[newTier].name} plan?\n\n` +
+            `New price: $${newPrice}/month per location\n` +
+            `Total: $${(parseFloat(newPrice) * locationCount).toFixed(2)}/month\n\n` +
+            (isUpgrade
+              ? 'You will be charged the difference for the remainder of your billing period.'
+              : 'Your new rate will apply at the start of your next billing period.')
+          );
+
+          if (confirmed) {
+            try {
+              setSaving(true);
+              // Update subscription tier in Firestore
+              // TODO: Replace with proper Stripe subscription update
+              await updateDoc(doc(db, 'restaurants', currentUser.uid), {
+                'subscription.tier': newTier,
+                'subscription.updatedAt': new Date().toISOString()
+              });
+              setSuccess(`Successfully ${action}d to ${TIER_FEATURES[newTier].name} plan!`);
+            } catch (error) {
+              setError(`Failed to ${action} plan: ${error.message}`);
+            } finally {
+              setSaving(false);
+            }
+          }
+        };
+
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-credit-card-2-front"></i> Subscription</h3>
+            </Card.Header>
+            <Card.Body>
+              {/* Current Plan Header */}
+              <div style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                borderRadius: '16px',
+                padding: '24px',
+                color: 'white',
+                marginBottom: '24px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+                  <div>
+                    <p style={{ opacity: 0.8, margin: 0, fontSize: '0.9rem' }}>Current Plan</p>
+                    <h2 style={{ margin: '8px 0', fontSize: '2rem', fontWeight: 800 }}>
+                      {tierInfo?.icon} {tierInfo?.name || 'Ally'}
+                    </h2>
+                    <Badge bg={subscription?.status === 'active' ? 'success' : 'warning'}>
+                      {subscription?.status === 'active' ? 'Active' : (subscription?.status || 'Active')}
+                    </Badge>
+                    {locationCount > 1 && (
+                      <Badge bg="info" className="ms-2">
+                        {locationCount} Locations
+                      </Badge>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ opacity: 0.8, margin: 0, fontSize: '0.9rem' }}>Monthly Cost</p>
+                    <h2 style={{ margin: '8px 0', fontSize: '2rem', fontWeight: 800 }}>
+                      ${(parseFloat(currentPrice) * locationCount).toFixed(2)}
+                    </h2>
+                    <p style={{ opacity: 0.8, margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>
+                      Billed {billingCycle}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* All Plans Comparison */}
+              <div style={{ marginBottom: '24px' }}>
+                <h5 style={{ marginBottom: '16px' }}>Change Your Plan</h5>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gap: '16px'
+                }}>
+                  {allTiers.map((tierKey) => {
+                    const tier = TIER_FEATURES[tierKey];
+                    const price = calculatePrice(tierKey, billingCycle);
+                    const isCurrent = tierKey === currentTier;
+                    const isHigher = tier.level > TIER_FEATURES[currentTier].level;
+                    const isLower = tier.level < TIER_FEATURES[currentTier].level;
+
+                    return (
+                      <div
+                        key={tierKey}
+                        style={{
+                          border: isCurrent ? '2px solid #667eea' : '1px solid #e5e7eb',
+                          borderRadius: '12px',
+                          padding: '20px',
+                          background: isCurrent ? 'rgba(102, 126, 234, 0.05)' : 'white',
+                          position: 'relative'
+                        }}
+                      >
+                        {isCurrent && (
+                          <Badge
+                            bg="primary"
+                            style={{
+                              position: 'absolute',
+                              top: '-10px',
+                              right: '12px',
+                              fontSize: '0.7rem'
+                            }}
+                          >
+                            Current
+                          </Badge>
+                        )}
+                        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                          <span style={{ fontSize: '2rem' }}>{tier.icon}</span>
+                          <h5 style={{ margin: '8px 0 4px', fontWeight: 700 }}>{tier.name}</h5>
+                          <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>
+                            ${price}
+                            <span style={{ fontSize: '0.85rem', fontWeight: 400, color: '#666' }}>/mo</span>
+                          </div>
+                          {locationCount > 1 && (
+                            <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                              ${(parseFloat(price) * locationCount).toFixed(2)}/mo total
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Feature highlights */}
+                        <ul style={{
+                          listStyle: 'none',
+                          padding: 0,
+                          margin: '0 0 16px',
+                          fontSize: '0.85rem'
+                        }}>
+                          {tier.features.slice(0, 5).map((feature, idx) => (
+                            <li key={idx} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              marginBottom: '4px',
+                              color: '#555'
+                            }}>
+                              <i className="bi bi-check" style={{ color: '#22c55e' }}></i>
+                              <span style={{ textTransform: 'capitalize' }}>
+                                {feature.replace(/-/g, ' ')}
+                              </span>
+                            </li>
+                          ))}
+                          {tier.features.length > 5 && (
+                            <li style={{ color: '#888', fontSize: '0.8rem', marginTop: '4px' }}>
+                              +{tier.features.length - 5} more features
+                            </li>
+                          )}
+                        </ul>
+
+                        {!isCurrent ? (
+                          <Button
+                            variant={isHigher ? 'primary' : 'outline-secondary'}
+                            size="sm"
+                            className="w-100"
+                            onClick={() => handleChangePlan(tierKey)}
+                            disabled={saving}
+                            style={isHigher ? {
+                              background: 'linear-gradient(135deg, #b87333 0%, #40e0d0 100%)',
+                              border: 'none'
+                            } : undefined}
+                          >
+                            {saving ? 'Processing...' : (isHigher ? 'Upgrade' : 'Downgrade')}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="w-100"
+                            disabled
+                          >
+                            Current Plan
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Features You Have Access To */}
+              <div style={{ marginBottom: '24px' }}>
+                <h5 style={{ marginBottom: '16px' }}>Your Plan Features</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                  {tierInfo?.features?.map((feature, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      background: '#f8f9fa',
+                      borderRadius: '8px'
+                    }}>
+                      <i className="bi bi-check-circle-fill" style={{ color: '#22c55e' }}></i>
+                      <span style={{ textTransform: 'capitalize' }}>{feature.replace(/-/g, ' ')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Features Not In Your Plan */}
+              {currentTier !== 'elder' && (
+                <div style={{ marginBottom: '24px' }}>
+                  <h5 style={{ marginBottom: '16px', color: '#666' }}>
+                    <i className="bi bi-lock"></i> Features Available with Higher Plans
+                  </h5>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                    {TIER_FEATURES.elder.features
+                      .filter(f => !tierInfo?.features?.includes(f))
+                      .map((feature, idx) => (
+                        <div key={idx} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 12px',
+                          background: '#f1f1f1',
+                          borderRadius: '8px',
+                          opacity: 0.7
+                        }}>
+                          <i className="bi bi-lock-fill" style={{ color: '#f59e0b' }}></i>
+                          <span style={{ textTransform: 'capitalize' }}>{feature.replace(/-/g, ' ')}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Billing Info */}
+              <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid #e5e7eb' }}>
+                <h5 style={{ marginBottom: '16px' }}>Billing Information</h5>
+                <Table size="sm" borderless>
+                  <tbody>
+                    <tr>
+                      <td style={{ color: '#666' }}>Billing Cycle</td>
+                      <td style={{ fontWeight: 600, textTransform: 'capitalize' }}>{billingCycle}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ color: '#666' }}>Locations</td>
+                      <td style={{ fontWeight: 600 }}>{locationCount}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ color: '#666' }}>Price per Location</td>
+                      <td style={{ fontWeight: 600 }}>${currentPrice}/month</td>
+                    </tr>
+                    {billingCycle !== 'annual' && (
+                      <tr>
+                        <td style={{ color: '#666' }}>Billing Adjustment</td>
+                        <td style={{ fontWeight: 600, color: '#ef4444' }}>
+                          +{((BILLING_MULTIPLIERS[billingCycle] - 1) * 100).toFixed(0)}%
+                        </td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td style={{ color: '#666' }}>Total Monthly</td>
+                      <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+                        ${(parseFloat(currentPrice) * locationCount).toFixed(2)}/month
+                      </td>
+                    </tr>
+                  </tbody>
+                </Table>
+                <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '12px' }}>
+                  <i className="bi bi-info-circle"></i> Plan changes take effect immediately.
+                  Upgrades are prorated, downgrades apply at next billing period.
+                </p>
+              </div>
+            </Card.Body>
+          </Card>
+        );
+
       default:
         return null;
     }
@@ -618,6 +907,13 @@ const Account = () => {
             >
               <i className="bi bi-person-circle"></i>
               <span>Account Details</span>
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'subscription' ? 'active' : ''}`}
+              onClick={() => setActiveSection('subscription')}
+            >
+              <i className="bi bi-credit-card-2-front"></i>
+              <span>Subscription</span>
             </button>
             <button
               className={`account-nav-item ${activeSection === 'security' ? 'active' : ''}`}

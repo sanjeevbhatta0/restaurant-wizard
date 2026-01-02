@@ -323,6 +323,83 @@ exports.getStripeConfig = onCall(async (request) => {
   }
 });
 
+/**
+ * Create a PaymentIntent for one-time tier payment during signup
+ * TODO: Replace with Stripe Subscriptions for recurring billing
+ * 
+ * This function creates a PaymentIntent for the tier subscription payment.
+ * The amount is calculated as: tierPrice * locationCount * billingPeriodMonths
+ * 
+ * Required data:
+ * - amount: Total amount in dollars
+ * - tier: Selected tier (ally, guide, chief, elder)
+ * - billingCycle: Billing cycle (monthly, quarterly, annual)
+ * - locationCount: Number of restaurant locations
+ * - restaurantName: Restaurant name for metadata
+ * - email: Customer email
+ */
+exports.createTierPayment = onCall(async (request) => {
+  try {
+    // Note: Allow unauthenticated calls since this is called during signup before user is created
+    const { amount, currency = 'usd', tier, billingCycle, locationCount, restaurantName, email } = request.data;
+
+    // Validate required fields
+    if (!amount || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'Invalid payment amount');
+    }
+
+    if (!tier || !['ally', 'guide', 'chief', 'elder'].includes(tier)) {
+      throw new HttpsError('invalid-argument', 'Invalid tier selection');
+    }
+
+    if (!billingCycle || !['monthly', 'quarterly', 'annual'].includes(billingCycle)) {
+      throw new HttpsError('invalid-argument', 'Invalid billing cycle');
+    }
+
+    if (!locationCount || locationCount < 1) {
+      throw new HttpsError('invalid-argument', 'Invalid location count');
+    }
+
+    // Convert amount to cents (Stripe uses smallest currency unit)
+    const amountInCents = Math.round(amount * 100);
+
+    // Create a PaymentIntent with tier metadata
+    // TODO: When implementing subscriptions, replace this with stripe.checkout.sessions.create()
+    // with a subscription mode and priceId
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountInCents,
+      currency: currency,
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      receipt_email: email,
+      metadata: {
+        type: 'tier_subscription',
+        tier: tier,
+        billingCycle: billingCycle,
+        locationCount: locationCount.toString(),
+        restaurantName: restaurantName,
+        // TODO: Add these when implementing Stripe subscriptions:
+        // priceId: STRIPE_PRICE_IDS[tier][billingCycle],
+        // customerId: stripeCustomerId
+      },
+      description: `Koda Carte ${tier.charAt(0).toUpperCase() + tier.slice(1)} Plan - ${billingCycle} billing (${locationCount} location${locationCount > 1 ? 's' : ''})`
+    });
+
+    // Return the client secret for the frontend
+    return {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id
+    };
+  } catch (error) {
+    console.error('Error creating tier payment:', error);
+    if (error.code) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
 exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', async (event) => {
   const snap = event.data;
   if (!snap) return;
@@ -772,9 +849,9 @@ exports.serveWebsite = onRequest(async (req, res) => {
       }
 
       // Determine final taxRate: location > restaurant > default
-      const finalTaxRate = locationTaxRate !== null ? locationTaxRate : 
-                          (restaurantData.taxRate !== undefined ? restaurantData.taxRate : 8.5);
-      
+      const finalTaxRate = locationTaxRate !== null ? locationTaxRate :
+        (restaurantData.taxRate !== undefined ? restaurantData.taxRate : 8.5);
+
       console.log('Tax rate sources - Location:', locationTaxRate, 'Restaurant:', restaurantData.taxRate, 'Final:', finalTaxRate);
 
       // Build template data

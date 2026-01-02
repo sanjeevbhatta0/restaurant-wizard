@@ -1,20 +1,47 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Nav, Form } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Nav, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation as useLocationContext } from '../contexts/LocationContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import './Layout.css';
 
-const Layout = () => {
+// Feature mapping: maps sidebar routes to feature IDs
+const ROUTE_TO_FEATURE = {
+  '/home': 'menu-management', // Home is always accessible
+  '/analytics': 'analytics',
+  '/menu-management': 'menu-management',
+  '/pos': 'pos',
+  '/kitchen': 'kitchen',
+  '/server': 'server',
+  '/table-layout': 'menu-management', // Part of basic features
+  '/payments': 'payments',
+  '/orders': 'orders',
+  '/seo-social': 'seo-social',
+  '/website-integration': 'website-integration',
+  '/website-builder': 'website-builder',
+  '/account': 'menu-management' // Account is always accessible
+};
+
+// Tier names for upgrade prompts
+const TIER_NAMES = {
+  ally: 'Ally',
+  guide: 'Guide',
+  chief: 'Chief',
+  elder: 'Elder'
+};
+
+const Layout = ({ children }) => {
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, selectedLocation, setSelectedLocation } = useLocationContext();
+  const { hasFeatureAccess, getMinimumTierForFeature, getCurrentTier } = useSubscription();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved === 'true';
   });
-
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
@@ -38,6 +65,20 @@ const Layout = () => {
     setIsCollapsed(!isCollapsed);
   };
 
+  // Check if a route is accessible based on tier
+  const isRouteAccessible = (route) => {
+    const featureId = ROUTE_TO_FEATURE[route];
+    if (!featureId) return true; // Unknown routes are accessible
+    return hasFeatureAccess(featureId);
+  };
+
+  // Get the minimum tier required for a route
+  const getRequiredTierForRoute = (route) => {
+    const featureId = ROUTE_TO_FEATURE[route];
+    if (!featureId) return null;
+    return getMinimumTierForFeature(featureId);
+  };
+
   const sidebarLinks = [
     { to: '/home', icon: 'house', text: 'Home' },
     { to: '/analytics', icon: 'bar-chart', text: 'Analytics' },
@@ -54,6 +95,24 @@ const Layout = () => {
     { to: '/account', icon: 'person-circle', text: 'Account' }
   ];
 
+  const handleLockedLinkClick = (e, link) => {
+    e.preventDefault();
+    const requiredTier = getRequiredTierForRoute(link.to);
+    const tierName = TIER_NAMES[requiredTier] || requiredTier;
+
+    // Show alert with upgrade prompt
+    if (window.confirm(
+      `The "${link.text}" feature requires the ${tierName} plan or higher.\n\nWould you like to view upgrade options?`
+    )) {
+      navigate('/account');
+      // Scroll to subscription section after navigation
+      setTimeout(() => {
+        const subscriptionBtn = document.querySelector('[data-section="subscription"]');
+        if (subscriptionBtn) subscriptionBtn.click();
+      }, 100);
+    }
+  };
+
   return (
     <div className="layout-container">
       <header className="header">
@@ -63,10 +122,10 @@ const Layout = () => {
           </button>
           <div className="logo">
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M16 2L4 8V16C4 22.6 9.4 28 16 28C22.6 28 28 22.6 28 16V8L16 2Z" fill="#667eea"/>
-              <path d="M16 6L8 10V16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16V10L16 6Z" fill="#764ba2"/>
-              <circle cx="16" cy="16" r="4" fill="white"/>
-              <path d="M14 14L16 16L18 14" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M16 2L4 8V16C4 22.6 9.4 28 16 28C22.6 28 28 22.6 28 16V8L16 2Z" fill="#667eea" />
+              <path d="M16 6L8 10V16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16V10L16 6Z" fill="#764ba2" />
+              <circle cx="16" cy="16" r="4" fill="white" />
+              <path d="M14 14L16 16L18 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
             <span className="logo-text">
               <span className="logo-word-koda">Koda</span>
@@ -98,7 +157,7 @@ const Layout = () => {
       </header>
       {sidebarOpen && <div className="sidebar-overlay" onClick={closeSidebar}></div>}
       <div className="content-wrapper">
-        <nav 
+        <nav
           className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${isCollapsed ? 'collapsed' : ''}`}
         >
           <div className="sidebar-header">
@@ -110,23 +169,58 @@ const Layout = () => {
           <Nav className="flex-column sidebar-nav">
             {sidebarLinks.map((link, index) => {
               const isActive = location.pathname === link.to;
-              return (
-                <Nav.Link 
-                  key={index} 
-                  as={Link} 
-                  to={link.to} 
-                  className={`sidebar-link ${isActive ? 'active' : ''}`}
-                  onClick={closeSidebar}
+              const isAccessible = isRouteAccessible(link.to);
+              const requiredTier = getRequiredTierForRoute(link.to);
+
+              const linkContent = (
+                <Nav.Link
+                  key={index}
+                  as={isAccessible ? Link : 'a'}
+                  to={isAccessible ? link.to : undefined}
+                  href={isAccessible ? undefined : '#'}
+                  className={`sidebar-link ${isActive ? 'active' : ''} ${!isAccessible ? 'locked' : ''}`}
+                  onClick={isAccessible ? closeSidebar : (e) => handleLockedLinkClick(e, link)}
                   title={isCollapsed ? link.text : ''}
+                  style={!isAccessible ? {
+                    opacity: 0.5,
+                    cursor: 'not-allowed',
+                    position: 'relative'
+                  } : undefined}
                 >
-                  <i className={`bi bi-${link.icon}`}></i> 
+                  <i className={`bi bi-${link.icon}`}></i>
                   <span className="sidebar-link-text">{link.text}</span>
+                  {!isAccessible && (
+                    <i className="bi bi-lock-fill" style={{
+                      marginLeft: 'auto',
+                      fontSize: '0.75rem',
+                      color: '#f59e0b'
+                    }}></i>
+                  )}
                 </Nav.Link>
               );
+
+              // Add tooltip for locked features
+              if (!isAccessible && requiredTier) {
+                return (
+                  <OverlayTrigger
+                    key={index}
+                    placement="right"
+                    overlay={
+                      <Tooltip id={`tooltip-${index}`}>
+                        Requires {TIER_NAMES[requiredTier]} plan
+                      </Tooltip>
+                    }
+                  >
+                    {linkContent}
+                  </OverlayTrigger>
+                );
+              }
+
+              return linkContent;
             })}
           </Nav>
           <div className="sidebar-footer">
-            <button 
+            <button
               className="sidebar-collapse-btn"
               onClick={toggleCollapse}
               aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -137,7 +231,7 @@ const Layout = () => {
           </div>
         </nav>
         <main className="content">
-          <Outlet />
+          {children || <Outlet />}
         </main>
       </div>
     </div>

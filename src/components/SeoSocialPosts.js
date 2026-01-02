@@ -7,7 +7,7 @@ import {
 import {
   FaFacebook, FaInstagram, FaTwitter, FaImage, FaMagic, FaRobot, FaLightbulb,
   FaChartLine, FaCalendarAlt, FaHashtag, FaCopy, FaRedo, FaCheck, FaSearch,
-  FaGoogle, FaMapMarkerAlt, FaStar, FaExclamationTriangle
+  FaGoogle, FaMapMarkerAlt, FaStar, FaExclamationTriangle, FaLock
 } from 'react-icons/fa';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -17,12 +17,19 @@ import aiContentService from '../services/aiContentService';
 import { facebookService } from '../services/facebookService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
+import { useNavigate } from 'react-router-dom';
 import './SeoSocialPosts.css';
 import './PageHeader.css';
 
 const SeoSocialPosts = () => {
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation, locations } = useLocation();
+  const { hasFeatureAccess } = useSubscription();
+  const navigate = useNavigate();
+
+  // Check if user has AI content access (Elder tier only)
+  const hasAIAccess = hasFeatureAccess('ai-content');
 
   // Connection states
   const [connectedAccounts, setConnectedAccounts] = useState({
@@ -500,13 +507,15 @@ const SeoSocialPosts = () => {
             </Nav.Link>
           </Nav.Item>
           <Nav.Item>
-            <Nav.Link eventKey="ideas">
-              <FaLightbulb className="me-2" />Content Ideas
+            <Nav.Link eventKey="ideas" disabled={!hasAIAccess}>
+              {hasAIAccess ? <FaLightbulb className="me-2" /> : <FaLock className="me-2" />}
+              Content Ideas {!hasAIAccess && <Badge bg="secondary" className="ms-1">Elder</Badge>}
             </Nav.Link>
           </Nav.Item>
           <Nav.Item>
-            <Nav.Link eventKey="seo">
-              <FaSearch className="me-2" />SEO Analysis
+            <Nav.Link eventKey="seo" disabled={!hasAIAccess}>
+              {hasAIAccess ? <FaSearch className="me-2" /> : <FaLock className="me-2" />}
+              SEO Analysis {!hasAIAccess && <Badge bg="secondary" className="ms-1">Elder</Badge>}
             </Nav.Link>
           </Nav.Item>
           <Nav.Item>
@@ -528,10 +537,14 @@ const SeoSocialPosts = () => {
                       <h5 className="mb-0">Create Your Post</h5>
                       <Button
                         variant="primary"
-                        onClick={() => setShowAIModal(true)}
+                        onClick={() => hasAIAccess ? setShowAIModal(true) : navigate('/account')}
                         className="ai-generate-btn"
                       >
-                        <FaRobot className="me-2" />Generate with AI
+                        {hasAIAccess ? (
+                          <><FaRobot className="me-2" />Generate with AI</>
+                        ) : (
+                          <><FaLock className="me-2" />AI (Elder Plan)</>
+                        )}
                       </Button>
                     </div>
                   </Card.Header>
@@ -610,8 +623,17 @@ const SeoSocialPosts = () => {
                         <div className="d-flex justify-content-between align-items-center mb-2">
                           <Form.Label className="mb-0">Caption</Form.Label>
                           <Dropdown>
-                            <Dropdown.Toggle variant="link" size="sm" className="p-0 text-decoration-none">
-                              <FaMagic className="me-1" />Improve with AI
+                            <Dropdown.Toggle
+                              variant="link"
+                              size="sm"
+                              className="p-0 text-decoration-none"
+                              disabled={!hasAIAccess}
+                            >
+                              {hasAIAccess ? (
+                                <><FaMagic className="me-1" />Improve with AI</>
+                              ) : (
+                                <><FaLock className="me-1" />AI Improve (Elder)</>
+                              )}
                             </Dropdown.Toggle>
                             <Dropdown.Menu>
                               <Dropdown.Item onClick={() => handleImproveContent('make_shorter')}>
@@ -648,10 +670,14 @@ const SeoSocialPosts = () => {
                           <Button
                             variant="link"
                             size="sm"
-                            onClick={handleGenerateHashtags}
-                            disabled={isGenerating || !postContent.trim()}
+                            onClick={hasAIAccess ? handleGenerateHashtags : () => navigate('/account')}
+                            disabled={isGenerating || (!hasAIAccess ? false : !postContent.trim())}
                           >
-                            <FaHashtag className="me-1" />Generate Hashtags
+                            {hasAIAccess ? (
+                              <><FaHashtag className="me-1" />Generate Hashtags</>
+                            ) : (
+                              <><FaLock className="me-1" />Hashtags (Elder)</>
+                            )}
                           </Button>
                         </div>
                       </Form.Group>

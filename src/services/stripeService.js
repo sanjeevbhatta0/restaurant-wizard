@@ -30,7 +30,7 @@ export const createPaymentIntent = async (amount, orderIds, tableNumbers, restau
   try {
     const functions = getFunctions();
     const createPaymentIntentFn = httpsCallable(functions, 'createPaymentIntent');
-    
+
     const result = await createPaymentIntentFn({
       amount,
       currency: 'usd',
@@ -38,7 +38,7 @@ export const createPaymentIntent = async (amount, orderIds, tableNumbers, restau
       tableNumbers,
       restaurantId
     });
-    
+
     return result.data;
   } catch (error) {
     console.error('Error creating payment intent:', error);
@@ -57,14 +57,14 @@ export const confirmPayment = async (paymentIntentId, orderIds, paymentDetails, 
   try {
     const functions = getFunctions();
     const confirmPaymentFn = httpsCallable(functions, 'confirmStripePayment');
-    
+
     const result = await confirmPaymentFn({
       paymentIntentId,
       orderIds,
       paymentDetails,
       restaurantId
     });
-    
+
     return result.data;
   } catch (error) {
     console.error('Error confirming payment:', error);
@@ -83,14 +83,14 @@ export const processRefund = async (orderId, restaurantId, refundAmount, refundT
   try {
     const functions = getFunctions();
     const processRefundFn = httpsCallable(functions, 'processStripeRefund');
-    
+
     const result = await processRefundFn({
       orderId,
       restaurantId,
       refundAmount,
       refundType
     });
-    
+
     return result.data;
   } catch (error) {
     console.error('Error processing refund:', error);
@@ -110,10 +110,95 @@ export const formatAmount = (amount) => {
   }).format(amount);
 };
 
+/**
+ * Create a PaymentIntent for one-time tier payment during signup
+ * TODO: Replace with Stripe Subscriptions for recurring billing
+ * 
+ * @param {number} amount - Amount in dollars (tier price * locations * billing period)
+ * @param {string} tier - Selected tier (ally, guide, chief, elder)
+ * @param {string} billingCycle - Billing cycle (monthly, quarterly, annual)
+ * @param {number} locationCount - Number of locations
+ * @param {string} restaurantName - Restaurant name for metadata
+ * @param {string} email - Customer email
+ * @returns {Promise<{clientSecret: string, paymentIntentId: string}>}
+ */
+export const createTierPayment = async (amount, tier, billingCycle, locationCount, restaurantName, email) => {
+  try {
+    const functions = getFunctions();
+    const createTierPaymentFn = httpsCallable(functions, 'createTierPayment');
+
+    const result = await createTierPaymentFn({
+      amount,
+      currency: 'usd',
+      tier,
+      billingCycle,
+      locationCount,
+      restaurantName,
+      email,
+      // TODO: When implementing subscriptions, add priceId here
+      // priceId: STRIPE_PRICE_IDS[tier][billingCycle]
+    });
+
+    return result.data;
+  } catch (error) {
+    console.error('Error creating tier payment:', error);
+    throw new Error(error.message || 'Failed to create payment');
+  }
+};
+
+/**
+ * Calculate total price for tier signup
+ * @param {string} tier - Tier name
+ * @param {string} billingCycle - monthly, quarterly, annual
+ * @param {number} locationCount - Number of locations
+ * @returns {{monthlyPerLocation: number, totalMonthly: number, billingMonths: number, totalCharge: number}}
+ */
+export const calculateTierPrice = (tier, billingCycle, locationCount) => {
+  // Base prices (annual rate - this is the advertised price)
+  const BASE_PRICES = {
+    ally: 29,
+    guide: 59,
+    chief: 99,
+    elder: 229
+  };
+
+  // Billing multipliers
+  const BILLING_MULTIPLIERS = {
+    monthly: 1.20,   // 20% extra
+    quarterly: 1.10, // 10% extra
+    annual: 1.00     // Base price
+  };
+
+  // Billing periods in months
+  const BILLING_MONTHS = {
+    monthly: 1,
+    quarterly: 3,
+    annual: 12
+  };
+
+  const basePrice = BASE_PRICES[tier] || 29;
+  const multiplier = BILLING_MULTIPLIERS[billingCycle] || 1;
+  const billingMonths = BILLING_MONTHS[billingCycle] || 1;
+
+  const monthlyPerLocation = basePrice * multiplier;
+  const totalMonthly = monthlyPerLocation * locationCount;
+  const totalCharge = totalMonthly * billingMonths;
+
+  return {
+    monthlyPerLocation: Math.round(monthlyPerLocation * 100) / 100,
+    totalMonthly: Math.round(totalMonthly * 100) / 100,
+    billingMonths,
+    totalCharge: Math.round(totalCharge * 100) / 100
+  };
+};
+
 export default {
   getStripe,
   createPaymentIntent,
   confirmPayment,
   processRefund,
-  formatAmount
+  formatAmount,
+  createTierPayment,
+  calculateTierPrice
 };
+

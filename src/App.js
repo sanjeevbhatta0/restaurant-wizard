@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-d
 import { AuthProvider } from './contexts/AuthContext';
 import { LocationProvider } from './contexts/LocationContext';
 import { MenuProvider } from './contexts/MenuContext';
+import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
@@ -20,6 +21,7 @@ import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
 import WebsiteBuilder from './components/WebsiteBuilder';
 import PrivacyPolicy from './components/PrivacyPolicy';
+import LandingPage from './components/landing/LandingPage';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import './App.css';
@@ -27,90 +29,93 @@ import './App.css';
 function App() {
   return (
     <AuthProvider>
-      <LocationProvider>
-        <MenuProvider>
-          <Router>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-              <Route path="/" element={<Layout />}>
-                <Route index element={<Navigate to="/home" replace />} />
-                <Route path="home" element={
+      <SubscriptionProvider>
+        <LocationProvider>
+          <MenuProvider>
+            <Router>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+
+                {/* Protected App Routes */}
+                <Route path="/home" element={
                   <PrivateRoute>
-                    <Home />
+                    <Layout><Home /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="analytics" element={
+                <Route path="/analytics" element={
                   <PrivateRoute>
-                    <Dashboard />
+                    <Layout><Dashboard /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="menu-management" element={
+                <Route path="/menu-management" element={
                   <PrivateRoute>
-                    <MenuManagement />
+                    <Layout><MenuManagement /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="menu-management/category/:categoryId" element={
+                <Route path="/menu-management/category/:categoryId" element={
                   <PrivateRoute>
-                    <CategoryItems />
+                    <Layout><CategoryItems /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="orders" element={
+                <Route path="/orders" element={
                   <PrivateRoute>
-                    <Orders />
+                    <Layout><Orders /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="pos" element={
+                <Route path="/pos" element={
                   <PrivateRoute>
-                    <POS />
+                    <Layout><POS /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="kitchen" element={
+                <Route path="/kitchen" element={
                   <PrivateRoute>
-                    <Kitchen />
+                    <Layout><Kitchen /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="server" element={
+                <Route path="/server" element={
                   <PrivateRoute>
-                    <Server />
+                    <Layout><Server /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="table-layout" element={
+                <Route path="/table-layout" element={
                   <PrivateRoute>
-                    <TableLayout />
+                    <Layout><TableLayout /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="payments" element={
+                <Route path="/payments" element={
                   <PrivateRoute>
-                    <Payments />
+                    <Layout><Payments /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="seo-social" element={
+                <Route path="/seo-social" element={
                   <PrivateRoute>
-                    <SeoSocialPosts />
+                    <Layout><SeoSocialPosts /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="website-integration" element={
+                <Route path="/website-integration" element={
                   <PrivateRoute>
-                    <WebsiteIntegration />
+                    <Layout><WebsiteIntegration /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="website-builder" element={
+                <Route path="/website-builder" element={
                   <PrivateRoute>
-                    <WebsiteBuilder />
+                    <Layout><WebsiteBuilder /></Layout>
                   </PrivateRoute>
                 } />
-                <Route path="account" element={
+                <Route path="/account" element={
                   <PrivateRoute>
-                    <Account />
+                    <Layout><Account /></Layout>
                   </PrivateRoute>
                 } />
-              </Route>
-            </Routes>
-          </Router>
-        </MenuProvider>
-      </LocationProvider>
+              </Routes>
+            </Router>
+          </MenuProvider>
+        </LocationProvider>
+      </SubscriptionProvider>
     </AuthProvider>
   );
 }

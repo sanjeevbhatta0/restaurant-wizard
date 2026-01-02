@@ -2,12 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Spinner, Alert, Badge, Row, Col, Form, ProgressBar } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../contexts/MenuContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import analyticsAIService from '../services/analyticsAIService';
+import { useNavigate } from 'react-router-dom';
 import './AIAnalytics.css';
 
 const AIAnalytics = () => {
+    const { hasFeatureAccess } = useSubscription();
+    const navigate = useNavigate();
+    const hasAIAccess = hasFeatureAccess('ai-analytics');
     const [selectedTier, setSelectedTier] = useState('tier1');
     const [loading, setLoading] = useState({});
     const [insights, setInsights] = useState({});
@@ -190,10 +195,12 @@ const AIAnalytics = () => {
                     <Button
                         variant="outline-primary"
                         size="sm"
-                        onClick={() => fetchInsight(tier, analysisType)}
-                        disabled={isLoading}
+                        onClick={() => hasAIAccess ? fetchInsight(tier, analysisType) : navigate('/account')}
+                        disabled={isLoading || !hasAIAccess}
                     >
-                        {isLoading ? (
+                        {!hasAIAccess ? (
+                            <><i className="bi bi-lock"></i> Upgrade to Unlock</>
+                        ) : isLoading ? (
                             <><Spinner animation="border" size="sm" /> Analyzing...</>
                         ) : data ? (
                             <><i className="bi bi-arrow-clockwise"></i> Refresh</>
@@ -623,6 +630,29 @@ const AIAnalytics = () => {
 
     return (
         <div className="ai-analytics-container">
+            {/* Subscription Gate for AI Analytics */}
+            {!hasAIAccess && (
+                <Alert variant="warning" className="mb-4">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+                        <div>
+                            <Alert.Heading>
+                                <i className="bi bi-lock me-2"></i>
+                                AI Analytics - Elder Plan Feature
+                            </Alert.Heading>
+                            <p className="mb-0">
+                                Unlock AI-powered insights, predictions, and the ability to ask your business data anything.
+                            </p>
+                        </div>
+                        <Button
+                            variant="warning"
+                            onClick={() => navigate('/account')}
+                        >
+                            Upgrade to Elder →
+                        </Button>
+                    </div>
+                </Alert>
+            )}
+
             {error && (
                 <Alert variant="danger" onClose={() => setError('')} dismissible>
                     {error}
