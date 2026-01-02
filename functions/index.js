@@ -758,6 +758,25 @@ exports.serveWebsite = onRequest(async (req, res) => {
       const templateId = websiteData.template || 'modern-bistro';
       const templateDefaults = TEMPLATES[templateId] || TEMPLATES['modern-bistro'];
 
+      // For multi-location, try to get location-specific settings
+      let locationTaxRate = null;
+      if (isMultiLocation && effectiveLocationId && effectiveLocationId !== restaurantId) {
+        const locationDoc = await db.doc(`restaurants/${restaurantId}/locations/${effectiveLocationId}`).get();
+        if (locationDoc.exists) {
+          const locationData = locationDoc.data();
+          // Use location taxRate if set, otherwise fall back to restaurant-level
+          if (locationData.taxRate !== undefined) {
+            locationTaxRate = locationData.taxRate;
+          }
+        }
+      }
+
+      // Determine final taxRate: location > restaurant > default
+      const finalTaxRate = locationTaxRate !== null ? locationTaxRate : 
+                          (restaurantData.taxRate !== undefined ? restaurantData.taxRate : 8.5);
+      
+      console.log('Tax rate sources - Location:', locationTaxRate, 'Restaurant:', restaurantData.taxRate, 'Final:', finalTaxRate);
+
       // Build template data
       const templateData = {
         restaurantId: restaurantId,
@@ -793,7 +812,7 @@ exports.serveWebsite = onRequest(async (req, res) => {
           ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
           : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
         stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
-        taxRate: restaurantData.taxRate !== undefined ? restaurantData.taxRate : 8.5
+        taxRate: finalTaxRate
       };
 
       // ALWAYS load from local files first (they're included in the functions package and always up-to-date)
@@ -1151,10 +1170,14 @@ exports.submitOrder = onRequest((request, response) => {
         locationId: orderData.locationId || orderData.restaurantId, // Default to restaurantId for single-location
         customer: orderData.customer,
         items: orderData.items,
+        subtotal: orderData.subtotal || 0,
+        tax: orderData.tax || 0,
+        taxRate: orderData.taxRate || 0, // Store tax rate used
         total: orderData.total,
         pickupTime: orderData.pickupTime,
         orderType: orderData.orderType || 'pickup', // Default to pickup for website orders
         paymentMethod: orderData.paymentMethod,
+        paymentDetails: orderData.paymentDetails || null, // Store Stripe payment details
         source: orderData.source || 'website', // Track order source
         status: 'new', // Website orders start as 'new', POS orders are 'sent_to_kitchen'
         createdAt: FieldValue.serverTimestamp()

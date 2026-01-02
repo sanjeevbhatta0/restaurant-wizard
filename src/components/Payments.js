@@ -2209,14 +2209,14 @@ const Payments = () => {
                     {/* Subtotal */}
                     <div className="d-flex justify-content-between mb-2">
                       <span>Subtotal:</span>
-                      <span>${(reimbursementOrderData.paymentDetails?.subtotal || reimbursementOrderData.total || 0).toFixed(2)}</span>
+                      <span>${(reimbursementOrderData.paymentDetails?.subtotal || reimbursementOrderData.subtotal || reimbursementOrderData.total || 0).toFixed(2)}</span>
                     </div>
 
-                    {/* Tax */}
-                    {reimbursementOrderData.paymentDetails?.taxAmount > 0 && (
+                    {/* Tax - Check both paymentDetails.taxAmount (POS) and order.tax (website) */}
+                    {(reimbursementOrderData.paymentDetails?.taxAmount > 0 || reimbursementOrderData.tax > 0) && (
                       <div className="d-flex justify-content-between mb-2">
-                        <span>Tax ({reimbursementOrderData.paymentDetails?.taxRate || 0}%):</span>
-                        <span>${(reimbursementOrderData.paymentDetails.taxAmount || 0).toFixed(2)}</span>
+                        <span>Tax ({reimbursementOrderData.paymentDetails?.taxRate || reimbursementOrderData.taxRate || 0}%):</span>
+                        <span>${(reimbursementOrderData.paymentDetails?.taxAmount || reimbursementOrderData.tax || 0).toFixed(2)}</span>
                       </div>
                     )}
 

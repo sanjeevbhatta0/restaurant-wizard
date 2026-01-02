@@ -1270,7 +1270,7 @@
         <div class="cart-footer" id="cartFooter" style="display: none;">
             <div class="cart-totals">
                 <div class="cart-total-row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
-                <div class="cart-total-row"><span>Tax (8%)</span><span id="cartTax">$0.00</span></div>
+                <div class="cart-total-row"><span>Tax ({{taxRate}}%)</span><span id="cartTax">$0.00</span></div>
                 <div class="cart-total-row final"><span>Total</span><span id="cartTotal">$0.00</span></div>
             </div>
             <button class="checkout-btn" onclick="openCheckout()">Proceed to Checkout</button>
@@ -1298,7 +1298,7 @@
             restaurantName: '{{restaurantName}}',
             apiBaseUrl: '{{apiBaseUrl}}',
             stripePublishableKey: '{{stripePublishableKey}}',
-            taxRate: {{ taxRate }} / 100
+            taxRate: {{taxRate}} / 100
         };
 
         const hours = {{ hoursJson }};
@@ -1598,6 +1598,7 @@
                     items: cart.map(item => ({ id: item.id, name: item.name, price: item.price, finalPrice: item.finalPrice, quantity: item.quantity })),
                     subtotal: totals.subtotal,
                     tax: totals.tax,
+                    taxRate: CONFIG.taxRate * 100,
                     total: totals.total,
                     pickupTime,
                     orderType: 'pickup',

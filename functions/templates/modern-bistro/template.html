@@ -1408,7 +1408,7 @@
                     <span id="cartSubtotal">$0.00</span>
                 </div>
                 <div class="cart-total-row">
-                    <span>Tax (8%)</span>
+                    <span>Tax ({{taxRate}}%)</span>
                     <span id="cartTax">$0.00</span>
                 </div>
                 <div class="cart-total-row final">
@@ -1834,7 +1834,7 @@
                         <span>$${totals.subtotal.toFixed(2)}</span>
                     </div>
                     <div class="summary-item">
-                        <span>Tax (8%)</span>
+                        <span>Tax (${(CONFIG.taxRate * 100).toFixed(1)}%)</span>
                         <span>$${totals.tax.toFixed(2)}</span>
                     </div>
                     <div class="summary-item summary-total">
@@ -1978,6 +1978,7 @@
                     })),
                     subtotal: totals.subtotal,
                     tax: totals.tax,
+                    taxRate: CONFIG.taxRate * 100, // Store as percentage (e.g., 10 for 10%)
                     total: totals.total,
                     pickupTime: pickupTime,
                     orderType: 'pickup',
