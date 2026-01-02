@@ -228,7 +228,7 @@ const PricingTiers = () => {
                 <>
                   <span className="currency">$</span>
                   <span className="amount">{calculatePrice(key)}</span>
-                  <span className="period">/month</span>
+                  <span className="period">/mo</span>
                 </>
               )}
             </div>
@@ -457,9 +457,11 @@ const PricingTiers = () => {
 
         .pricing-grid {
           display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 1.25rem;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 1.5rem;
           align-items: stretch;
+          justify-content: center;
+          width: 100%;
         }
 
         .amount.free {

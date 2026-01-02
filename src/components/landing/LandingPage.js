@@ -221,8 +221,8 @@ const LandingPage = () => {
                 </div>
             </section>
 
-            {/* Pricing Section */}
-            <section className="section" id="pricing">
+            {/* Pricing Section - Custom width for 5-column grid */}
+            <section className="section" id="pricing" style={{ maxWidth: '1600px', paddingLeft: '1rem', paddingRight: '1rem' }}>
                 <h2 className="section-title">Our <span>Offerings</span></h2>
                 <p className="section-subtitle">
                     Choose the tier that fits your journey. Upgrade anytime as your restaurant grows.
