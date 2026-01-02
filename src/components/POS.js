@@ -11,6 +11,7 @@ import { useMenu } from '../contexts/MenuContext';
 import TableSelectionModal from './TableSelectionModal';
 import activityService from '../services/activityService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
+import { incrementOrderCount } from '../services/orderUsageService';
 import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './POS.css';
@@ -176,6 +177,14 @@ const POS = () => {
         collection(db, `restaurants/${currentUser.uid}/orders`),
         orderData
       );
+
+      // Track order usage for tier limits
+      try {
+        await incrementOrderCount(currentUser.uid, calculateTotal());
+      } catch (usageErr) {
+        console.error('Failed to track order usage:', usageErr);
+        // Don't fail the order if usage tracking fails
+      }
 
       const tableDisplay = selectedTables.length === 1
         ? selectedTables[0]

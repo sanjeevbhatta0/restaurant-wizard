@@ -101,6 +101,14 @@ export const BILLING_MULTIPLIERS = {
     annual: 1.00
 };
 
+// Order volume limits per tier (per billing cycle)
+export const ORDER_LIMITS = {
+    ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order overage
+    guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order overage
+    chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order overage
+    elder: { limit: Infinity, overageRate: 0 }    // Unlimited, no overage
+};
+
 const SubscriptionContext = createContext();
 
 export const useSubscription = () => {
@@ -219,6 +227,25 @@ export const SubscriptionProvider = ({ children }) => {
         return Math.max(0, diffDays);
     };
 
+    // Get order limit for current tier
+    const getOrderLimit = () => {
+        const tier = getCurrentTier();
+        return ORDER_LIMITS[tier] || ORDER_LIMITS.ally;
+    };
+
+    // Calculate overage charge for an order amount
+    const calculateOverageCharge = (orderTotal) => {
+        const tier = getCurrentTier();
+        const overageRate = ORDER_LIMITS[tier]?.overageRate || 0;
+        return orderTotal * overageRate;
+    };
+
+    // Check if current usage is over limit
+    const isOverOrderLimit = (currentCount) => {
+        const { limit } = getOrderLimit();
+        return currentCount > limit;
+    };
+
     const value = {
         subscription,
         loading,
@@ -233,7 +260,11 @@ export const SubscriptionProvider = ({ children }) => {
         getTrialDaysRemaining,
         TIER_FEATURES,
         PRICING,
-        TRIAL_PERIOD_DAYS
+        TRIAL_PERIOD_DAYS,
+        ORDER_LIMITS,
+        getOrderLimit,
+        calculateOverageCharge,
+        isOverOrderLimit
     };
 
     return (

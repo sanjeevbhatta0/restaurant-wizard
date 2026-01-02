@@ -4,12 +4,13 @@ import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, signOu
 import { db, auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
-import { useSubscription, TIER_FEATURES, PRICING, BILLING_MULTIPLIERS } from '../contexts/SubscriptionContext';
+import { useSubscription, TIER_FEATURES, PRICING, BILLING_MULTIPLIERS, ORDER_LIMITS } from '../contexts/SubscriptionContext';
 import { useNavigate } from 'react-router-dom';
-import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge } from 'react-bootstrap';
+import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge, ProgressBar } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
 import PasswordInput from './PasswordInput';
 import activityService from '../services/activityService';
+import { getUsageStats } from '../services/orderUsageService';
 import './Account.css';
 
 const Account = () => {
@@ -56,6 +57,10 @@ const Account = () => {
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [pendingPlanChange, setPendingPlanChange] = useState(null);
 
+  // Order usage tracking
+  const [usageStats, setUsageStats] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+
   useEffect(() => {
     if (!currentUser?.uid) return;
 
@@ -96,6 +101,25 @@ const Account = () => {
       setLocationList([]);
     }
   }, [isMultiLocation, locations]);
+
+  // Load order usage stats
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    const loadUsageStats = async () => {
+      try {
+        setUsageLoading(true);
+        const stats = await getUsageStats(currentUser.uid);
+        setUsageStats(stats);
+      } catch (error) {
+        console.error('Error loading usage stats:', error);
+      } finally {
+        setUsageLoading(false);
+      }
+    };
+
+    loadUsageStats();
+  }, [currentUser]);
 
   const handleSaveAccountDetails = async (e) => {
     e.preventDefault();
@@ -850,9 +874,9 @@ const Account = () => {
               )}
 
               {/* Billing Cycle Selector */}
-              <div style={{ 
-                marginTop: '24px', 
-                paddingTop: '24px', 
+              <div style={{
+                marginTop: '24px',
+                paddingTop: '24px',
                 borderTop: '1px solid #e5e7eb'
               }}>
                 <h5 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -901,24 +925,24 @@ const Account = () => {
                             Best Value
                           </div>
                         )}
-                        <div style={{ 
-                          fontWeight: 700, 
+                        <div style={{
+                          fontWeight: 700,
                           fontSize: '1rem',
                           color: isSelected ? '#667eea' : '#1f2937',
                           marginBottom: '4px'
                         }}>
                           {option.label}
                         </div>
-                        <div style={{ 
-                          fontSize: '1.25rem', 
+                        <div style={{
+                          fontSize: '1.25rem',
                           fontWeight: 800,
                           color: isSelected ? '#667eea' : '#374151'
                         }}>
                           ${optionPrice}
                           <span style={{ fontSize: '0.75rem', fontWeight: 400, color: '#666' }}>/mo</span>
                         </div>
-                        <div style={{ 
-                          fontSize: '0.75rem', 
+                        <div style={{
+                          fontSize: '0.75rem',
                           color: option.value === 'annual' ? '#22c55e' : '#f59e0b',
                           fontWeight: 500,
                           marginTop: '4px'
@@ -947,8 +971,8 @@ const Account = () => {
               </div>
 
               {/* Billing Info */}
-              <div style={{ 
-                marginTop: '16px', 
+              <div style={{
+                marginTop: '16px',
                 padding: '20px',
                 background: '#f8fafc',
                 borderRadius: '12px',
@@ -994,10 +1018,10 @@ const Account = () => {
                     </tr>
                   </tbody>
                 </Table>
-                <div style={{ 
-                  marginTop: '12px', 
-                  padding: '10px 12px', 
-                  background: 'rgba(102, 126, 234, 0.08)', 
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  background: 'rgba(102, 126, 234, 0.08)',
                   borderRadius: '8px',
                   display: 'flex',
                   alignItems: 'flex-start',
@@ -1009,6 +1033,213 @@ const Account = () => {
                   </p>
                 </div>
               </div>
+            </Card.Body>
+          </Card>
+        );
+
+      case 'usage':
+        const tier = getCurrentTier();
+        const tierLimits = ORDER_LIMITS[tier] || ORDER_LIMITS.ally;
+        const tierName = TIER_FEATURES[tier]?.name || 'Ally';
+        const resetDate = usageStats?.periodEnd ? new Date(usageStats.periodEnd).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        }) : 'N/A';
+        const progressColor = usageStats?.percentUsed >= 100 ? 'danger' :
+          usageStats?.percentUsed >= 80 ? 'warning' : 'success';
+
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-graph-up"></i> Order Usage</h3>
+            </Card.Header>
+            <Card.Body>
+              {usageLoading ? (
+                <div className="text-center py-5">
+                  <Spinner animation="border" variant="primary" />
+                  <p className="mt-3 text-muted">Loading usage data...</p>
+                </div>
+              ) : usageStats ? (
+                <>
+                  {/* Plan Overview */}
+                  <div style={{
+                    padding: '20px',
+                    background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                    borderRadius: '12px',
+                    marginBottom: '24px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <div>
+                        <h5 style={{ margin: 0, fontWeight: 700 }}>
+                          {TIER_FEATURES[tier]?.icon} {tierName} Plan
+                        </h5>
+                        <p style={{ margin: '4px 0 0', color: '#666', fontSize: '0.9rem' }}>
+                          {usageStats.isUnlimited ? 'Unlimited orders' : `${tierLimits.limit.toLocaleString()} orders per billing cycle`}
+                        </p>
+                      </div>
+                      <Badge bg="info" style={{ fontSize: '0.85rem', padding: '8px 12px' }}>
+                        Resets: {resetDate}
+                      </Badge>
+                    </div>
+                    {usageStats.daysRemaining > 0 && (
+                      <p style={{ margin: 0, color: '#667eea', fontSize: '0.85rem', fontWeight: 500 }}>
+                        <i className="bi bi-calendar3"></i> {usageStats.daysRemaining} days remaining in billing cycle
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Order Usage Progress */}
+                  {!usageStats.isUnlimited && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <h5 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <i className="bi bi-bag-check" style={{ color: '#667eea' }}></i>
+                        Orders This Period
+                      </h5>
+                      <div style={{
+                        padding: '20px',
+                        background: '#f8fafc',
+                        borderRadius: '12px',
+                        border: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                          <span style={{ fontSize: '2rem', fontWeight: 800, color: progressColor === 'danger' ? '#dc3545' : progressColor === 'warning' ? '#f59e0b' : '#22c55e' }}>
+                            {usageStats.currentCount.toLocaleString()}
+                          </span>
+                          <span style={{ fontSize: '1.5rem', fontWeight: 600, color: '#666' }}>
+                            / {tierLimits.limit.toLocaleString()}
+                          </span>
+                        </div>
+                        <ProgressBar
+                          now={Math.min(usageStats.percentUsed, 100)}
+                          variant={progressColor}
+                          style={{ height: '12px', borderRadius: '6px' }}
+                        />
+                        <p style={{ marginTop: '12px', marginBottom: 0, color: '#666', fontSize: '0.85rem' }}>
+                          {usageStats.percentUsed.toFixed(1)}% of your monthly limit used
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Elder - Unlimited Notice */}
+                  {usageStats.isUnlimited && (
+                    <div style={{
+                      padding: '24px',
+                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      borderRadius: '12px',
+                      color: 'white',
+                      textAlign: 'center',
+                      marginBottom: '24px'
+                    }}>
+                      <i className="bi bi-infinity" style={{ fontSize: '3rem', marginBottom: '12px', display: 'block' }}></i>
+                      <h4 style={{ margin: '0 0 8px' }}>Unlimited Orders</h4>
+                      <p style={{ margin: 0, opacity: 0.9 }}>
+                        Your Elder plan includes unlimited orders with no overage charges.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Overage Section - Only show if there are overages or if approaching limit */}
+                  {!usageStats.isUnlimited && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <h5 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <i className="bi bi-exclamation-triangle" style={{ color: usageStats.isOverLimit ? '#dc3545' : '#f59e0b' }}></i>
+                        Overage Charges
+                      </h5>
+                      <div style={{
+                        padding: '20px',
+                        background: usageStats.isOverLimit ? 'rgba(220, 53, 69, 0.05)' : '#f8fafc',
+                        borderRadius: '12px',
+                        border: `1px solid ${usageStats.isOverLimit ? 'rgba(220, 53, 69, 0.3)' : '#e5e7eb'}`
+                      }}>
+                        {usageStats.isOverLimit ? (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                              <div>
+                                <span style={{ fontSize: '0.9rem', color: '#666' }}>Overage Orders</span>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#dc3545' }}>
+                                  {usageStats.overageOrders.toLocaleString()}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontSize: '0.9rem', color: '#666' }}>Overage Rate</span>
+                                <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#666' }}>
+                                  {(tierLimits.overageRate * 100).toFixed(1)}% per order
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{
+                              padding: '16px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid rgba(220, 53, 69, 0.2)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}>
+                              <span style={{ fontWeight: 600, color: '#374151' }}>Total Overage Charges</span>
+                              <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#dc3545' }}>
+                                ${usageStats.overageCharges.toFixed(2)}
+                              </span>
+                            </div>
+                            <p style={{ marginTop: '12px', marginBottom: 0, fontSize: '0.85rem', color: '#666' }}>
+                              <i className="bi bi-info-circle"></i> Overage charges will be billed at the end of your billing cycle.
+                            </p>
+                          </>
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '12px' }}>
+                            <i className="bi bi-check-circle-fill" style={{ fontSize: '2rem', color: '#22c55e', marginBottom: '12px', display: 'block' }}></i>
+                            <p style={{ margin: 0, color: '#22c55e', fontWeight: 600 }}>No overage charges</p>
+                            <p style={{ margin: '8px 0 0', color: '#666', fontSize: '0.85rem' }}>
+                              You're within your {tierLimits.limit.toLocaleString()} order limit.
+                              {usageStats.percentUsed >= 80 && (
+                                <span style={{ color: '#f59e0b', display: 'block', marginTop: '8px' }}>
+                                  <i className="bi bi-exclamation-triangle"></i> Approaching limit - consider upgrading!
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upgrade CTA for non-Elder users */}
+                  {tier !== 'elder' && (
+                    <div style={{
+                      padding: '20px',
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      borderRadius: '12px',
+                      color: 'white',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '16px'
+                    }}>
+                      <div>
+                        <h5 style={{ margin: '0 0 4px', fontWeight: 700 }}>Need more orders?</h5>
+                        <p style={{ margin: 0, opacity: 0.9, fontSize: '0.9rem' }}>
+                          Upgrade your plan to increase your order limit and reduce overage rates.
+                        </p>
+                      </div>
+                      <Button
+                        variant="light"
+                        onClick={() => setActiveSection('subscription')}
+                        style={{ fontWeight: 600, whiteSpace: 'nowrap' }}
+                      >
+                        View Plans <i className="bi bi-arrow-right"></i>
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <i className="bi bi-graph-up" style={{ fontSize: '3rem', color: '#ccc', marginBottom: '16px', display: 'block' }}></i>
+                  <p style={{ color: '#666' }}>No usage data available yet. Start processing orders to see your usage stats.</p>
+                </div>
+              )}
             </Card.Body>
           </Card>
         );
@@ -1072,6 +1303,16 @@ const Account = () => {
                 <span>Locations</span>
               </button>
             )}
+            <button
+              className={`account-nav-item ${activeSection === 'usage' ? 'active' : ''}`}
+              onClick={() => setActiveSection('usage')}
+            >
+              <i className="bi bi-graph-up"></i>
+              <span>Usage</span>
+              {usageStats?.isOverLimit && (
+                <Badge bg="danger" style={{ marginLeft: '8px', fontSize: '0.7rem' }}>!</Badge>
+              )}
+            </button>
           </nav>
         </div>
 
@@ -1163,8 +1404,8 @@ const Account = () => {
       </Modal>
 
       {/* Plan Change Modal */}
-      <Modal 
-        show={showPlanModal} 
+      <Modal
+        show={showPlanModal}
         onHide={() => {
           setShowPlanModal(false);
           setPendingPlanChange(null);
@@ -1193,12 +1434,12 @@ const Account = () => {
               transform: 'translateX(-50%)',
               width: '300px',
               height: '300px',
-              background: pendingPlanChange?.isUpgrade 
+              background: pendingPlanChange?.isUpgrade
                 ? 'radial-gradient(circle, rgba(34, 197, 94, 0.3) 0%, transparent 70%)'
                 : 'radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%)',
               pointerEvents: 'none'
             }} />
-            
+
             {/* Icon */}
             <div style={{
               width: '80px',
@@ -1217,7 +1458,7 @@ const Account = () => {
               position: 'relative',
               zIndex: 1
             }}>
-              <i 
+              <i
                 className={`bi ${pendingPlanChange?.isUpgrade ? 'bi-rocket-takeoff-fill' : pendingPlanChange?.type === 'billing' ? 'bi-calendar-check-fill' : 'bi-arrow-down-circle-fill'}`}
                 style={{ fontSize: '36px', color: 'white' }}
               />
@@ -1232,10 +1473,10 @@ const Account = () => {
               position: 'relative',
               zIndex: 1
             }}>
-              {pendingPlanChange?.type === 'billing' 
+              {pendingPlanChange?.type === 'billing'
                 ? 'Change Billing Cycle'
-                : pendingPlanChange?.isUpgrade 
-                  ? 'Upgrade Your Plan' 
+                : pendingPlanChange?.isUpgrade
+                  ? 'Upgrade Your Plan'
                   : 'Downgrade Plan'}
             </h3>
             <p style={{
@@ -1296,8 +1537,8 @@ const Account = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem' }}>Billing Cycle</span>
-                  <span style={{ 
-                    color: 'white', 
+                  <span style={{
+                    color: 'white',
                     fontWeight: 600,
                     background: 'rgba(102, 126, 234, 0.2)',
                     padding: '4px 12px',
@@ -1311,19 +1552,19 @@ const Account = () => {
                   <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem' }}>Price per Location</span>
                   <span style={{ color: 'white', fontWeight: 600 }}>${pendingPlanChange?.newPrice}/mo</span>
                 </div>
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
                   paddingTop: '12px',
                   borderTop: '1px solid rgba(255, 255, 255, 0.1)',
                   marginTop: '4px'
                 }}>
                   <span style={{ color: 'white', fontSize: '1rem', fontWeight: 600 }}>Total Monthly</span>
-                  <span style={{ 
-                    color: pendingPlanChange?.isUpgrade ? '#22c55e' : '#a5b4fc', 
-                    fontWeight: 800, 
-                    fontSize: '1.5rem' 
+                  <span style={{
+                    color: pendingPlanChange?.isUpgrade ? '#22c55e' : '#a5b4fc',
+                    fontWeight: 800,
+                    fontSize: '1.5rem'
                   }}>
                     ${(parseFloat(pendingPlanChange?.newPrice || 0) * (subscription?.locationCount || 1)).toFixed(2)}
                   </span>
@@ -1343,9 +1584,9 @@ const Account = () => {
               border: '1px solid rgba(245, 158, 11, 0.2)'
             }}>
               <i className="bi bi-info-circle-fill" style={{ color: '#f59e0b', marginTop: '2px' }} />
-              <p style={{ 
-                color: 'rgba(255, 255, 255, 0.8)', 
-                fontSize: '0.8rem', 
+              <p style={{
+                color: 'rgba(255, 255, 255, 0.8)',
+                fontSize: '0.8rem',
                 margin: 0,
                 lineHeight: 1.5
               }}>
@@ -1414,10 +1655,10 @@ const Account = () => {
               ) : (
                 <>
                   <i className={`bi ${pendingPlanChange?.isUpgrade ? 'bi-rocket-takeoff' : 'bi-check-lg'}`} />
-                  {pendingPlanChange?.type === 'billing' 
+                  {pendingPlanChange?.type === 'billing'
                     ? 'Confirm Change'
-                    : pendingPlanChange?.isUpgrade 
-                      ? 'Upgrade Now' 
+                    : pendingPlanChange?.isUpgrade
+                      ? 'Upgrade Now'
                       : 'Confirm Downgrade'}
                 </>
               )}
@@ -1425,8 +1666,8 @@ const Account = () => {
           </div>
         </div>
         {/* Hidden button to trigger confirm from inside the subscription section */}
-        <button 
-          id="confirm-plan-change-btn" 
+        <button
+          id="confirm-plan-change-btn"
           style={{ display: 'none' }}
           onClick={async () => {
             if (!pendingPlanChange) return;

@@ -19,6 +19,14 @@ const BILLING_MULTIPLIERS = {
   annual: 1.00     // Base price (advertised)
 };
 
+// Order volume limits per tier (per billing cycle)
+const ORDER_LIMITS = {
+  ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order
+  guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order
+  chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order
+  elder: { limit: Infinity, overageRate: 0 }    // Unlimited, no overage
+};
+
 // Feature definitions
 const TIER_FEATURES = {
   ally: {
@@ -194,6 +202,19 @@ const PricingTiers = () => {
                 Save ${getAnnualSavings(key)}/year
               </div>
             )}
+
+            {/* Order Limit Display */}
+            <div className="order-limit-badge">
+              <i className="bi bi-bag-check"></i>
+              {ORDER_LIMITS[key].limit === Infinity ? (
+                <span>Unlimited Orders</span>
+              ) : (
+                <span>{ORDER_LIMITS[key].limit.toLocaleString()} orders/month</span>
+              )}
+              {ORDER_LIMITS[key].overageRate > 0 && (
+                <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage</span>
+              )}
+            </div>
 
             <p className="tier-description">{tier.description}</p>
 
@@ -471,6 +492,31 @@ const PricingTiers = () => {
           font-size: 0.85rem;
           font-weight: 600;
           margin-bottom: 1rem;
+        }
+
+        .order-limit-badge {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          padding: 12px 16px;
+          background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+          border: 1px solid rgba(102, 126, 234, 0.2);
+          border-radius: 10px;
+          margin-bottom: 1rem;
+          font-weight: 600;
+          color: #667eea;
+        }
+
+        .order-limit-badge i {
+          font-size: 1.2rem;
+          margin-bottom: 2px;
+        }
+
+        .order-limit-badge .overage-rate {
+          font-size: 0.75rem;
+          color: #f59e0b;
+          font-weight: 500;
         }
 
         .tier-description {
