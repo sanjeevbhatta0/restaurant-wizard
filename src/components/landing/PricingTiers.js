@@ -49,9 +49,9 @@ const TIER_FEATURES = {
       { name: 'Website Builder', included: false },
     ],
     restrictions: [
-      'Single location only',
-      '10 menu items max',
-      '75 orders/month',
+      { icon: '📍', text: 'Single location only' },
+      { icon: '🍽️', text: '10 menu items max' },
+      { icon: '📦', text: '75 orders/month' },
     ]
   },
   ally: {
@@ -215,13 +215,7 @@ const PricingTiers = () => {
               <span className="tier-icon">{tier.icon}</span>
               <h3 className="tier-name">{tier.name}</h3>
               <p className="tier-tagline">{tier.tagline}</p>
-              {key === 'scout' && (
-                <div className="order-limit-badge" style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}>
-                  <i className="bi bi-shield-lock" style={{ color: '#64748b' }}></i>
-                  <span>75 orders/month</span>
-                  <span className="overage-rate" style={{ color: '#ef4444', fontSize: '0.7rem' }}>Hard cap</span>
-                </div>
-              )}
+              {/* Scout badge removed from here to move below price */}
             </div>
 
             <div className="pricing-price">
@@ -246,8 +240,17 @@ const PricingTiers = () => {
             )}
 
             {/* Order Limit Display */}
-            <div className="order-limit-badge">
-              <i className="bi bi-bag-check"></i>
+            {/* Enabled for all tiers now, with custom style for scout */}
+            <div
+              className="order-limit-badge"
+              style={key === 'scout' ? { background: '#f8fafc', borderColor: '#e2e8f0' } : {}}
+            >
+              {key === 'scout' ? (
+                <i className="bi bi-shield-lock" style={{ color: '#64748b' }}></i>
+              ) : (
+                <i className="bi bi-bag-check"></i>
+              )}
+
               {ORDER_LIMITS[key].limit === Infinity ? (
                 <span>Unlimited Orders</span>
               ) : (
@@ -262,18 +265,20 @@ const PricingTiers = () => {
             </div>
 
             {/* Restrictions for Scout */}
-            {tier.restrictions && (
-              <div className="restrictions-list">
-                {tier.restrictions.map((restriction, idx) => (
-                  <div key={idx} className="restriction-item">
-                    <span className="restriction-icon">{restriction.icon}</span>
-                    <span>{restriction.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {
+              tier.restrictions && (
+                <div className="restrictions-list">
+                  {tier.restrictions.map((restriction, idx) => (
+                    <div key={idx} className="restriction-item">
+                      <span className="restriction-icon">{restriction.icon}</span>
+                      <span>{restriction.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
 
-            <p className="tier-description">{tier.description}</p>
+            < p className="tier-description" > {tier.description}</p>
 
             <button
               className={`tier-cta ${key === 'scout' ? 'free-cta' : ''}`}
@@ -343,11 +348,12 @@ const PricingTiers = () => {
               </div>
             )}
           </div>
-        ))}
-      </div>
+        ))
+        }
+      </div >
 
       {/* Trust Badges */}
-      <div className="trust-section">
+      < div className="trust-section" >
         <div className="trust-item">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -368,7 +374,7 @@ const PricingTiers = () => {
           </svg>
           <span>Easy Upgrades</span>
         </div>
-      </div>
+      </div >
 
       <style jsx>{`
         .pricing-container {
@@ -857,7 +863,7 @@ const PricingTiers = () => {
           }
         }
       `}</style>
-    </div>
+    </div >
   );
 };
 
