@@ -73,7 +73,7 @@
     z-index: 9999;
     max-width: 90vw;
     max-height: 90vh;
-    overflow: hidden;
+    overflow-y: auto;
     opacity: 0;
     visibility: hidden;
     transition: var(--cp-transition);

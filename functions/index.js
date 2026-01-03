@@ -642,7 +642,7 @@ function renderTemplate(template, data) {
     '{{customerPortalMockData}}': customerPortalMockData,
     // Firebase config for customer-facing auth
     '{{firebaseConfigJson}}': JSON.stringify({
-      apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyDW_-Ox40V3sZGgYFd2c-W2QD01GnQdoqc',
+      apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyACOWtwR1QMedvnzMxzlh4JZU2buNl-vO0',
       authDomain: 'restaurant-portal-6b147.firebaseapp.com',
       projectId: 'restaurant-portal-6b147',
       storageBucket: 'restaurant-portal-6b147.appspot.com'
