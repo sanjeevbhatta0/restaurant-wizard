@@ -11,11 +11,35 @@
     <link href="https://fonts.googleapis.com/css2?family={{fontFamily}}:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Customer Portal Styles -->
+    <style id="customer-portal-styles">
+        {{customerPortalStyles}}
+    </style>
     <style>
         :root {
-            --primary-color: {{primaryColor}};
-            --secondary-color: {{secondaryColor}};
-            --accent-color: {{accentColor}};
+            --primary-color: {
+                    {
+                    primaryColor
+                }
+            }
+
+            ;
+
+            --secondary-color: {
+                    {
+                    secondaryColor
+                }
+            }
+
+            ;
+
+            --accent-color: {
+                    {
+                    accentColor
+                }
+            }
+
+            ;
             --text-color: #2d3436;
             --text-light: #636e72;
             --bg-light: #f8f9fa;
@@ -24,7 +48,8 @@
             --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.12);
             --radius: 12px;
             --radius-lg: 20px;
-            --font-family: '{{fontFamily}}', sans-serif;
+            --font-family: '{{fontFamily}}',
+            sans-serif;
             --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -1236,6 +1261,11 @@
                         <span class="cart-count" id="cartCount">0</span>
                     </a>
                 </li>
+                <li>
+                    <a href="#" id="portal-nav-link" onclick="customerPortal.toggleAuth(); return false;">
+                        <i class="bi bi-person-circle"></i> My Account
+                    </a>
+                </li>
             </ul>
             <button class="nav-toggle" id="navToggle" onclick="toggleNav()">
                 <i class="bi bi-list"></i>
@@ -1462,12 +1492,12 @@
         let cardElement = null;
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             loadMenu();
             loadCart();
             renderHours();
             initNavbar();
-            
+
             // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
             console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
             if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
@@ -1488,7 +1518,7 @@
 
         // Navbar scroll effect
         function initNavbar() {
-            window.addEventListener('scroll', function() {
+            window.addEventListener('scroll', function () {
                 const navbar = document.getElementById('navbar');
                 if (window.scrollY > 50) {
                     navbar.classList.add('scrolled');
@@ -1509,7 +1539,7 @@
                 const locationParam = CONFIG.locationId ? `&locationId=${CONFIG.locationId}` : '';
                 const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}${locationParam}`);
                 const data = await response.json();
-                
+
                 if (data.categories) {
                     menuData = data.categories;
                     renderCategories();
@@ -1530,7 +1560,7 @@
         function renderCategories() {
             const container = document.getElementById('menuCategories');
             const allBtn = `<button class="category-btn ${selectedCategory === 'all' ? 'active' : ''}" onclick="filterCategory('all')">All</button>`;
-            const categoryBtns = menuData.map(cat => 
+            const categoryBtns = menuData.map(cat =>
                 `<button class="category-btn ${selectedCategory === cat.id ? 'active' : ''}" onclick="filterCategory('${cat.id}')">${cat.name}</button>`
             ).join('');
             container.innerHTML = allBtn + categoryBtns;
@@ -1547,17 +1577,17 @@
         function renderMenuItems() {
             const container = document.getElementById('menuGrid');
             let items = [];
-            
+
             if (selectedCategory === 'all') {
                 menuData.forEach(cat => {
                     if (cat.items) {
-                        items = [...items, ...cat.items.map(item => ({...item, categoryName: cat.name}))];
+                        items = [...items, ...cat.items.map(item => ({ ...item, categoryName: cat.name }))];
                     }
                 });
             } else {
                 const category = menuData.find(cat => cat.id === selectedCategory);
                 if (category && category.items) {
-                    items = category.items.map(item => ({...item, categoryName: category.name}));
+                    items = category.items.map(item => ({ ...item, categoryName: category.name }));
                 }
             }
 
@@ -1579,11 +1609,11 @@
             const price = parseFloat(item.price) || 0;
             const discount = parseFloat(item.discount) || 0;
             const discountType = item.discountType || 'amount';
-            
+
             let finalPrice = price;
             if (discount > 0) {
-                finalPrice = discountType === 'percentage' 
-                    ? price * (1 - discount / 100) 
+                finalPrice = discountType === 'percentage'
+                    ? price * (1 - discount / 100)
                     : price - discount;
             }
             finalPrice = Math.max(0, finalPrice);
@@ -1607,13 +1637,13 @@
                         </div>
                         <p class="menu-item-description">${item.description || 'Delicious item prepared fresh'}</p>
                         <button class="add-to-cart-btn" onclick='addToCart(${JSON.stringify({
-                            id: item.id,
-                            name: item.name,
-                            price: price,
-                            finalPrice: finalPrice,
-                            imageUrl: item.imageUrl || '',
-                            description: item.description || ''
-                        }).replace(/'/g, "\\'")})'}>
+                id: item.id,
+                name: item.name,
+                price: price,
+                finalPrice: finalPrice,
+                imageUrl: item.imageUrl || '',
+                description: item.description || ''
+            }).replace(/'/g, "\\'")})'}>
                             <i class="bi bi-plus-circle"></i> Add to Cart
                         </button>
                     </div>
@@ -1682,7 +1712,7 @@
             const cartItems = document.getElementById('cartItems');
             const cartFooter = document.getElementById('cartFooter');
             const cartCount = document.getElementById('cartCount');
-            
+
             const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
             cartCount.textContent = totalItems;
 
@@ -1722,7 +1752,7 @@
             document.getElementById('cartSubtotal').textContent = `$${totals.subtotal.toFixed(2)}`;
             document.getElementById('cartTax').textContent = `$${totals.tax.toFixed(2)}`;
             document.getElementById('cartTotal').textContent = `$${totals.total.toFixed(2)}`;
-            
+
             cartFooter.style.display = 'block';
         }
 
@@ -1741,7 +1771,7 @@
                 showToast('Your cart is empty', 'error');
                 return;
             }
-            
+
             toggleCart(); // Close cart
             document.getElementById('checkoutModal').classList.add('active');
             renderCheckoutForm();
@@ -1754,7 +1784,7 @@
         function renderCheckoutForm() {
             const totals = getCartTotals();
             const container = document.getElementById('checkoutForm');
-            
+
             container.innerHTML = `
                 <div class="order-type-selector">
                     <div class="order-type-option active" id="pickupOption" onclick="selectOrderType('pickup')">
@@ -1857,13 +1887,13 @@
         function selectPaymentMethod(method) {
             document.querySelectorAll('.payment-option').forEach(el => el.classList.remove('active'));
             document.getElementById(`${method === 'payNow' ? 'payNow' : 'payLater'}Option`).classList.add('active');
-            
+
             const cardContainer = document.getElementById('cardElementContainer');
             console.log('selectPaymentMethod called:', method, '| stripe:', !!stripe, '| cardElement:', !!cardElement);
-            
+
             if (method === 'payNow') {
                 cardContainer.style.display = 'block';
-                
+
                 // Initialize Stripe card element with a small delay to ensure container is visible
                 if (stripe && !cardElement) {
                     setTimeout(() => {
@@ -1885,11 +1915,11 @@
                             });
                             console.log('Mounting card element...');
                             cardElement.mount('#card-element');
-                            cardElement.on('change', function(event) {
+                            cardElement.on('change', function (event) {
                                 const displayError = document.getElementById('card-errors');
                                 displayError.textContent = event.error ? event.error.message : '';
                             });
-                            cardElement.on('ready', function() {
+                            cardElement.on('ready', function () {
                                 console.log('Stripe card element ready and accepting input!');
                             });
                         } catch (err) {
@@ -1914,7 +1944,7 @@
             const now = new Date();
             const start = new Date(now.getTime() + 30 * 60000); // Start 30 mins from now
             start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15); // Round to next 15 min
-            
+
             for (let i = 0; i < 12; i++) {
                 const time = new Date(start.getTime() + i * 15 * 60000);
                 const timeStr = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -1942,7 +1972,7 @@
 
             try {
                 const totals = getCartTotals();
-                
+
                 // If pay now, process Stripe payment first
                 let paymentDetails = null;
                 if (paymentMethod === 'payNow' && stripe && cardElement) {
@@ -2012,7 +2042,7 @@
         function showOrderConfirmation(orderId, pickupTime) {
             const pickupDate = new Date(pickupTime);
             const timeStr = pickupDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-            
+
             document.getElementById('checkoutForm').innerHTML = `
                 <div class="order-confirmation">
                     <div class="confirmation-icon">
@@ -2040,10 +2070,10 @@
         function renderHours() {
             const container = document.getElementById('hoursGrid');
             if (!hours || typeof hours !== 'object') return;
-            
+
             const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
             const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-            
+
             container.innerHTML = days.map((day, i) => {
                 const h = hours[day];
                 if (!h) return '';
@@ -2072,11 +2102,42 @@
             const toast = document.getElementById('toast');
             toast.textContent = message;
             toast.className = `toast ${type} active`;
-            
+
             setTimeout(() => {
                 toast.classList.remove('active');
             }, 3000);
         }
+    </script>
+
+    <!-- Customer Portal -->
+    <div id="customer-portal-root" class="customer-portal"></div>
+
+    <!-- Firebase SDK for Customer Auth -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+    <script>
+        firebase.initializeApp({{firebaseConfigJson}});
+    </script>
+
+    <script>
+        {{customerPortalMockData}}
+    </script>
+    <script>
+        {{customerPortalScript}}
+    </script>
+    <script>
+        // Initialize Customer Portal with restaurant theme
+        const customerPortal = new CustomerPortal({
+            restaurantId: '{{restaurantId}}',
+            themeConfig: {
+                primaryColor: '{{primaryColor}}',
+                secondaryColor: '{{secondaryColor}}',
+                accentColor: '{{accentColor}}',
+                fontFamily: '{{fontFamily}}'
+            },
+            useMockData: false
+        });
     </script>
 </body>
 

@@ -574,7 +574,33 @@ const TEMPLATES = {
 
 // Helper function to render template with data
 function renderTemplate(template, data) {
+  const fs = require('fs');
+  const path = require('path');
+
   let html = template;
+
+  // Load Customer Portal assets for injection
+  let customerPortalStyles = '';
+  let customerPortalScript = '';
+  let customerPortalMockData = '';
+
+  try {
+    const portalCssPath = path.join(__dirname, 'templates', 'customer-portal', 'portal.css');
+    const portalJsPath = path.join(__dirname, 'templates', 'customer-portal', 'portal.js');
+    const portalMockDataPath = path.join(__dirname, 'templates', 'customer-portal', 'data', 'mock-data.js');
+
+    if (fs.existsSync(portalCssPath)) {
+      customerPortalStyles = fs.readFileSync(portalCssPath, 'utf-8');
+    }
+    if (fs.existsSync(portalJsPath)) {
+      customerPortalScript = fs.readFileSync(portalJsPath, 'utf-8');
+    }
+    if (fs.existsSync(portalMockDataPath)) {
+      customerPortalMockData = fs.readFileSync(portalMockDataPath, 'utf-8');
+    }
+  } catch (err) {
+    console.error('Error loading Customer Portal assets:', err);
+  }
 
   // Replace simple placeholders
   const replacements = {
@@ -609,6 +635,17 @@ function renderTemplate(template, data) {
       friday: { open: '11:00', close: '23:00' },
       saturday: { open: '12:00', close: '23:00' },
       sunday: { open: '12:00', close: '21:00' }
+    }),
+    // Customer Portal content injection
+    '{{customerPortalStyles}}': customerPortalStyles,
+    '{{customerPortalScript}}': customerPortalScript,
+    '{{customerPortalMockData}}': customerPortalMockData,
+    // Firebase config for customer-facing auth
+    '{{firebaseConfigJson}}': JSON.stringify({
+      apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyDW_-Ox40V3sZGgYFd2c-W2QD01GnQdoqc',
+      authDomain: 'restaurant-portal-6b147.firebaseapp.com',
+      projectId: 'restaurant-portal-6b147',
+      storageBucket: 'restaurant-portal-6b147.appspot.com'
     })
   };
 
@@ -624,6 +661,7 @@ function renderTemplate(template, data) {
 
   return html;
 }
+
 
 // Serve restaurant websites dynamically
 exports.serveWebsite = onRequest(async (req, res) => {

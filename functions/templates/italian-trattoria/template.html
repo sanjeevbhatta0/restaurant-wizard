@@ -12,6 +12,10 @@
         href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Lora:wght@400;500;600&display=swap"
         rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Customer Portal Styles -->
+    <style id="customer-portal-styles">
+        {{customerPortalStyles}}
+    </style>
     <style>
         :root {
             --primary-color: {
@@ -1184,6 +1188,11 @@
                         <span class="cart-count" id="cartCount">0</span>
                     </a>
                 </li>
+                <li>
+                    <a href="#" id="portal-nav-link" onclick="customerPortal.toggleAuth(); return false;">
+                        <i class="bi bi-person-circle"></i> Account
+                    </a>
+                </li>
             </ul>
             <button class="nav-toggle" id="navToggle" onclick="toggleNav()">
                 <i class="bi bi-list"></i>
@@ -1678,6 +1687,37 @@
             toast.className = `toast ${type} active`;
             setTimeout(() => toast.classList.remove('active'), 3000);
         }
+    </script>
+
+    <!-- Customer Portal -->
+    <div id="customer-portal-root" class="customer-portal"></div>
+
+    <!-- Firebase SDK for Customer Auth -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+    <script>
+        // Initialize Firebase for customer-facing website
+        firebase.initializeApp({{firebaseConfigJson}});
+    </script>
+
+    <script>
+        {{customerPortalMockData}}
+    </script>
+    <script>
+        {{customerPortalScript}}
+    </script>
+    <script>
+        const customerPortal = new CustomerPortal({
+            restaurantId: '{{restaurantId}}',
+            themeConfig: {
+                primaryColor: '{{primaryColor}}',
+                secondaryColor: '{{secondaryColor}}',
+                accentColor: '{{accentColor}}',
+                fontFamily: 'Playfair Display'
+            },
+            useMockData: false
+        });
     </script>
 </body>
 

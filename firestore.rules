@@ -75,6 +75,14 @@ service cloud.firestore {
       match /activities/{activityId} {
         allow read, write: if request.auth != null && request.auth.uid == restaurantId;
       }
+      
+      // Customers subcollection (for customer portal)
+      match /customers/{customerId} {
+        // Customer can read/write their own data
+        allow read, write: if request.auth != null && request.auth.uid == customerId;
+        // Allow authenticated users to create their customer record
+        allow create: if request.auth != null && request.auth.uid == customerId;
+      }
     }
     
     // Social media posts - users can only access their own

@@ -1,0 +1,960 @@
+/**
+ * Customer Portal - Themeable Styles
+ * 
+ * Inherits from parent template's CSS variables (--primary-color, --secondary-color, etc.)
+ * All portal components use these --cp-* variables for consistent theming.
+ */
+
+/* =========================================
+   1. THEMING VARIABLES
+   ========================================= */
+
+.customer-portal {
+    /* Inherit from parent template's :root variables, or use fallbacks */
+    --cp-primary: var(--primary-color, #2c3e50);
+    --cp-secondary: var(--secondary-color, #3498db);
+    --cp-accent: var(--accent-color, #e74c3c);
+    --cp-font: var(--font-family, 'Poppins', sans-serif);
+    --cp-radius: var(--radius, 12px);
+    --cp-radius-lg: var(--radius-lg, 20px);
+
+    /* Portal-specific colors */
+    --cp-bg: rgba(255, 255, 255, 0.95);
+    --cp-bg-dark: rgba(0, 0, 0, 0.85);
+    --cp-text: #2d3436;
+    --cp-text-light: #636e72;
+    --cp-border: rgba(0, 0, 0, 0.1);
+    --cp-success: #27ae60;
+    --cp-error: #e74c3c;
+    --cp-warning: #f39c12;
+
+    /* Shadows */
+    --cp-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    --cp-shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
+
+    /* Transitions */
+    --cp-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    font-family: var(--cp-font);
+    color: var(--cp-text);
+}
+
+/* =========================================
+   2. PORTAL OVERLAY & MODAL
+   ========================================= */
+
+.cp-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    z-index: 9998;
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--cp-transition);
+}
+
+.cp-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.cp-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    background: var(--cp-bg);
+    border-radius: var(--cp-radius-lg);
+    box-shadow: var(--cp-shadow-lg);
+    z-index: 9999;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--cp-transition);
+}
+
+.cp-modal.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.cp-modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--cp-text-light);
+    cursor: pointer;
+    z-index: 10;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--cp-transition);
+}
+
+.cp-modal-close:hover {
+    background: var(--cp-border);
+    color: var(--cp-text);
+}
+
+/* =========================================
+   3. AUTH CONTAINER
+   ========================================= */
+
+.cp-auth-container {
+    width: 420px;
+    padding: 2.5rem;
+}
+
+.cp-auth-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.cp-auth-header h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--cp-primary);
+    margin-bottom: 0.5rem;
+}
+
+.cp-auth-header p {
+    color: var(--cp-text-light);
+    font-size: 0.95rem;
+}
+
+.cp-auth-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    background: var(--cp-border);
+    padding: 4px;
+    border-radius: var(--cp-radius);
+}
+
+.cp-auth-tab {
+    flex: 1;
+    padding: 0.75rem;
+    border: none;
+    background: transparent;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--cp-text-light);
+    border-radius: calc(var(--cp-radius) - 2px);
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+
+.cp-auth-tab.active {
+    background: var(--cp-bg);
+    color: var(--cp-primary);
+    box-shadow: var(--cp-shadow);
+}
+
+.cp-form-group {
+    margin-bottom: 1.25rem;
+}
+
+.cp-form-label {
+    display: block;
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--cp-text);
+    margin-bottom: 0.5rem;
+}
+
+.cp-form-input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border: 2px solid var(--cp-border);
+    border-radius: var(--cp-radius);
+    font-size: 1rem;
+    font-family: var(--cp-font);
+    transition: var(--cp-transition);
+    background: var(--cp-bg);
+}
+
+.cp-form-input:focus {
+    outline: none;
+    border-color: var(--cp-primary);
+    box-shadow: 0 0 0 3px rgba(var(--cp-primary), 0.1);
+}
+
+.cp-form-input.error {
+    border-color: var(--cp-error);
+}
+
+.cp-form-hint {
+    font-size: 0.8rem;
+    color: var(--cp-text-light);
+    margin-top: 0.25rem;
+}
+
+.cp-form-error {
+    font-size: 0.8rem;
+    color: var(--cp-error);
+    margin-top: 0.25rem;
+}
+
+.cp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    border: none;
+    border-radius: var(--cp-radius);
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: var(--cp-font);
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+
+.cp-btn-primary {
+    background: var(--cp-primary);
+    color: white;
+    width: 100%;
+}
+
+.cp-btn-primary:hover {
+    background: var(--cp-secondary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.cp-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.cp-btn-outline {
+    background: transparent;
+    border: 2px solid var(--cp-primary);
+    color: var(--cp-primary);
+}
+
+.cp-btn-outline:hover {
+    background: var(--cp-primary);
+    color: white;
+}
+
+.cp-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: cp-spin 0.8s linear infinite;
+}
+
+@keyframes cp-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.cp-alert {
+    padding: 1rem;
+    border-radius: var(--cp-radius);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.cp-alert-error {
+    background: rgba(231, 76, 60, 0.1);
+    color: var(--cp-error);
+    border: 1px solid rgba(231, 76, 60, 0.2);
+}
+
+.cp-alert-success {
+    background: rgba(39, 174, 96, 0.1);
+    color: var(--cp-success);
+    border: 1px solid rgba(39, 174, 96, 0.2);
+}
+
+/* =========================================
+   4. DASHBOARD LAYOUT
+   ========================================= */
+
+.cp-dashboard {
+    display: flex;
+    width: 900px;
+    max-width: 95vw;
+    height: 600px;
+    max-height: 85vh;
+}
+
+.cp-sidebar {
+    width: 220px;
+    background: var(--cp-primary);
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--cp-radius-lg) 0 0 var(--cp-radius-lg);
+}
+
+.cp-sidebar-header {
+    color: white;
+    margin-bottom: 2rem;
+    padding: 0 0.5rem;
+}
+
+.cp-sidebar-header h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.cp-sidebar-header p {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+.cp-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.cp-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: var(--cp-font);
+    border-radius: var(--cp-radius);
+    cursor: pointer;
+    transition: var(--cp-transition);
+    text-align: left;
+}
+
+.cp-nav-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.cp-nav-item.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.cp-nav-item i {
+    font-size: 1.1rem;
+    width: 24px;
+}
+
+.cp-sidebar-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cp-logout-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    border-radius: var(--cp-radius);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--cp-transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.cp-logout-btn:hover {
+    background: rgba(231, 76, 60, 0.8);
+    color: white;
+}
+
+.cp-content {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+    background: var(--cp-bg);
+    border-radius: 0 var(--cp-radius-lg) var(--cp-radius-lg) 0;
+}
+
+.cp-content-header {
+    margin-bottom: 1.5rem;
+}
+
+.cp-content-header h2 {
+    font-size: 1.5rem;
+    color: var(--cp-primary);
+    margin-bottom: 0.25rem;
+}
+
+.cp-content-header p {
+    color: var(--cp-text-light);
+    font-size: 0.9rem;
+}
+
+/* =========================================
+   5. ACCOUNT OVERVIEW
+   ========================================= */
+
+.cp-card {
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.cp-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.cp-card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--cp-text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cp-card-title i {
+    color: var(--cp-primary);
+}
+
+.cp-user-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.cp-info-item label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--cp-text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.cp-info-item span {
+    font-weight: 500;
+    color: var(--cp-text);
+}
+
+/* Loyalty Tracker */
+.cp-loyalty-tracker {
+    background: linear-gradient(135deg, var(--cp-primary), var(--cp-secondary));
+    border-radius: var(--cp-radius);
+    padding: 1.5rem;
+    color: white;
+}
+
+.cp-loyalty-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.cp-loyalty-header h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cp-loyalty-points {
+    font-size: 1.75rem;
+    font-weight: 700;
+}
+
+.cp-loyalty-progress {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+}
+
+.cp-loyalty-bar {
+    height: 100%;
+    background: white;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+.cp-loyalty-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    opacity: 0.9;
+}
+
+/* =========================================
+   6. PROMOTIONS TAB
+   ========================================= */
+
+.cp-promo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.cp-promo-card {
+    background: white;
+    border-radius: var(--cp-radius);
+    overflow: hidden;
+    box-shadow: var(--cp-shadow);
+    transition: var(--cp-transition);
+}
+
+.cp-promo-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--cp-shadow-lg);
+}
+
+.cp-promo-image {
+    height: 120px;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+}
+
+.cp-promo-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: var(--cp-accent);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.cp-promo-content {
+    padding: 1rem;
+}
+
+.cp-promo-content h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--cp-text);
+}
+
+.cp-promo-content p {
+    font-size: 0.8rem;
+    color: var(--cp-text-light);
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+}
+
+.cp-promo-apply {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--cp-primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--cp-transition);
+}
+
+.cp-promo-apply:hover {
+    background: var(--cp-secondary);
+}
+
+/* =========================================
+   7. ORDER HISTORY
+   ========================================= */
+
+.cp-order-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.cp-order-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
+}
+
+.cp-order-date {
+    width: 100px;
+    font-weight: 500;
+    color: var(--cp-text);
+}
+
+.cp-order-total {
+    width: 80px;
+    font-weight: 700;
+    color: var(--cp-accent);
+}
+
+.cp-order-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.cp-order-status.delivered {
+    background: rgba(39, 174, 96, 0.1);
+    color: var(--cp-success);
+}
+
+.cp-order-status.picked_up {
+    background: rgba(52, 152, 219, 0.1);
+    color: var(--cp-secondary);
+}
+
+.cp-order-status.cancelled {
+    background: rgba(231, 76, 60, 0.1);
+    color: var(--cp-error);
+}
+
+.cp-order-reorder {
+    margin-left: auto;
+    padding: 0.5rem 1rem;
+    background: var(--cp-primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--cp-transition);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cp-order-reorder:hover {
+    background: var(--cp-secondary);
+}
+
+/* =========================================
+   8. DAILY KITCHEN SPIN (Wheel of Fortune)
+   ========================================= */
+
+.cp-spin-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1rem;
+}
+
+.cp-spin-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.cp-spin-header h3 {
+    font-size: 1.25rem;
+    color: var(--cp-primary);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.cp-spin-header p {
+    color: var(--cp-text-light);
+    font-size: 0.9rem;
+}
+
+.cp-wheel-wrapper {
+    position: relative;
+    width: 280px;
+    height: 280px;
+    margin-bottom: 1.5rem;
+}
+
+.cp-wheel-pointer {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 2rem;
+    color: var(--cp-accent);
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.cp-wheel {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg,
+            #6c757d 0deg 144deg,
+            /* Try Again (40%) */
+            #3498db 144deg 216deg,
+            /* 10% Off (20%) */
+            #27ae60 216deg 270deg,
+            /* 50 Bonus Points (15%) */
+            #9b59b6 270deg 306deg,
+            /* Double Points (10%) */
+            #e67e22 306deg 342deg,
+            /* Free Drink (10%) */
+            #f1c40f 342deg 360deg
+            /* Free Dessert (5%) */
+        );
+    box-shadow:
+        0 0 0 8px var(--cp-primary),
+        0 0 0 12px white,
+        var(--cp-shadow-lg);
+    position: relative;
+    transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+}
+
+.cp-wheel::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    z-index: 5;
+}
+
+.cp-wheel-segment {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 15px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transform-origin: center;
+}
+
+.cp-spin-btn {
+    padding: 1rem 3rem;
+    background: linear-gradient(135deg, var(--cp-accent), #c0392b);
+    color: white;
+    border: none;
+    border-radius: 50px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--cp-transition);
+    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+}
+
+.cp-spin-btn:hover:not(:disabled) {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5);
+}
+
+.cp-spin-btn:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.cp-spin-cooldown {
+    text-align: center;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: var(--cp-radius);
+}
+
+.cp-spin-cooldown i {
+    font-size: 1.5rem;
+    color: var(--cp-text-light);
+    margin-bottom: 0.5rem;
+}
+
+.cp-spin-cooldown p {
+    color: var(--cp-text-light);
+    font-size: 0.9rem;
+}
+
+.cp-spin-cooldown .time {
+    font-weight: 700;
+    color: var(--cp-primary);
+}
+
+/* Prize Modal */
+.cp-prize-modal {
+    width: 360px;
+    text-align: center;
+    padding: 3rem 2rem;
+}
+
+.cp-prize-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    animation: cp-bounce 0.5s ease infinite alternate;
+}
+
+@keyframes cp-bounce {
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(-10px);
+    }
+}
+
+.cp-prize-modal h3 {
+    font-size: 1.5rem;
+    color: var(--cp-primary);
+    margin-bottom: 0.5rem;
+}
+
+.cp-prize-modal p {
+    color: var(--cp-text-light);
+    margin-bottom: 1.5rem;
+}
+
+.cp-prize-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--cp-accent);
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: rgba(231, 76, 60, 0.1);
+    border-radius: var(--cp-radius);
+}
+
+/* =========================================
+   9. RESPONSIVE STYLES
+   ========================================= */
+
+@media (max-width: 768px) {
+    .cp-auth-container {
+        width: 100%;
+        max-width: 100vw;
+        padding: 1.5rem;
+        border-radius: var(--cp-radius-lg) var(--cp-radius-lg) 0 0;
+    }
+
+    .cp-modal {
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        transform: translateY(100%);
+        max-width: 100%;
+        max-height: 90vh;
+        border-radius: var(--cp-radius-lg) var(--cp-radius-lg) 0 0;
+    }
+
+    .cp-modal.active {
+        transform: translateY(0);
+    }
+
+    .cp-dashboard {
+        flex-direction: column;
+        width: 100%;
+        height: auto;
+        max-height: 90vh;
+    }
+
+    .cp-sidebar {
+        width: 100%;
+        flex-direction: row;
+        padding: 1rem;
+        border-radius: var(--cp-radius-lg) var(--cp-radius-lg) 0 0;
+        overflow-x: auto;
+    }
+
+    .cp-sidebar-header {
+        display: none;
+    }
+
+    .cp-nav {
+        flex-direction: row;
+        gap: 0.25rem;
+    }
+
+    .cp-nav-item {
+        padding: 0.75rem;
+        flex-direction: column;
+        gap: 0.25rem;
+        font-size: 0.7rem;
+        white-space: nowrap;
+    }
+
+    .cp-nav-item i {
+        font-size: 1.25rem;
+    }
+
+    .cp-sidebar-footer {
+        display: none;
+    }
+
+    .cp-content {
+        border-radius: 0;
+        padding: 1.5rem;
+    }
+
+    .cp-user-info {
+        grid-template-columns: 1fr;
+    }
+
+    .cp-wheel-wrapper {
+        width: 240px;
+        height: 240px;
+    }
+
+    .cp-promo-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cp-order-row {
+        flex-wrap: wrap;
+    }
+
+    .cp-order-reorder {
+        width: 100%;
+        margin-top: 0.5rem;
+        justify-content: center;
+    }
+}
