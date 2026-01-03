@@ -1,36 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { subscribeToPublishedConfig, DEFAULT_CONFIG } from '../../services/adminConfigService';
 
-// Configurable trial period (in days) - set to 0 for no trial
-const TRIAL_PERIOD_DAYS = 0;
+// Fallback constants (used while loading or if Firestore fetch fails)
+const FALLBACK_TRIAL_PERIOD_DAYS = 0;
 
-// Base prices (annual price - this is the advertised price)
-const BASE_PRICES = {
-  scout: 0,  // Free tier
+const FALLBACK_PRICES = {
+  scout: 0,
   ally: 29,
   guide: 59,
   chief: 99,
   elder: 229
 };
 
-// Pricing multipliers for billing cycles
-const BILLING_MULTIPLIERS = {
-  monthly: 1.20,   // 20% extra
-  quarterly: 1.10, // 10% extra
-  annual: 1.00     // Base price (advertised)
+const FALLBACK_MULTIPLIERS = {
+  monthly: 1.20,
+  quarterly: 1.10,
+  annual: 1.00
 };
 
-// Order volume limits per tier (per billing cycle)
-const ORDER_LIMITS = {
-  scout: { limit: 75, overageRate: 0, hardCap: true },  // 75 orders, hard cap
-  ally: { limit: 500, overageRate: 0.02 },      // 500 orders, 2% per order
-  guide: { limit: 2000, overageRate: 0.01 },    // 2000 orders, 1% per order
-  chief: { limit: 5000, overageRate: 0.005 },   // 5000 orders, 0.5% per order
-  elder: { limit: Infinity, overageRate: 0 }    // Unlimited, no overage
+const FALLBACK_ORDER_LIMITS = {
+  scout: { limit: 75, overageRate: 0, hardCap: true },
+  ally: { limit: 500, overageRate: 0.02 },
+  guide: { limit: 2000, overageRate: 0.01 },
+  chief: { limit: 5000, overageRate: 0.005 },
+  elder: { limit: Infinity, overageRate: 0 }
 };
 
-// Feature definitions
-const TIER_FEATURES = {
+const FALLBACK_TIER_FEATURES = {
   scout: {
     name: 'Scout',
     tagline: 'Start for free',
@@ -147,19 +144,83 @@ const TIER_FEATURES = {
 
 const PricingTiers = () => {
   const [billingCycle, setBillingCycle] = useState('annual');
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  // Subscribe to live config updates from Firestore
+  useEffect(() => {
+    const unsubscribe = subscribeToPublishedConfig((publishedConfig) => {
+      setConfig(publishedConfig);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Use config values or fallbacks
+  const BASE_PRICES = config?.pricing || FALLBACK_PRICES;
+  const BILLING_MULTIPLIERS = config?.billingMultipliers || FALLBACK_MULTIPLIERS;
+  const ORDER_LIMITS = config?.orderLimits || FALLBACK_ORDER_LIMITS;
+  const TIER_FEATURES = FALLBACK_TIER_FEATURES; // Features still use fallback for display structure
+  const TRIAL_PERIOD_DAYS = getMaxTrialDays();
+
+  function getMaxTrialDays() {
+    if (!config?.freeTrials) return FALLBACK_TRIAL_PERIOD_DAYS;
+    return Math.max(...Object.values(config.freeTrials).map(t => t.enabled ? t.days : 0));
+  }
+
+  // Check for active discounts
+  const getActiveDiscount = (tier) => {
+    if (!config?.discounts) return null;
+    const now = new Date();
+    return config.discounts.find(d => {
+      if (!d.active) return false;
+      const start = new Date(d.startDate);
+      const end = new Date(d.endDate);
+      return now >= start && now <= end &&
+        ((d.type === 'tier' && d.target === tier) ||
+          (d.type === 'billing_cycle' && d.target === billingCycle));
+    });
+  };
+
   const calculatePrice = (baseTier) => {
-    const basePrice = BASE_PRICES[baseTier];
-    const multiplier = BILLING_MULTIPLIERS[billingCycle];
+    const basePrice = BASE_PRICES[baseTier] || 0;
+    const multiplier = BILLING_MULTIPLIERS[billingCycle] || 1;
+    const discount = getActiveDiscount(baseTier);
+
+    let discountAmount = 0;
+    if (discount) {
+      if (discount.isPercentage) {
+        discountAmount = basePrice * (discount.amount / 100);
+      } else {
+        discountAmount = discount.amount;
+      }
+    }
+
+    return Math.max(0, (basePrice - discountAmount) * multiplier).toFixed(2);
+  };
+
+  const getOriginalPrice = (baseTier) => {
+    const basePrice = BASE_PRICES[baseTier] || 0;
+    const multiplier = BILLING_MULTIPLIERS[billingCycle] || 1;
     return (basePrice * multiplier).toFixed(2);
   };
 
+  const hasDiscount = (tier) => {
+    return getActiveDiscount(tier) !== null;
+  };
+
   const getAnnualSavings = (baseTier) => {
-    const basePrice = BASE_PRICES[baseTier];
-    const monthlyPrice = basePrice * BILLING_MULTIPLIERS.monthly;
+    const basePrice = BASE_PRICES[baseTier] || 0;
+    const monthlyPrice = basePrice * (BILLING_MULTIPLIERS.monthly || 1.20);
     const annualMonthly = basePrice;
     return ((monthlyPrice - annualMonthly) * 12).toFixed(0);
+  };
+
+  const getTierTrialDays = (tier) => {
+    if (!config?.freeTrials?.[tier]?.enabled) return 0;
+    return config.freeTrials[tier].days;
   };
 
   const handleSelectTier = (tierKey) => {
@@ -168,14 +229,6 @@ const PricingTiers = () => {
 
   return (
     <div className="pricing-container">
-      {/* Trial Banner */}
-      {TRIAL_PERIOD_DAYS > 0 && (
-        <div className="trial-banner">
-          <span className="trial-icon">🎁</span>
-          <span>Start with a <strong>{TRIAL_PERIOD_DAYS}-day free trial</strong> on any plan!</span>
-        </div>
-      )}
-
       {/* Billing Toggle */}
       <div className="billing-toggle">
         <button
@@ -203,153 +256,176 @@ const PricingTiers = () => {
 
       {/* Tier Cards */}
       <div className="pricing-grid">
-        {Object.entries(TIER_FEATURES).map(([key, tier]) => (
-          <div
-            key={key}
-            className={`pricing-card ${tier.popular ? 'popular' : ''}`}
-            style={{ '--tier-color': tier.color }}
-          >
-            {tier.popular && <div className="popular-badge">Most Popular</div>}
+        {Object.entries(TIER_FEATURES).map(([key, tier]) => {
+          const tierTrialDays = getTierTrialDays(key);
+          const activeDiscount = getActiveDiscount(key);
+          const originalPrice = getOriginalPrice(key);
+          const discountedPrice = calculatePrice(key);
+          const hasActiveDiscount = hasDiscount(key) && parseFloat(originalPrice) > parseFloat(discountedPrice);
 
-            <div className="pricing-header">
-              <span className="tier-icon">{tier.icon}</span>
-              <h3 className="tier-name">{tier.name}</h3>
-              <p className="tier-tagline">{tier.tagline}</p>
-              {/* Scout badge removed from here to move below price */}
-            </div>
-
-            <div className="pricing-price">
-              {key === 'scout' ? (
-                <>
-                  <span className="amount free">Free</span>
-                  <span className="period">forever</span>
-                </>
-              ) : (
-                <>
-                  <span className="currency">$</span>
-                  <span className="amount">{calculatePrice(key)}</span>
-                  <span className="period">/mo</span>
-                </>
-              )}
-            </div>
-
-            {billingCycle === 'annual' && key !== 'scout' && parseFloat(getAnnualSavings(key)) > 0 && (
-              <div className="annual-savings">
-                Save ${getAnnualSavings(key)}/year
-              </div>
-            )}
-
-            {/* Order Limit Display */}
-            {/* Enabled for all tiers now, with custom style for scout */}
+          return (
             <div
-              className="order-limit-badge"
-              style={key === 'scout' ? { background: '#f8fafc', borderColor: '#e2e8f0' } : {}}
+              key={key}
+              className={`pricing-card ${tier.popular ? 'popular' : ''}`}
+              style={{ '--tier-color': tier.color }}
             >
-              {key === 'scout' ? (
-                <i className="bi bi-shield-lock" style={{ color: '#64748b' }}></i>
-              ) : (
-                <i className="bi bi-bag-check"></i>
+              {tier.popular && <div className="popular-badge">Most Popular</div>}
+
+              {/* Per-tier Free Trial Badge */}
+              {tierTrialDays > 0 && key !== 'scout' && (
+                <div className="tier-trial-badge">
+                  🎁 {tierTrialDays}-day free trial
+                </div>
               )}
 
-              {ORDER_LIMITS[key].limit === Infinity ? (
-                <span>Unlimited Orders</span>
-              ) : (
-                <span>{ORDER_LIMITS[key].limit.toLocaleString()} orders/month</span>
+              <div className="pricing-header">
+                <span className="tier-icon">{tier.icon}</span>
+                <h3 className="tier-name">{tier.name}</h3>
+                <p className="tier-tagline">{tier.tagline}</p>
+              </div>
+
+              <div className="pricing-price">
+                {key === 'scout' ? (
+                  <>
+                    <span className="amount free">Free</span>
+                    <span className="period">forever</span>
+                  </>
+                ) : (
+                  <>
+                    {hasActiveDiscount && (
+                      <span className="original-price">${originalPrice}</span>
+                    )}
+                    <span className="currency">$</span>
+                    <span className="amount">{discountedPrice}</span>
+                    <span className="period">/mo</span>
+                  </>
+                )}
+              </div>
+
+              {/* Discount Badge */}
+              {hasActiveDiscount && activeDiscount && (
+                <div className="discount-badge">
+                  🏷️ {activeDiscount.name} - {activeDiscount.amount}{activeDiscount.isPercentage ? '%' : '$'} off!
+                </div>
               )}
-              {ORDER_LIMITS[key].hardCap && (
-                <span className="hard-cap-badge">Hard cap</span>
+
+              {billingCycle === 'annual' && key !== 'scout' && parseFloat(getAnnualSavings(key)) > 0 && !hasActiveDiscount && (
+                <div className="annual-savings">
+                  Save ${getAnnualSavings(key)}/year
+                </div>
               )}
-              {ORDER_LIMITS[key].overageRate > 0 && (
-                <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage per order</span>
+
+              {/* Order Limit Display */}
+              {/* Enabled for all tiers now, with custom style for scout */}
+              <div
+                className="order-limit-badge"
+                style={key === 'scout' ? { background: '#f8fafc', borderColor: '#e2e8f0' } : {}}
+              >
+                {key === 'scout' ? (
+                  <i className="bi bi-shield-lock" style={{ color: '#64748b' }}></i>
+                ) : (
+                  <i className="bi bi-bag-check"></i>
+                )}
+
+                {ORDER_LIMITS[key].limit === Infinity ? (
+                  <span>Unlimited Orders</span>
+                ) : (
+                  <span>{ORDER_LIMITS[key].limit.toLocaleString()} orders/month</span>
+                )}
+                {ORDER_LIMITS[key].hardCap && (
+                  <span className="hard-cap-badge">Hard cap</span>
+                )}
+                {ORDER_LIMITS[key].overageRate > 0 && (
+                  <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage per order</span>
+                )}
+              </div>
+
+              {/* Restrictions for Scout */}
+              {
+                tier.restrictions && (
+                  <div className="restrictions-list">
+                    {tier.restrictions.map((restriction, idx) => (
+                      <div key={idx} className="restriction-item">
+                        <span className="restriction-icon">{restriction.icon}</span>
+                        <span>{restriction.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+
+              < p className="tier-description" > {tier.description}</p>
+
+              <button
+                className={`tier-cta ${key === 'scout' ? 'free-cta' : ''}`}
+                onClick={() => handleSelectTier(key)}
+              >
+                {key === 'scout' ? 'Start Free' : (tierTrialDays > 0 ? 'Start Free Trial' : 'Get Started')}
+              </button>
+
+              <ul className="feature-list">
+                {tier.features.map((feature, idx) => (
+                  <li
+                    key={idx}
+                    className={`feature-item ${feature.included === true ? 'included' :
+                      feature.included === 'preview' ? 'preview' : 'not-included'
+                      }`}
+                    title={feature.description || ''}
+                  >
+                    {feature.included === true && (
+                      <svg className="feature-icon check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                    {feature.included === 'preview' && (
+                      <svg className="feature-icon eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                    {feature.included === false && (
+                      <svg className="feature-icon x" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    )}
+                    <span>{feature.name}</span>
+                    {feature.description && (
+                      <span className="feature-tooltip">
+                        <svg className="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="12" y1="16" x2="12" y2="12" />
+                          <line x1="12" y1="8" x2="12.01" y2="8" />
+                        </svg>
+                        <span className="tooltip-text">{feature.description}</span>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              {/* Coming Soon Section for Elder */}
+              {tier.comingSoon && (
+                <div className="coming-soon-section">
+                  <div className="coming-soon-header">
+                    <span className="coming-soon-badge">🚀 Coming Soon</span>
+                  </div>
+                  <ul className="coming-soon-list">
+                    {tier.comingSoon.map((item, idx) => (
+                      <li key={idx} className="coming-soon-item">
+                        <span className="coming-soon-icon">{item.icon}</span>
+                        <div className="coming-soon-content">
+                          <span className="coming-soon-name">{item.name}</span>
+                          <span className="coming-soon-desc">{item.description}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
-
-            {/* Restrictions for Scout */}
-            {
-              tier.restrictions && (
-                <div className="restrictions-list">
-                  {tier.restrictions.map((restriction, idx) => (
-                    <div key={idx} className="restriction-item">
-                      <span className="restriction-icon">{restriction.icon}</span>
-                      <span>{restriction.text}</span>
-                    </div>
-                  ))}
-                </div>
-              )
-            }
-
-            < p className="tier-description" > {tier.description}</p>
-
-            <button
-              className={`tier-cta ${key === 'scout' ? 'free-cta' : ''}`}
-              onClick={() => handleSelectTier(key)}
-            >
-              {key === 'scout' ? 'Start Free' : (TRIAL_PERIOD_DAYS > 0 ? 'Start Free Trial' : 'Get Started')}
-            </button>
-
-            <ul className="feature-list">
-              {tier.features.map((feature, idx) => (
-                <li
-                  key={idx}
-                  className={`feature-item ${feature.included === true ? 'included' :
-                    feature.included === 'preview' ? 'preview' : 'not-included'
-                    }`}
-                  title={feature.description || ''}
-                >
-                  {feature.included === true && (
-                    <svg className="feature-icon check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                  {feature.included === 'preview' && (
-                    <svg className="feature-icon eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                  {feature.included === false && (
-                    <svg className="feature-icon x" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  )}
-                  <span>{feature.name}</span>
-                  {feature.description && (
-                    <span className="feature-tooltip">
-                      <svg className="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="16" x2="12" y2="12" />
-                        <line x1="12" y1="8" x2="12.01" y2="8" />
-                      </svg>
-                      <span className="tooltip-text">{feature.description}</span>
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {/* Coming Soon Section for Elder */}
-            {tier.comingSoon && (
-              <div className="coming-soon-section">
-                <div className="coming-soon-header">
-                  <span className="coming-soon-badge">🚀 Coming Soon</span>
-                </div>
-                <ul className="coming-soon-list">
-                  {tier.comingSoon.map((item, idx) => (
-                    <li key={idx} className="coming-soon-item">
-                      <span className="coming-soon-icon">{item.icon}</span>
-                      <div className="coming-soon-content">
-                        <span className="coming-soon-name">{item.name}</span>
-                        <span className="coming-soon-desc">{item.description}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        ))
-        }
+          );
+        })}
       </div >
 
       {/* Trust Badges */}
@@ -547,6 +623,38 @@ const PricingTiers = () => {
           border-radius: 20px;
           font-size: 0.8rem;
           font-weight: 700;
+        }
+
+        .tier-trial-badge {
+          background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%);
+          border: 1px solid rgba(168, 85, 247, 0.3);
+          padding: 8px 12px;
+          border-radius: 10px;
+          text-align: center;
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: #7c3aed;
+          margin-bottom: 1rem;
+        }
+
+        .discount-badge {
+          background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+          border: 1px solid rgba(251, 191, 36, 0.3);
+          padding: 8px 12px;
+          border-radius: 10px;
+          text-align: center;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #d97706;
+          margin-bottom: 1rem;
+        }
+
+        .original-price {
+          display: block;
+          text-decoration: line-through;
+          color: #999;
+          font-size: 0.9rem;
+          margin-bottom: 2px;
         }
 
         .pricing-header {

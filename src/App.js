@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { LocationProvider } from './contexts/LocationContext';
 import { MenuProvider } from './contexts/MenuContext';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
+import { AdminProvider } from './contexts/AdminContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
@@ -22,6 +23,8 @@ import WebsiteIntegration from './components/WebsiteIntegration';
 import WebsiteBuilder from './components/WebsiteBuilder';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import LandingPage from './components/landing/LandingPage';
+import AdminDashboard from './components/admin/AdminDashboard';
+import AdminLogin from './components/admin/AdminLogin';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import './App.css';
@@ -39,6 +42,14 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+
+                {/* Admin Routes */}
+                <Route path="/admin/login" element={<AdminLogin />} />
+                <Route path="/admin/*" element={
+                  <AdminProvider>
+                    <AdminDashboard />
+                  </AdminProvider>
+                } />
 
                 {/* Protected App Routes */}
                 <Route path="/home" element={
