@@ -17,8 +17,11 @@ class CustomerPortal {
     // State
     this.user = null;
     this.isAuthenticated = false;
-    this.currentView = 'account'; // account, promotions, orders, rewards
+    this.currentView = 'account'; // account, active_orders, orders, promotions, rewards
     this.isSpinning = false;
+    this.checkoutPending = false;
+    this.activeOrders = [];
+    this.pastOrders = [];
 
     // DOM elements (created on init)
     this.overlay = null;
@@ -131,16 +134,83 @@ class CustomerPortal {
     }
   }
 
+  async loadUserOrders() {
+    if (!this.isAuthenticated || !this.user?.email) return;
+
+    try {
+      if (typeof firebase !== 'undefined' && firebase.firestore) {
+        const db = firebase.firestore();
+        const ordersRef = db.collection('restaurants')
+          .doc(this.config.restaurantId)
+          .collection('orders')
+          .where('customer.email', '==', this.user.email)
+          .orderBy('createdAt', 'desc')
+          .limit(50);
+
+        const snapshot = await ordersRef.get();
+        const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Separate active and past orders
+        const activeStatuses = ['pending', 'confirmed', 'preparing', 'ready'];
+        this.activeOrders = allOrders.filter(o => activeStatuses.includes(o.status));
+        this.pastOrders = allOrders.filter(o => !activeStatuses.includes(o.status));
+
+        console.log(`Loaded ${this.activeOrders.length} active orders, ${this.pastOrders.length} past orders`);
+      }
+    } catch (err) {
+      console.error('Error loading orders:', err);
+    }
+  }
+
   // =========================================
   // Modal Controls
   // =========================================
 
   toggleAuth() {
     if (this.isAuthenticated) {
-      this.showDashboard();
+      this.showFullPageDashboard();
     } else {
       this.showAuth();
     }
+  }
+
+  async showFullPageDashboard() {
+    const mainContent = document.getElementById('main-content');
+    const accountPage = document.getElementById('account-page-container');
+
+    // Load orders first
+    await this.loadUserOrders();
+
+    // Create container if missing
+    if (!accountPage) {
+      const div = document.createElement('div');
+      div.id = 'account-page-container';
+      div.className = 'customer-portal'; // Add class to inherit CSS variables
+      div.style.display = 'none';
+      document.body.appendChild(div);
+      this.renderFullPageDashboard();
+    } else {
+      this.renderFullPageDashboard();
+    }
+
+    // Toggle views
+    if (mainContent) mainContent.style.display = 'none';
+    const container = document.getElementById('account-page-container');
+    container.style.display = 'block';
+
+    // Scroll to top
+    window.scrollTo(0, 0);
+  }
+
+  hideFullPageDashboard() {
+    const mainContent = document.getElementById('main-content');
+    const accountPage = document.getElementById('account-page-container');
+
+    if (mainContent) mainContent.style.display = 'block';
+    if (accountPage) accountPage.style.display = 'none';
+
+    // Scroll to top
+    window.scrollTo(0, 0);
   }
 
   showAuth(mode = 'signin') {
@@ -329,9 +399,18 @@ class CustomerPortal {
         this.isAuthenticated = true;
       }
 
-      // Update nav and show dashboard
+      // Update nav and load orders
       this.updateNavLink();
-      this.showDashboard();
+      await this.loadUserOrders();
+
+      this.close();
+
+      if (this.checkoutPending) {
+        this.checkoutPending = false;
+        if (window.openCheckout) window.openCheckout();
+      } else {
+        this.showFullPageDashboard();
+      }
 
     } catch (error) {
       let message = error.message;
@@ -413,9 +492,18 @@ class CustomerPortal {
 
       await this.delay(1500);
 
-      // Update nav and show dashboard
+      // Update nav and load orders
       this.updateNavLink();
-      this.showDashboard();
+      await this.loadUserOrders();
+
+      this.close();
+
+      if (this.checkoutPending) {
+        this.checkoutPending = false;
+        if (window.openCheckout) window.openCheckout();
+      } else {
+        this.showFullPageDashboard();
+      }
 
     } catch (error) {
       let message = error.message;
@@ -440,7 +528,9 @@ class CustomerPortal {
     localStorage.removeItem('cp_user');
     localStorage.removeItem('cp_lastSpin');
     this.updateNavLink();
+    this.updateNavLink();
     this.close();
+    this.hideFullPageDashboard();
   }
 
   // =========================================
@@ -465,17 +555,27 @@ class CustomerPortal {
               <i class="bi bi-person"></i>
               <span>Account</span>
             </button>
+            <button class="cp-nav-item ${this.currentView === 'active_orders' ? 'active' : ''}" data-view="active_orders">
+              <i class="bi bi-clock-history"></i>
+              <span>Active Orders</span>
+              ${this.activeOrders.length > 0 ? `<span class="cp-nav-badge">${this.activeOrders.length}</span>` : ''}
+            </button>
+            <button class="cp-nav-item ${this.currentView === 'orders' ? 'active' : ''}" data-view="orders">
+              <i class="bi bi-receipt"></i>
+              <span>Past Orders</span>
+            </button>
             <button class="cp-nav-item ${this.currentView === 'promotions' ? 'active' : ''}" data-view="promotions">
               <i class="bi bi-tag"></i>
               <span>Promotions</span>
             </button>
-            <button class="cp-nav-item ${this.currentView === 'orders' ? 'active' : ''}" data-view="orders">
-              <i class="bi bi-receipt"></i>
-              <span>Order History</span>
-            </button>
             <button class="cp-nav-item ${this.currentView === 'rewards' ? 'active' : ''}" data-view="rewards">
               <i class="bi bi-gift"></i>
               <span>Fun Rewards</span>
+            </button>
+            <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 1rem 0;"></div>
+            <button class="cp-nav-item" onclick="customerPortal.hideFullPageDashboard()">
+              <i class="bi bi-arrow-left"></i>
+              <span>Back to Menu</span>
             </button>
           </nav>
           
@@ -494,12 +594,40 @@ class CustomerPortal {
     `;
   }
 
+  renderFullPageDashboard() {
+    const container = document.getElementById('account-page-container');
+    if (!container) return;
+
+    // Reuse renderDashboard logic but update container
+    container.innerHTML = this.renderDashboard();
+
+    // Attach listeners
+    this.attachFullPageDashboardListeners();
+  }
+
+  attachFullPageDashboardListeners() {
+    const container = document.getElementById('account-page-container');
+    if (!container) return;
+
+    // Nav item clicks
+    const navItems = container.querySelectorAll('.cp-nav-item[data-view]');
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        this.currentView = item.dataset.view;
+        this.renderFullPageDashboard(); // Re-render full page
+      });
+    });
+  }
+
+
   renderDashboardContent() {
     switch (this.currentView) {
-      case 'promotions':
-        return this.renderPromotions();
+      case 'active_orders':
+        return this.renderActiveOrders();
       case 'orders':
         return this.renderOrderHistory();
+      case 'promotions':
+        return this.renderPromotions();
       case 'rewards':
         return this.renderDailySpin();
       default:
@@ -514,7 +642,7 @@ class CustomerPortal {
     const progress = Math.min((points / nextReward) * 100, 100);
 
     return `
-      <div class="cp-content-header">
+  <div class="cp-content-header" >
         <h2>Account Overview</h2>
         <p>Manage your profile and track your rewards</p>
       </div>
@@ -568,20 +696,20 @@ class CustomerPortal {
           Change Password
         </button>
       </div>
-    `;
+`;
   }
 
   renderPromotions() {
     const promotions = window.MockData?.promotions || [];
 
     return `
-      <div class="cp-content-header">
+  <div class="cp-content-header" >
         <h2>Active Promotions</h2>
         <p>Exclusive offers just for you</p>
       </div>
-      
-      <div class="cp-promo-grid">
-        ${promotions.map(promo => `
+
+  <div class="cp-promo-grid">
+    ${promotions.map(promo => `
           <div class="cp-promo-card">
             <div class="cp-promo-image" style="background-image: url('${promo.image}')">
               <span class="cp-promo-badge">${promo.discount}</span>
@@ -595,30 +723,90 @@ class CustomerPortal {
             </div>
           </div>
         `).join('')}
+  </div>
+`;
+  }
+
+  renderActiveOrders() {
+    const activeStatuses = ['pending', 'confirmed', 'preparing', 'ready'];
+    const orders = this.activeOrders.filter(o => activeStatuses.includes(o.status));
+
+    return `
+      <div class="cp-content-header">
+        <h2>Active Orders</h2>
+        <p>Track your current orders</p>
+      </div>
+
+      <div class="cp-order-list">
+        ${orders.length === 0 ? `
+          <div class="cp-card" style="text-align: center; padding: 3rem">
+            <i class="bi bi-bag-check" style="font-size: 3rem; opacity: 0.3"></i>
+            <p style="color: var(--cp-text-light); margin-top: 1rem">No active orders</p>
+            <button class="cp-btn cp-btn-primary" style="margin-top: 1rem; width: auto; padding: 0.75rem 2rem;" onclick="customerPortal.hideFullPageDashboard()">
+              Order Now
+            </button>
+          </div>
+        ` : orders.map(order => `
+          <div class="cp-order-card">
+            <div class="cp-order-card-header">
+              <div>
+                <span class="cp-order-number">Order #${order.orderNumber || order.id.slice(-6).toUpperCase()}</span>
+                <span class="cp-order-date">${this.formatDateTime(order.createdAt)}</span>
+              </div>
+              <span class="cp-order-status-badge ${order.status}">${this.formatStatus(order.status)}</span>
+            </div>
+            <div class="cp-order-card-body">
+              <div class="cp-order-items">
+                ${order.items.map(item => `
+                  <div class="cp-order-item-row">
+                    <span>${item.quantity}x ${item.name}</span>
+                    <span>$${(item.finalPrice * item.quantity).toFixed(2)}</span>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="cp-order-card-footer">
+                <div class="cp-order-pickup">
+                  <i class="bi bi-clock"></i>
+                  <span>Pickup: ${this.formatPickupTime(order.pickupTime)}</span>
+                </div>
+                <div class="cp-order-total-display">
+                  <strong>Total: $${order.total.toFixed(2)}</strong>
+                </div>
+              </div>
+            </div>
+            ${order.status === 'ready' ? `
+              <div class="cp-order-ready-banner">
+                <i class="bi bi-check-circle-fill"></i>
+                Your order is ready for pickup!
+              </div>
+            ` : ''}
+          </div>
+        `).join('')}
       </div>
     `;
   }
 
   renderOrderHistory() {
-    const orders = window.MockData?.orders || [];
+    const completedStatuses = ['completed', 'picked_up', 'delivered', 'cancelled'];
+    const orders = this.pastOrders.filter(o => completedStatuses.includes(o.status));
 
     return `
       <div class="cp-content-header">
-        <h2>Order History</h2>
-        <p>Your past orders and quick reorder</p>
+        <h2>Past Orders</h2>
+        <p>Your order history and quick reorder</p>
       </div>
-      
+
       <div class="cp-order-list">
         ${orders.length === 0 ? `
           <div class="cp-card" style="text-align: center; padding: 3rem">
             <i class="bi bi-receipt" style="font-size: 3rem; opacity: 0.3"></i>
-            <p style="color: var(--cp-text-light); margin-top: 1rem">No orders yet</p>
+            <p style="color: var(--cp-text-light); margin-top: 1rem">No past orders yet</p>
           </div>
         ` : orders.map(order => `
           <div class="cp-order-row">
-            <span class="cp-order-date">${this.formatDate(order.date)}</span>
+            <span class="cp-order-date">${this.formatDate(order.createdAt || order.date)}</span>
             <span class="cp-order-total">$${order.total.toFixed(2)}</span>
-            <span class="cp-order-status ${order.status}">${order.status.replace('_', ' ')}</span>
+            <span class="cp-order-status ${order.status}">${this.formatStatus(order.status)}</span>
             <span style="flex: 1; color: var(--cp-text-light); font-size: 0.85rem">
               ${order.items.length} item${order.items.length > 1 ? 's' : ''}
             </span>
@@ -631,12 +819,44 @@ class CustomerPortal {
     `;
   }
 
+  formatStatus(status) {
+    const statusMap = {
+      'pending': 'Pending',
+      'confirmed': 'Confirmed',
+      'preparing': 'Preparing',
+      'ready': 'Ready for Pickup',
+      'picked_up': 'Picked Up',
+      'completed': 'Completed',
+      'delivered': 'Delivered',
+      'cancelled': 'Cancelled'
+    };
+    return statusMap[status] || status.replace('_', ' ');
+  }
+
+  formatDateTime(timestamp) {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  }
+
+  formatPickupTime(timestamp) {
+    if (!timestamp) return 'ASAP';
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : 
+                 timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
   renderDailySpin() {
     const canSpin = this.canSpin();
     const cooldownTime = this.getCooldownTime();
 
     return `
-      <div class="cp-spin-container">
+  <div class="cp-spin-container" >
         <div class="cp-spin-header">
           <h3><i class="bi bi-stars"></i> The Daily Kitchen Spin</h3>
           <p>Spin once every 24 hours for a chance to win rewards!</p>
@@ -668,7 +888,7 @@ class CustomerPortal {
           </div>
         `}
       </div>
-    `;
+  `;
   }
 
   attachDashboardListeners() {
@@ -724,7 +944,7 @@ class CustomerPortal {
     const hours = Math.floor(remaining / (1000 * 60 * 60));
     const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
 
-    return `${hours}h ${minutes}m`;
+    return `${hours}h ${minutes} m`;
   }
 
   spin() {
@@ -815,7 +1035,7 @@ class CustomerPortal {
 
     if (order) {
       // In production, would add items to cart
-      alert(`Re-ordering ${order.items.length} items from order ${order.orderNumber}. This would add items to your cart.`);
+      alert(`Re - ordering ${order.items.length} items from order ${order.orderNumber}. This would add items to your cart.`);
     }
   }
 

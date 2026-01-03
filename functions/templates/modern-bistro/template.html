@@ -12,34 +12,12 @@
         rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <!-- Customer Portal Styles -->
-    <style id="customer-portal-styles">
-        {{customerPortalStyles}}
-    </style>
+    <style id="customer-portal-styles">{{customerPortalStyles}}</style>
     <style>
         :root {
-            --primary-color: {
-                    {
-                    primaryColor
-                }
-            }
-
-            ;
-
-            --secondary-color: {
-                    {
-                    secondaryColor
-                }
-            }
-
-            ;
-
-            --accent-color: {
-                    {
-                    accentColor
-                }
-            }
-
-            ;
+            --primary-color: {{primaryColor}};
+            --secondary-color: {{secondaryColor}};
+            --accent-color: {{accentColor}};
             --text-color: #2d3436;
             --text-light: #636e72;
             --bg-light: #f8f9fa;
@@ -1135,6 +1113,10 @@
             background: #e74c3c;
         }
 
+        .toast.info {
+            background: #3498db;
+        }
+
         /* Stripe Card Element */
         #card-element {
             padding: 1rem;
@@ -1243,385 +1225,387 @@
 </head>
 
 <body>
-    <!-- Navigation -->
-    <nav class="navbar" id="navbar">
-        <div class="nav-container">
-            <a href="#" class="nav-logo">
-                {{#if logo}}<img src="{{logo}}" alt="{{restaurantName}}">{{/if}}
-                <span>{{restaurantName}}</span>
-            </a>
-            <ul class="nav-links" id="navLinks">
-                <li><a href="#home">Home</a></li>
-                <li><a href="#about">About</a></li>
-                <li><a href="#menu">Menu</a></li>
-                <li><a href="#contact">Contact</a></li>
-                <li>
-                    <a href="#" class="nav-order-btn cart-badge" onclick="toggleCart(); return false;">
-                        <i class="bi bi-cart3"></i> Cart
-                        <span class="cart-count" id="cartCount">0</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" id="portal-nav-link" onclick="customerPortal.toggleAuth(); return false;">
-                        <i class="bi bi-person-circle"></i> My Account
-                    </a>
-                </li>
-            </ul>
-            <button class="nav-toggle" id="navToggle" onclick="toggleNav()">
-                <i class="bi bi-list"></i>
-            </button>
-        </div>
-    </nav>
-
-    <!-- Hero Section -->
-    <section class="hero" id="home">
-        <div class="hero-content">
-            <div class="hero-badge">{{tagline}}</div>
-            <h1>{{restaurantName}}</h1>
-            <p>{{description}}</p>
-            <div class="hero-buttons">
-                <a href="#menu" class="btn btn-primary">
-                    <i class="bi bi-book"></i> View Menu
+    <div id="main-content">
+        <!-- Navigation -->
+        <nav class="navbar" id="navbar">
+            <div class="nav-container">
+                <a href="#" class="nav-logo">
+                    {{#if logo}}<img src="{{logo}}" alt="{{restaurantName}}">{{/if}}
+                    <span>{{restaurantName}}</span>
                 </a>
-                <a href="#menu" class="btn btn-outline" onclick="scrollToMenuAndOpenCart(); return false;">
-                    <i class="bi bi-bag"></i> Order Online
-                </a>
+                <ul class="nav-links" id="navLinks">
+                    <li><a href="#home">Home</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="#menu">Menu</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                    <li>
+                        <a href="#" class="nav-order-btn cart-badge" onclick="toggleCart(); return false;">
+                            <i class="bi bi-cart3"></i> Cart
+                            <span class="cart-count" id="cartCount">0</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" id="portal-nav-link" onclick="customerPortal.toggleAuth(); return false;">
+                            <i class="bi bi-person-circle"></i> My Account
+                        </a>
+                    </li>
+                </ul>
+                <button class="nav-toggle" id="navToggle" onclick="toggleNav()">
+                    <i class="bi bi-list"></i>
+                </button>
             </div>
-        </div>
-    </section>
+        </nav>
 
-    <!-- About Section -->
-    <section class="about" id="about">
-        <div class="about-grid">
-            <div class="about-image">
-                <img src="{{aboutImage}}" alt="About {{restaurantName}}">
-            </div>
-            <div class="about-content">
-                <h2>Our Story</h2>
-                <div id="aboutContent">{{aboutContent}}</div>
-                <div class="about-features">
-                    <div class="about-feature">
-                        <i class="bi bi-award"></i>
-                        <span>Quality Ingredients</span>
-                    </div>
-                    <div class="about-feature">
-                        <i class="bi bi-heart"></i>
-                        <span>Made with Love</span>
-                    </div>
-                    <div class="about-feature">
-                        <i class="bi bi-clock"></i>
-                        <span>Fast Service</span>
-                    </div>
-                    <div class="about-feature">
-                        <i class="bi bi-people"></i>
-                        <span>Family Friendly</span>
-                    </div>
+        <!-- Hero Section -->
+        <section class="hero" id="home">
+            <div class="hero-content">
+                <div class="hero-badge">{{tagline}}</div>
+                <h1>{{restaurantName}}</h1>
+                <p>{{description}}</p>
+                <div class="hero-buttons">
+                    <a href="#menu" class="btn btn-primary">
+                        <i class="bi bi-book"></i> View Menu
+                    </a>
+                    <a href="#menu" class="btn btn-outline" onclick="scrollToMenuAndOpenCart(); return false;">
+                        <i class="bi bi-bag"></i> Order Online
+                    </a>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- Menu Section -->
-    <section class="menu" id="menu">
-        <div class="section-header">
-            <h2>Our Menu</h2>
-            <p>Explore our delicious offerings prepared fresh daily</p>
-        </div>
-        <div class="menu-container">
-            <div class="menu-categories" id="menuCategories">
-                <!-- Categories will be loaded dynamically -->
-            </div>
-            <div class="menu-grid" id="menuGrid">
-                <!-- Menu items will be loaded dynamically -->
-                <div style="grid-column: 1/-1; text-align: center; padding: 2rem;">
-                    <div class="spinner"
-                        style="border-color: var(--primary-color); border-top-color: var(--accent-color);"></div>
-                    <p style="margin-top: 1rem; color: var(--text-light);">Loading menu...</p>
+        <!-- About Section -->
+        <section class="about" id="about">
+            <div class="about-grid">
+                <div class="about-image">
+                    <img src="{{aboutImage}}" alt="About {{restaurantName}}">
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Contact Section -->
-    <section class="contact" id="contact">
-        <div class="section-header">
-            <h2>Contact Us</h2>
-            <p>We'd love to hear from you</p>
-        </div>
-        <div class="contact-grid">
-            <div class="contact-info">
-                <div class="contact-item">
-                    <div class="contact-icon">
-                        <i class="bi bi-geo-alt"></i>
-                    </div>
-                    <div>
-                        <h3>Address</h3>
-                        <p>{{address}}</p>
-                    </div>
-                </div>
-                <div class="contact-item">
-                    <div class="contact-icon">
-                        <i class="bi bi-telephone"></i>
-                    </div>
-                    <div>
-                        <h3>Phone</h3>
-                        <p>{{phone}}</p>
-                    </div>
-                </div>
-                <div class="contact-item">
-                    <div class="contact-icon">
-                        <i class="bi bi-envelope"></i>
-                    </div>
-                    <div>
-                        <h3>Email</h3>
-                        <p>{{email}}</p>
-                    </div>
-                </div>
-                <div class="contact-item">
-                    <div class="contact-icon">
-                        <i class="bi bi-clock"></i>
-                    </div>
-                    <div>
-                        <h3>Business Hours</h3>
-                        <div class="hours-grid" id="hoursGrid">
-                            <!-- Hours will be loaded dynamically -->
+                <div class="about-content">
+                    <h2>Our Story</h2>
+                    <div id="aboutContent">{{aboutContent}}</div>
+                    <div class="about-features">
+                        <div class="about-feature">
+                            <i class="bi bi-award"></i>
+                            <span>Quality Ingredients</span>
+                        </div>
+                        <div class="about-feature">
+                            <i class="bi bi-heart"></i>
+                            <span>Made with Love</span>
+                        </div>
+                        <div class="about-feature">
+                            <i class="bi bi-clock"></i>
+                            <span>Fast Service</span>
+                        </div>
+                        <div class="about-feature">
+                            <i class="bi bi-people"></i>
+                            <span>Family Friendly</span>
                         </div>
                     </div>
                 </div>
-                <div class="social-links">
-                    {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i
-                            class="bi bi-facebook"></i></a>{{/if}}
-                    {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i
-                            class="bi bi-instagram"></i></a>{{/if}}
-                    {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i
-                            class="bi bi-twitter-x"></i></a>{{/if}}
+            </div>
+        </section>
+
+        <!-- Menu Section -->
+        <section class="menu" id="menu">
+            <div class="section-header">
+                <h2>Our Menu</h2>
+                <p>Explore our delicious offerings prepared fresh daily</p>
+            </div>
+            <div class="menu-container">
+                <div class="menu-categories" id="menuCategories">
+                    <!-- Categories will be loaded dynamically -->
+                </div>
+                <div class="menu-grid" id="menuGrid">
+                    <!-- Menu items will be loaded dynamically -->
+                    <div style="grid-column: 1/-1; text-align: center; padding: 2rem;">
+                        <div class="spinner"
+                            style="border-color: var(--primary-color); border-top-color: var(--accent-color);"></div>
+                        <p style="margin-top: 1rem; color: var(--text-light);">Loading menu...</p>
+                    </div>
                 </div>
             </div>
-            <div class="contact-map">
-                <iframe
-                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3022.9663095343008!2d-74.00425872418822!3d40.71277797139441!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c25a23e28c1191%3A0x49f75d3281df052a!2s{{address}}!5e0!3m2!1sen!2sus!4v1699000000000!5m2!1sen!2sus"
-                    allowfullscreen="" loading="lazy"></iframe>
-            </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="footer-content">
-            <div class="footer-logo">{{restaurantName}}</div>
-            <p>{{tagline}}</p>
-            <div class="footer-bottom">
-                <p>&copy; {{year}} {{restaurantName}}. All rights reserved.</p>
-                <p>Powered by <a href="https://restaurantwizard.com" style="color: inherit;">Restaurant Wizard</a></p>
+        <!-- Contact Section -->
+        <section class="contact" id="contact">
+            <div class="section-header">
+                <h2>Contact Us</h2>
+                <p>We'd love to hear from you</p>
             </div>
-        </div>
-    </footer>
-
-    <!-- Cart Sidebar -->
-    <div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
-    <div class="cart-sidebar" id="cartSidebar">
-        <div class="cart-header">
-            <h3><i class="bi bi-cart3"></i> Your Order</h3>
-            <button class="cart-close" onclick="toggleCart()">&times;</button>
-        </div>
-        <div class="cart-items" id="cartItems">
-            <div class="cart-empty">
-                <i class="bi bi-cart-x"></i>
-                <p>Your cart is empty</p>
-                <p>Add items from our menu to get started</p>
-            </div>
-        </div>
-        <div class="cart-footer" id="cartFooter" style="display: none;">
-            <div class="cart-totals">
-                <div class="cart-total-row">
-                    <span>Subtotal</span>
-                    <span id="cartSubtotal">$0.00</span>
+            <div class="contact-grid">
+                <div class="contact-info">
+                    <div class="contact-item">
+                        <div class="contact-icon">
+                            <i class="bi bi-geo-alt"></i>
+                        </div>
+                        <div>
+                            <h3>Address</h3>
+                            <p>{{addre}}</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <div class="contact-icon">
+                            <i class="bi bi-telephone"></i>
+                        </div>
+                        <div>
+                            <h3>Phone</h3>
+                            <p>{{phone}}</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <div class="contact-icon">
+                            <i class="bi bi-envelope"></i>
+                        </div>
+                        <div>
+                            <h3>Email</h3>
+                            <p>{{email}}</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <div class="contact-icon">
+                            <i class="bi bi-clock"></i>
+                        </div>
+                        <div>
+                            <h3>Business Hours</h3>
+                            <div class="hours-grid" id="hoursGrid">
+                                <!-- Hours will be loaded dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="social-links">
+                        {{#if facebook}}<a href="{{facebook}}" class="social-link" target="_blank"><i
+                                class="bi bi-facebook"></i></a>{{/if}}
+                        {{#if instagram}}<a href="{{instagram}}" class="social-link" target="_blank"><i
+                                class="bi bi-instagram"></i></a>{{/if}}
+                        {{#if twitter}}<a href="{{twitter}}" class="social-link" target="_blank"><i
+                                class="bi bi-twitter-x"></i></a>{{/if}}
+                    </div>
                 </div>
-                <div class="cart-total-row">
-                    <span>Tax ({{taxRate}}%)</span>
-                    <span id="cartTax">$0.00</span>
-                </div>
-                <div class="cart-total-row final">
-                    <span>Total</span>
-                    <span id="cartTotal">$0.00</span>
+                <div class="contact-map">
+                    <iframe
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3022.9663095343008!2d-74.00425872418822!3d40.71277797139441!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c25a23e28c1191%3A0x49f75d3281df052a!2s{{addre}}!5e0!3m2!1sen!2sus!4v1699000000000!5m2!1sen!2sus"
+                        allowfullscreen="" loading="lazy"></iframe>
                 </div>
             </div>
-            <button class="checkout-btn" onclick="openCheckout()">
-                <i class="bi bi-credit-card"></i> Proceed to Checkout
-            </button>
-        </div>
-    </div>
+        </section>
 
-    <!-- Checkout Modal -->
-    <div class="modal-overlay" id="checkoutModal">
-        <div class="checkout-modal">
-            <div class="modal-header">
-                <h3>Checkout</h3>
-                <button class="modal-close" onclick="closeCheckout()">&times;</button>
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <div class="footer-logo">{{restaurantName}}</div>
+                <p>{{tagline}}</p>
+                <div class="footer-bottom">
+                    <p>&copy; {{year}} {{restaurantName}}. All rights reserved.</p>
+                    <p>Powered by <a href="https://restaurantwizard.com" style="color: inherit;">Restaurant Wizard</a>
+                    </p>
+                </div>
             </div>
-            <div class="modal-body" id="checkoutForm">
-                <!-- Checkout form will be rendered by JS -->
+        </footer>
+
+        <!-- Cart Sidebar -->
+        <div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
+        <div class="cart-sidebar" id="cartSidebar">
+            <div class="cart-header">
+                <h3><i class="bi bi-cart3"></i> Your Order</h3>
+                <button class="cart-close" onclick="toggleCart()">&times;</button>
+            </div>
+            <div class="cart-items" id="cartItems">
+                <div class="cart-empty">
+                    <i class="bi bi-cart-x"></i>
+                    <p>Your cart is empty</p>
+                    <p>Add items from our menu to get started</p>
+                </div>
+            </div>
+            <div class="cart-footer" id="cartFooter" style="display: none;">
+                <div class="cart-totals">
+                    <div class="cart-total-row">
+                        <span>Subtotal</span>
+                        <span id="cartSubtotal">$0.00</span>
+                    </div>
+                    <div class="cart-total-row">
+                        <span>Tax ({{taxRate}}%)</span>
+                        <span id="cartTax">$0.00</span>
+                    </div>
+                    <div class="cart-total-row final">
+                        <span>Total</span>
+                        <span id="cartTotal">$0.00</span>
+                    </div>
+                </div>
+                <button class="checkout-btn" onclick="openCheckout()">
+                    <i class="bi bi-credit-card"></i> Proceed to Checkout
+                </button>
             </div>
         </div>
-    </div>
 
-    <!-- Toast Notification -->
-    <div class="toast" id="toast"></div>
+        <!-- Checkout Modal -->
+        <div class="modal-overlay" id="checkoutModal">
+            <div class="checkout-modal">
+                <div class="modal-header">
+                    <h3>Checkout</h3>
+                    <button class="modal-close" onclick="closeCheckout()">&times;</button>
+                </div>
+                <div class="modal-body" id="checkoutForm">
+                    <!-- Checkout form will be rendered by JS -->
+                </div>
+            </div>
+        </div>
 
-    <!-- Stripe.js -->
-    <script src="https://js.stripe.com/v3/"></script>
+        <!-- Toast Notification -->
+        <div class="toast" id="toast"></div>
 
-    <script>
-        // Restaurant Configuration
-        const CONFIG = {
-            restaurantId: '{{restaurantId}}',
-            locationId: '{{locationId}}',
-            restaurantName: '{{restaurantName}}',
-            apiBaseUrl: '{{apiBaseUrl}}',
-            stripePublishableKey: '{{stripePublishableKey}}',
-            taxRate: {{taxRate}} / 100
+        <!-- Stripe.js -->
+        <script src="https://js.stripe.com/v3/"></script>
+
+        <script>
+            // Restaurant Configuration
+            const CONFIG = {
+                restaurantId: '{{restaurantId}}',
+                locationId: '{{locationId}}',
+                restaurantName: '{{restaurantName}}',
+                apiBaseUrl: '{{apiBaseUrl}}',
+                stripePublishableKey: '{{stripePublishableKey}}',
+                taxRate: {{taxRate}} / 100
         };
 
-        const hours = {{hoursJson}};
+            const hours = {{hoursJson}};
 
-        // State
-        let cart = [];
-        let menuData = [];
-        let selectedCategory = 'all';
-        let stripe = null;
-        let cardElement = null;
+            // State
+            let cart = [];
+            let menuData = [];
+            let selectedCategory = 'all';
+            let stripe = null;
+            let cardElement = null;
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            loadMenu();
-            loadCart();
-            renderHours();
-            initNavbar();
+            // Initialize on page load
+            document.addEventListener('DOMContentLoaded', function () {
+                loadMenu();
+                loadCart();
+                renderHours();
+                initNavbar();
 
-            // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
-            console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
-            if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
-                try {
-                    if (typeof Stripe === 'undefined') {
-                        console.error('Stripe.js library not loaded! Check if https://js.stripe.com/v3/ is accessible.');
-                    } else {
-                        stripe = Stripe(CONFIG.stripePublishableKey);
-                        console.log('Stripe initialized successfully with key:', CONFIG.stripePublishableKey.substring(0, 20) + '...');
+                // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
+                console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
+                if (CONFIG.stripePublishableKey && CONFIG.stripePublishableKey.startsWith('pk_')) {
+                    try {
+                        if (typeof Stripe === 'undefined') {
+                            console.error('Stripe.js library not loaded! Check if https://js.stripe.com/v3/ is accessible.');
+                        } else {
+                            stripe = Stripe(CONFIG.stripePublishableKey);
+                            console.log('Stripe initialized successfully with key:', CONFIG.stripePublishableKey.substring(0, 20) + '...');
+                        }
+                    } catch (e) {
+                        console.error('Error initializing Stripe:', e);
                     }
-                } catch (e) {
-                    console.error('Error initializing Stripe:', e);
-                }
-            } else {
-                console.log('Stripe key not configured or invalid. Key value:', CONFIG.stripePublishableKey);
-            }
-        });
-
-        // Navbar scroll effect
-        function initNavbar() {
-            window.addEventListener('scroll', function () {
-                const navbar = document.getElementById('navbar');
-                if (window.scrollY > 50) {
-                    navbar.classList.add('scrolled');
                 } else {
-                    navbar.classList.remove('scrolled');
+                    console.log('Stripe key not configured or invalid. Key value:', CONFIG.stripePublishableKey);
                 }
             });
-        }
 
-        // Toggle mobile navigation
-        function toggleNav() {
-            document.getElementById('navLinks').classList.toggle('active');
-        }
+            // Navbar scroll effect
+            function initNavbar() {
+                window.addEventListener('scroll', function () {
+                    const navbar = document.getElementById('navbar');
+                    if (window.scrollY > 50) {
+                        navbar.classList.add('scrolled');
+                    } else {
+                        navbar.classList.remove('scrolled');
+                    }
+                });
+            }
 
-        // Load menu from API
-        async function loadMenu() {
-            try {
-                const locationParam = CONFIG.locationId ? `&locationId=${CONFIG.locationId}` : '';
-                const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}${locationParam}`);
-                const data = await response.json();
+            // Toggle mobile navigation
+            function toggleNav() {
+                document.getElementById('navLinks').classList.toggle('active');
+            }
 
-                if (data.categories) {
-                    menuData = data.categories;
-                    renderCategories();
-                    renderMenuItems();
-                }
-            } catch (error) {
-                console.error('Error loading menu:', error);
-                document.getElementById('menuGrid').innerHTML = `
+            // Load menu from API
+            async function loadMenu() {
+                try {
+                    const locationParam = CONFIG.locationId ? `&locationId=${CONFIG.locationId}` : '';
+                    const response = await fetch(`${CONFIG.apiBaseUrl}/getMenu?restaurantId=${CONFIG.restaurantId}${locationParam}`);
+                    const data = await response.json();
+
+                    if (data.categories) {
+                        menuData = data.categories;
+                        renderCategories();
+                        renderMenuItems();
+                    }
+                } catch (error) {
+                    console.error('Error loading menu:', error);
+                    document.getElementById('menuGrid').innerHTML = `
                     <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #e74c3c;">
                         <i class="bi bi-exclamation-circle" style="font-size: 3rem;"></i>
                         <p style="margin-top: 1rem;">Failed to load menu. Please refresh the page.</p>
                     </div>
                 `;
-            }
-        }
-
-        // Render category filters
-        function renderCategories() {
-            const container = document.getElementById('menuCategories');
-            const allBtn = `<button class="category-btn ${selectedCategory === 'all' ? 'active' : ''}" onclick="filterCategory('all')">All</button>`;
-            const categoryBtns = menuData.map(cat =>
-                `<button class="category-btn ${selectedCategory === cat.id ? 'active' : ''}" onclick="filterCategory('${cat.id}')">${cat.name}</button>`
-            ).join('');
-            container.innerHTML = allBtn + categoryBtns;
-        }
-
-        // Filter by category
-        function filterCategory(categoryId) {
-            selectedCategory = categoryId;
-            renderCategories();
-            renderMenuItems();
-        }
-
-        // Render menu items
-        function renderMenuItems() {
-            const container = document.getElementById('menuGrid');
-            let items = [];
-
-            if (selectedCategory === 'all') {
-                menuData.forEach(cat => {
-                    if (cat.items) {
-                        items = [...items, ...cat.items.map(item => ({ ...item, categoryName: cat.name }))];
-                    }
-                });
-            } else {
-                const category = menuData.find(cat => cat.id === selectedCategory);
-                if (category && category.items) {
-                    items = category.items.map(item => ({ ...item, categoryName: category.name }));
                 }
             }
 
-            if (items.length === 0) {
-                container.innerHTML = `
+            // Render category filters
+            function renderCategories() {
+                const container = document.getElementById('menuCategories');
+                const allBtn = `<button class="category-btn ${selectedCategory === 'all' ? 'active' : ''}" onclick="filterCategory('all')">All</button>`;
+                const categoryBtns = menuData.map(cat =>
+                    `<button class="category-btn ${selectedCategory === cat.id ? 'active' : ''}" onclick="filterCategory('${cat.id}')">${cat.name}</button>`
+                ).join('');
+                container.innerHTML = allBtn + categoryBtns;
+            }
+
+            // Filter by category
+            function filterCategory(categoryId) {
+                selectedCategory = categoryId;
+                renderCategories();
+                renderMenuItems();
+            }
+
+            // Render menu items
+            function renderMenuItems() {
+                const container = document.getElementById('menuGrid');
+                let items = [];
+
+                if (selectedCategory === 'all') {
+                    menuData.forEach(cat => {
+                        if (cat.items) {
+                            items = [...items, ...cat.items.map(item => ({ ...item, categoryName: cat.name }))];
+                        }
+                    });
+                } else {
+                    const category = menuData.find(cat => cat.id === selectedCategory);
+                    if (category && category.items) {
+                        items = category.items.map(item => ({ ...item, categoryName: category.name }));
+                    }
+                }
+
+                if (items.length === 0) {
+                    container.innerHTML = `
                     <div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-light);">
                         <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.5;"></i>
                         <p style="margin-top: 1rem;">No items in this category yet</p>
                     </div>
                 `;
-                return;
+                    return;
+                }
+
+                container.innerHTML = items.map(item => renderMenuItem(item)).join('');
             }
 
-            container.innerHTML = items.map(item => renderMenuItem(item)).join('');
-        }
+            // Render single menu item
+            function renderMenuItem(item) {
+                const price = parseFloat(item.price) || 0;
+                const discount = parseFloat(item.discount) || 0;
+                const discountType = item.discountType || 'amount';
 
-        // Render single menu item
-        function renderMenuItem(item) {
-            const price = parseFloat(item.price) || 0;
-            const discount = parseFloat(item.discount) || 0;
-            const discountType = item.discountType || 'amount';
+                let finalPrice = price;
+                if (discount > 0) {
+                    finalPrice = discountType === 'percentage'
+                        ? price * (1 - discount / 100)
+                        : price - discount;
+                }
+                finalPrice = Math.max(0, finalPrice);
 
-            let finalPrice = price;
-            if (discount > 0) {
-                finalPrice = discountType === 'percentage'
-                    ? price * (1 - discount / 100)
-                    : price - discount;
-            }
-            finalPrice = Math.max(0, finalPrice);
+                const hasDiscount = discount > 0;
+                const discountText = discountType === 'percentage' ? `${discount}% OFF` : `$${discount.toFixed(2)} OFF`;
 
-            const hasDiscount = discount > 0;
-            const discountText = discountType === 'percentage' ? `${discount}% OFF` : `$${discount.toFixed(2)} OFF`;
-
-            return `
+                return `
                 <div class="menu-item">
                     <div class="menu-item-image">
                         ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}" onerror="this.parentElement.innerHTML='<div style=\\'height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;\\'><i class=\\'bi bi-image\\' style=\\'font-size:3rem;color:#ccc;\\'></i></div>'">` : `<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;"><i class="bi bi-image" style="font-size:3rem;color:#ccc;"></i></div>`}
@@ -1637,98 +1621,98 @@
                         </div>
                         <p class="menu-item-description">${item.description || 'Delicious item prepared fresh'}</p>
                         <button class="add-to-cart-btn" onclick='addToCart(${JSON.stringify({
-                id: item.id,
-                name: item.name,
-                price: price,
-                finalPrice: finalPrice,
-                imageUrl: item.imageUrl || '',
-                description: item.description || ''
-            }).replace(/'/g, "\\'")})'}>
+                    id: item.id,
+                    name: item.name,
+                    price: price,
+                    finalPrice: finalPrice,
+                    imageUrl: item.imageUrl || '',
+                    description: item.description || ''
+                }).replace(/'/g, "\\'")})'}>
                             <i class="bi bi-plus-circle"></i> Add to Cart
                         </button>
                     </div>
                 </div>
             `;
-        }
-
-        // Cart Functions
-        function addToCart(item) {
-            const existing = cart.find(i => i.id === item.id);
-            if (existing) {
-                existing.quantity += 1;
-            } else {
-                cart.push({ ...item, quantity: 1 });
             }
-            saveCart();
-            updateCartUI();
-            showToast(`${item.name} added to cart!`, 'success');
-        }
 
-        function removeFromCart(itemId) {
-            cart = cart.filter(item => item.id !== itemId);
-            saveCart();
-            updateCartUI();
-        }
-
-        function updateQuantity(itemId, delta) {
-            const item = cart.find(i => i.id === itemId);
-            if (item) {
-                item.quantity += delta;
-                if (item.quantity <= 0) {
-                    removeFromCart(itemId);
+            // Cart Functions
+            function addToCart(item) {
+                const existing = cart.find(i => i.id === item.id);
+                if (existing) {
+                    existing.quantity += 1;
                 } else {
-                    saveCart();
+                    cart.push({ ...item, quantity: 1 });
+                }
+                saveCart();
+                updateCartUI();
+                showToast(`${item.name} added to cart!`, 'success');
+            }
+
+            function removeFromCart(itemId) {
+                cart = cart.filter(item => item.id !== itemId);
+                saveCart();
+                updateCartUI();
+            }
+
+            function updateQuantity(itemId, delta) {
+                const item = cart.find(i => i.id === itemId);
+                if (item) {
+                    item.quantity += delta;
+                    if (item.quantity <= 0) {
+                        removeFromCart(itemId);
+                    } else {
+                        saveCart();
+                        updateCartUI();
+                    }
+                }
+            }
+
+            function saveCart() {
+                localStorage.setItem(`cart_${CONFIG.restaurantId}`, JSON.stringify(cart));
+            }
+
+            function loadCart() {
+                const saved = localStorage.getItem(`cart_${CONFIG.restaurantId}`);
+                if (saved) {
+                    cart = JSON.parse(saved);
                     updateCartUI();
                 }
             }
-        }
 
-        function saveCart() {
-            localStorage.setItem(`cart_${CONFIG.restaurantId}`, JSON.stringify(cart));
-        }
-
-        function loadCart() {
-            const saved = localStorage.getItem(`cart_${CONFIG.restaurantId}`);
-            if (saved) {
-                cart = JSON.parse(saved);
+            function clearCart() {
+                cart = [];
+                saveCart();
                 updateCartUI();
             }
-        }
 
-        function clearCart() {
-            cart = [];
-            saveCart();
-            updateCartUI();
-        }
+            function getCartTotals() {
+                const subtotal = cart.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0);
+                const tax = subtotal * CONFIG.taxRate;
+                const total = subtotal + tax;
+                return { subtotal, tax, total };
+            }
 
-        function getCartTotals() {
-            const subtotal = cart.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0);
-            const tax = subtotal * CONFIG.taxRate;
-            const total = subtotal + tax;
-            return { subtotal, tax, total };
-        }
+            function updateCartUI() {
+                const cartItems = document.getElementById('cartItems');
+                const cartFooter = document.getElementById('cartFooter');
+                const cartCount = document.getElementById('cartCount');
 
-        function updateCartUI() {
-            const cartItems = document.getElementById('cartItems');
-            const cartFooter = document.getElementById('cartFooter');
-            const cartCount = document.getElementById('cartCount');
+                const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+                cartCount.textContent = totalItems;
 
-            const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-            cartCount.textContent = totalItems;
-
-            if (cart.length === 0) {
-                cartItems.innerHTML = `
+                if (cart.length === 0) {
+                    cartItems.innerHTML = `
                     <div class="cart-empty">
                         <i class="bi bi-cart-x"></i>
                         <p>Your cart is empty</p>
                         <p>Add items from our menu to get started</p>
                     </div>
                 `;
-                cartFooter.style.display = 'none';
-                return;
-            }
+                    cartFooter.style.display = 'none';
+                    return;
+                }
 
-            cartItems.innerHTML = cart.map(item => `
+                cartItems.innerHTML = cart.map(item => `
                 <div class="cart-item">
                     <div class="cart-item-image">
                         ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.name}">` : `<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;"><i class="bi bi-image"></i></div>`}
@@ -1748,44 +1732,63 @@
                 </div>
             `).join('');
 
-            const totals = getCartTotals();
-            document.getElementById('cartSubtotal').textContent = `$${totals.subtotal.toFixed(2)}`;
-            document.getElementById('cartTax').textContent = `$${totals.tax.toFixed(2)}`;
-            document.getElementById('cartTotal').textContent = `$${totals.total.toFixed(2)}`;
+                const totals = getCartTotals();
+                document.getElementById('cartSubtotal').textContent = `$${totals.subtotal.toFixed(2)}`;
+                document.getElementById('cartTax').textContent = `$${totals.tax.toFixed(2)}`;
+                document.getElementById('cartTotal').textContent = `$${totals.total.toFixed(2)}`;
 
-            cartFooter.style.display = 'block';
-        }
-
-        function toggleCart() {
-            document.getElementById('cartOverlay').classList.toggle('active');
-            document.getElementById('cartSidebar').classList.toggle('active');
-        }
-
-        function scrollToMenuAndOpenCart() {
-            document.getElementById('menu').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        // Checkout Functions
-        function openCheckout() {
-            if (cart.length === 0) {
-                showToast('Your cart is empty', 'error');
-                return;
+                cartFooter.style.display = 'block';
             }
 
-            toggleCart(); // Close cart
-            document.getElementById('checkoutModal').classList.add('active');
-            renderCheckoutForm();
-        }
+            function toggleCart() {
+                document.getElementById('cartOverlay').classList.toggle('active');
+                document.getElementById('cartSidebar').classList.toggle('active');
+            }
 
-        function closeCheckout() {
-            document.getElementById('checkoutModal').classList.remove('active');
-        }
+            function scrollToMenuAndOpenCart() {
+                document.getElementById('menu').scrollIntoView({ behavior: 'smooth' });
+            }
 
-        function renderCheckoutForm() {
-            const totals = getCartTotals();
-            const container = document.getElementById('checkoutForm');
+            // Checkout Functions
+            function openCheckout() {
+                if (cart.length === 0) {
+                    showToast('Your cart is empty', 'error');
+                    return;
+                }
 
-            container.innerHTML = `
+                // Check if user is authenticated
+                if (window.customerPortal && !window.customerPortal.isAuthenticated) {
+                    toggleCart(); // Close cart first
+                    window.customerPortal.checkoutPending = true;
+                    window.customerPortal.showAuth('signin');
+                    showToast('Please sign in to place an order', 'info');
+                    return;
+                }
+
+                toggleCart(); // Close cart
+                document.getElementById('checkoutModal').classList.add('active');
+                renderCheckoutForm();
+            }
+            
+            // Make openCheckout available globally for portal callback
+            window.openCheckout = openCheckout;
+
+            function closeCheckout() {
+                document.getElementById('checkoutModal').classList.remove('active');
+            }
+
+            function renderCheckoutForm() {
+                const totals = getCartTotals();
+                const container = document.getElementById('checkoutForm');
+                
+                // Get user details if logged in
+                const user = window.customerPortal?.user || {};
+                const userName = user.fullName || '';
+                const userPhone = user.phone || '';
+                const userEmail = user.email || '';
+                const userAddress = user.address || '';
+
+                container.innerHTML = `
                 <div class="order-type-selector">
                     <div class="order-type-option active" id="pickupOption" onclick="selectOrderType('pickup')">
                         <i class="bi bi-bag-check"></i>
@@ -1801,17 +1804,17 @@
 
                 <div class="form-group">
                     <label for="customerName">Your Name *</label>
-                    <input type="text" id="customerName" placeholder="John Doe" required>
+                    <input type="text" id="customerName" placeholder="John Doe" value="${userName}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="customerPhone">Phone Number *</label>
-                    <input type="tel" id="customerPhone" placeholder="(555) 123-4567" required>
+                    <input type="tel" id="customerPhone" placeholder="(555) 123-4567" value="${userPhone}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="customerEmail">Email Address *</label>
-                    <input type="email" id="customerEmail" placeholder="john@example.com" required>
+                    <input type="email" id="customerEmail" placeholder="john@example.com" value="${userEmail}" required>
                 </div>
 
                 <div class="form-group">
@@ -1877,173 +1880,180 @@
                     <i class="bi bi-check-circle"></i> Place Order - $${totals.total.toFixed(2)}
                 </button>
             `;
-        }
+            }
 
-        function selectOrderType(type) {
-            document.querySelectorAll('.order-type-option').forEach(el => el.classList.remove('active'));
-            document.getElementById(`${type}Option`).classList.add('active');
-        }
+            function selectOrderType(type) {
+                document.querySelectorAll('.order-type-option').forEach(el => el.classList.remove('active'));
+                document.getElementById(`${type}Option`).classList.add('active');
+            }
 
-        function selectPaymentMethod(method) {
-            document.querySelectorAll('.payment-option').forEach(el => el.classList.remove('active'));
-            document.getElementById(`${method === 'payNow' ? 'payNow' : 'payLater'}Option`).classList.add('active');
+            function selectPaymentMethod(method) {
+                document.querySelectorAll('.payment-option').forEach(el => el.classList.remove('active'));
+                document.getElementById(`${method === 'payNow' ? 'payNow' : 'payLater'}Option`).classList.add('active');
 
-            const cardContainer = document.getElementById('cardElementContainer');
-            console.log('selectPaymentMethod called:', method, '| stripe:', !!stripe, '| cardElement:', !!cardElement);
+                const cardContainer = document.getElementById('cardElementContainer');
+                console.log('selectPaymentMethod called:', method, '| stripe:', !!stripe, '| cardElement:', !!cardElement);
 
-            if (method === 'payNow') {
-                cardContainer.style.display = 'block';
+                if (method === 'payNow') {
+                    cardContainer.style.display = 'block';
 
-                // Initialize Stripe card element with a small delay to ensure container is visible
-                if (stripe && !cardElement) {
-                    setTimeout(() => {
-                        try {
-                            console.log('Creating Stripe card element...');
-                            const elements = stripe.elements();
-                            cardElement = elements.create('card', {
-                                style: {
-                                    base: {
-                                        fontSize: '16px',
-                                        color: '#2d3436',
-                                        fontFamily: 'var(--font-family)',
-                                        '::placeholder': { color: '#aab7c4' }
-                                    },
-                                    invalid: {
-                                        color: '#e74c3c'
+                    // Initialize Stripe card element with a small delay to ensure container is visible
+                    if (stripe && !cardElement) {
+                        setTimeout(() => {
+                            try {
+                                console.log('Creating Stripe card element...');
+                                const elements = stripe.elements();
+                                cardElement = elements.create('card', {
+                                    style: {
+                                        base: {
+                                            fontSize: '16px',
+                                            color: '#2d3436',
+                                            fontFamily: 'var(--font-family)',
+                                            '::placeholder': { color: '#aab7c4' }
+                                        },
+                                        invalid: {
+                                            color: '#e74c3c'
+                                        }
                                     }
-                                }
-                            });
-                            console.log('Mounting card element...');
-                            cardElement.mount('#card-element');
-                            cardElement.on('change', function (event) {
-                                const displayError = document.getElementById('card-errors');
-                                displayError.textContent = event.error ? event.error.message : '';
-                            });
-                            cardElement.on('ready', function () {
-                                console.log('Stripe card element ready and accepting input!');
-                            });
-                        } catch (err) {
-                            console.error('Error creating card element:', err);
-                            document.getElementById('card-errors').textContent = 'Error loading payment form: ' + err.message;
-                        }
-                    }, 150);
-                } else if (!stripe) {
-                    // Stripe not initialized - show warning but still allow showing the form
-                    document.getElementById('card-errors').textContent = 'Online payment is currently unavailable. Please select "Pay at Restaurant" or contact support.';
-                    console.warn('Stripe not initialized. Check browser console for Stripe key issues.');
+                                });
+                                console.log('Mounting card element...');
+                                cardElement.mount('#card-element');
+                                cardElement.on('change', function (event) {
+                                    const displayError = document.getElementById('card-errors');
+                                    displayError.textContent = event.error ? event.error.message : '';
+                                });
+                                cardElement.on('ready', function () {
+                                    console.log('Stripe card element ready and accepting input!');
+                                });
+                            } catch (err) {
+                                console.error('Error creating card element:', err);
+                                document.getElementById('card-errors').textContent = 'Error loading payment form: ' + err.message;
+                            }
+                        }, 150);
+                    } else if (!stripe) {
+                        // Stripe not initialized - show warning but still allow showing the form
+                        document.getElementById('card-errors').textContent = 'Online payment is currently unavailable. Please select "Pay at Restaurant" or contact support.';
+                        console.warn('Stripe not initialized. Check browser console for Stripe key issues.');
+                    } else {
+                        console.log('Card element already initialized');
+                    }
                 } else {
-                    console.log('Card element already initialized');
+                    cardContainer.style.display = 'none';
                 }
-            } else {
-                cardContainer.style.display = 'none';
-            }
-        }
-
-        function generatePickupTimes() {
-            const times = [];
-            const now = new Date();
-            const start = new Date(now.getTime() + 30 * 60000); // Start 30 mins from now
-            start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15); // Round to next 15 min
-
-            for (let i = 0; i < 12; i++) {
-                const time = new Date(start.getTime() + i * 15 * 60000);
-                const timeStr = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-                times.push(`<option value="${time.toISOString()}">${timeStr}</option>`);
-            }
-            return times.join('');
-        }
-
-        async function placeOrder() {
-            const btn = document.getElementById('placeOrderBtn');
-            const name = document.getElementById('customerName').value.trim();
-            const phone = document.getElementById('customerPhone').value.trim();
-            const email = document.getElementById('customerEmail').value.trim();
-            const pickupTime = document.getElementById('pickupTime').value;
-            const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
-
-            // Validation
-            if (!name || !phone || !email) {
-                showToast('Please fill in all required fields', 'error');
-                return;
             }
 
-            btn.disabled = true;
-            btn.innerHTML = '<div class="spinner"></div>';
+            function generatePickupTimes() {
+                const times = [];
+                const now = new Date();
+                const start = new Date(now.getTime() + 30 * 60000); // Start 30 mins from now
+                start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15); // Round to next 15 min
 
-            try {
-                const totals = getCartTotals();
+                for (let i = 0; i < 12; i++) {
+                    const time = new Date(start.getTime() + i * 15 * 60000);
+                    const timeStr = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                    times.push(`<option value="${time.toISOString()}">${timeStr}</option>`);
+                }
+                return times.join('');
+            }
 
-                // If pay now, process Stripe payment first
-                let paymentDetails = null;
-                if (paymentMethod === 'payNow' && stripe && cardElement) {
-                    // Create payment method
-                    const { error, paymentMethod: pm } = await stripe.createPaymentMethod({
-                        type: 'card',
-                        card: cardElement,
-                        billing_details: { name, email, phone }
-                    });
+            async function placeOrder() {
+                // Auth Guard
+                if (window.customerPortal && !window.customerPortal.isAuthenticated) {
+                    if (window.customerPortal.checkoutPending !== undefined) window.customerPortal.checkoutPending = true;
+                    closeCheckout();
+                    window.customerPortal.showAuth('signup');
+                    return;
+                }
+                const btn = document.getElementById('placeOrderBtn');
+                const name = document.getElementById('customerName').value.trim();
+                const phone = document.getElementById('customerPhone').value.trim();
+                const email = document.getElementById('customerEmail').value.trim();
+                const pickupTime = document.getElementById('pickupTime').value;
+                const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
 
-                    if (error) {
-                        throw new Error(error.message);
+                // Validation
+                if (!name || !phone || !email) {
+                    showToast('Please fill in all required fields', 'error');
+                    return;
+                }
+
+                btn.disabled = true;
+                btn.innerHTML = '<div class="spinner"></div>';
+
+                try {
+                    const totals = getCartTotals();
+
+                    // If pay now, process Stripe payment first
+                    let paymentDetails = null;
+                    if (paymentMethod === 'payNow' && stripe && cardElement) {
+                        // Create payment method
+                        const { error, paymentMethod: pm } = await stripe.createPaymentMethod({
+                            type: 'card',
+                            card: cardElement,
+                            billing_details: { name, email, phone }
+                        });
+
+                        if (error) {
+                            throw new Error(error.message);
+                        }
+
+                        paymentDetails = {
+                            paymentMethodId: pm.id,
+                            amount: totals.total,
+                            status: 'pending'
+                        };
                     }
 
-                    paymentDetails = {
-                        paymentMethodId: pm.id,
-                        amount: totals.total,
-                        status: 'pending'
+                    // Submit order
+                    const orderData = {
+                        restaurantId: CONFIG.restaurantId,
+                        locationId: CONFIG.locationId, // For multi-location support
+                        customer: { name, phone, email },
+                        items: cart.map(item => ({
+                            id: item.id,
+                            name: item.name,
+                            price: item.price,
+                            finalPrice: item.finalPrice,
+                            quantity: item.quantity
+                        })),
+                        subtotal: totals.subtotal,
+                        tax: totals.tax,
+                        taxRate: CONFIG.taxRate * 100, // Store as percentage (e.g., 10 for 10%)
+                        total: totals.total,
+                        pickupTime: pickupTime,
+                        orderType: 'pickup',
+                        paymentMethod: paymentMethod === 'payNow' ? 'card' : 'payAtRestaurant',
+                        paymentDetails: paymentDetails,
+                        source: 'website'
                     };
+
+                    const response = await fetch(`${CONFIG.apiBaseUrl}/submitOrder`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(orderData)
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        showOrderConfirmation(result.orderId, pickupTime);
+                        clearCart();
+                    } else {
+                        throw new Error(result.error || 'Failed to place order');
+                    }
+                } catch (error) {
+                    console.error('Order error:', error);
+                    showToast(error.message || 'Failed to place order. Please try again.', 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-check-circle"></i> Place Order';
                 }
-
-                // Submit order
-                const orderData = {
-                    restaurantId: CONFIG.restaurantId,
-                    locationId: CONFIG.locationId, // For multi-location support
-                    customer: { name, phone, email },
-                    items: cart.map(item => ({
-                        id: item.id,
-                        name: item.name,
-                        price: item.price,
-                        finalPrice: item.finalPrice,
-                        quantity: item.quantity
-                    })),
-                    subtotal: totals.subtotal,
-                    tax: totals.tax,
-                    taxRate: CONFIG.taxRate * 100, // Store as percentage (e.g., 10 for 10%)
-                    total: totals.total,
-                    pickupTime: pickupTime,
-                    orderType: 'pickup',
-                    paymentMethod: paymentMethod === 'payNow' ? 'card' : 'payAtRestaurant',
-                    paymentDetails: paymentDetails,
-                    source: 'website'
-                };
-
-                const response = await fetch(`${CONFIG.apiBaseUrl}/submitOrder`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(orderData)
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    showOrderConfirmation(result.orderId, pickupTime);
-                    clearCart();
-                } else {
-                    throw new Error(result.error || 'Failed to place order');
-                }
-            } catch (error) {
-                console.error('Order error:', error);
-                showToast(error.message || 'Failed to place order. Please try again.', 'error');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-check-circle"></i> Place Order';
             }
-        }
 
-        function showOrderConfirmation(orderId, pickupTime) {
-            const pickupDate = new Date(pickupTime);
-            const timeStr = pickupDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            function showOrderConfirmation(orderId, pickupTime) {
+                const pickupDate = new Date(pickupTime);
+                const timeStr = pickupDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-            document.getElementById('checkoutForm').innerHTML = `
+                document.getElementById('checkoutForm').innerHTML = `
                 <div class="order-confirmation">
                     <div class="confirmation-icon">
                         <i class="bi bi-check-lg"></i>
@@ -2064,51 +2074,52 @@
                     </button>
                 </div>
             `;
-        }
+            }
 
-        // Render business hours
-        function renderHours() {
-            const container = document.getElementById('hoursGrid');
-            if (!hours || typeof hours !== 'object') return;
+            // Render business hours
+            function renderHours() {
+                const container = document.getElementById('hoursGrid');
+                if (!hours || typeof hours !== 'object') return;
 
-            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-            container.innerHTML = days.map((day, i) => {
-                const h = hours[day];
-                if (!h) return '';
-                const openTime = formatTime(h.open);
-                const closeTime = formatTime(h.close);
-                return `
+                container.innerHTML = days.map((day, i) => {
+                    const h = hours[day];
+                    if (!h) return '';
+                    const openTime = formatTime(h.open);
+                    const closeTime = formatTime(h.close);
+                    return `
                     <div class="hours-row">
                         <span class="hours-day">${dayNames[i]}</span>
                         <span>${openTime} - ${closeTime}</span>
                     </div>
                 `;
-            }).join('');
-        }
+                }).join('');
+            }
 
-        function formatTime(time) {
-            if (!time) return 'Closed';
-            const [hours, minutes] = time.split(':');
-            const h = parseInt(hours);
-            const suffix = h >= 12 ? 'PM' : 'AM';
-            const h12 = h % 12 || 12;
-            return `${h12}:${minutes} ${suffix}`;
-        }
+            function formatTime(time) {
+                if (!time) return 'Closed';
+                const [hours, minutes] = time.split(':');
+                const h = parseInt(hours);
+                const suffix = h >= 12 ? 'PM' : 'AM';
+                const h12 = h % 12 || 12;
+                return `${h12}:${minutes} ${suffix}`;
+            }
 
-        // Toast notification
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = `toast ${type} active`;
+            // Toast notification
+            function showToast(message, type = 'success') {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.className = `toast ${type} active`;
 
-            setTimeout(() => {
-                toast.classList.remove('active');
-            }, 3000);
-        }
-    </script>
+                setTimeout(() => {
+                    toast.classList.remove('active');
+                }, 3000);
+            }
+        </script>
 
+    </div><!-- /main-content -->
     <!-- Customer Portal -->
     <div id="customer-portal-root" class="customer-portal"></div>
 
@@ -2132,7 +2143,7 @@
             restaurantId: '{{restaurantId}}',
             themeConfig: {
                 primaryColor: '{{primaryColor}}',
-                secondaryColor: '{{secondaryColor}}',
+                secondaryColor: '{{econdaryColor}}',
                 accentColor: '{{accentColor}}',
                 fontFamily: '{{fontFamily}}'
             },

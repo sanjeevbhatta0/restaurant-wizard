@@ -18,9 +18,13 @@
     --cp-radius: var(--radius, 12px);
     --cp-radius-lg: var(--radius-lg, 20px);
 
-    /* Portal-specific colors */
+    /* Portal-specific colors - these are fixed dark colors for consistent UI */
     --cp-bg: rgba(255, 255, 255, 0.95);
     --cp-bg-dark: rgba(0, 0, 0, 0.85);
+    --cp-sidebar-bg: #2c3e50;
+    --cp-sidebar-bg-light: #34495e;
+    --cp-gradient-start: #2c3e50;
+    --cp-gradient-end: #3498db;
     --cp-text: #2d3436;
     --cp-text-light: #636e72;
     --cp-border: rgba(0, 0, 0, 0.1);
@@ -126,7 +130,7 @@
 .cp-auth-header h2 {
     font-size: 1.75rem;
     font-weight: 700;
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
     margin-bottom: 0.5rem;
 }
 
@@ -159,7 +163,7 @@
 
 .cp-auth-tab.active {
     background: var(--cp-bg);
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
     box-shadow: var(--cp-shadow);
 }
 
@@ -188,8 +192,8 @@
 
 .cp-form-input:focus {
     outline: none;
-    border-color: var(--cp-primary);
-    box-shadow: 0 0 0 3px rgba(var(--cp-primary), 0.1);
+    border-color: var(--cp-sidebar-bg);
+    box-shadow: 0 0 0 3px rgba(44, 62, 80, 0.1);
 }
 
 .cp-form-input.error {
@@ -224,13 +228,13 @@
 }
 
 .cp-btn-primary {
-    background: var(--cp-primary);
+    background: var(--cp-sidebar-bg);
     color: white;
     width: 100%;
 }
 
 .cp-btn-primary:hover {
-    background: var(--cp-secondary);
+    background: var(--cp-sidebar-bg-light);
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
@@ -243,12 +247,12 @@
 
 .cp-btn-outline {
     background: transparent;
-    border: 2px solid var(--cp-primary);
-    color: var(--cp-primary);
+    border: 2px solid var(--cp-sidebar-bg);
+    color: var(--cp-sidebar-bg);
 }
 
 .cp-btn-outline:hover {
-    background: var(--cp-primary);
+    background: var(--cp-sidebar-bg);
     color: white;
 }
 
@@ -300,7 +304,7 @@
 
 .cp-sidebar {
     width: 220px;
-    background: var(--cp-primary);
+    background: var(--cp-sidebar-bg);
     padding: 1.5rem 1rem;
     display: flex;
     flex-direction: column;
@@ -404,7 +408,7 @@
 
 .cp-content-header h2 {
     font-size: 1.5rem;
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
     margin-bottom: 0.25rem;
 }
 
@@ -442,7 +446,7 @@
 }
 
 .cp-card-title i {
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
 }
 
 .cp-user-info {
@@ -467,7 +471,7 @@
 
 /* Loyalty Tracker */
 .cp-loyalty-tracker {
-    background: linear-gradient(135deg, var(--cp-primary), var(--cp-secondary));
+    background: linear-gradient(135deg, var(--cp-gradient-start), var(--cp-gradient-end));
     border-radius: var(--cp-radius);
     padding: 1.5rem;
     color: white;
@@ -578,7 +582,7 @@
 .cp-promo-apply {
     width: 100%;
     padding: 0.5rem;
-    background: var(--cp-primary);
+    background: var(--cp-sidebar-bg);
     color: white;
     border: none;
     border-radius: 6px;
@@ -589,7 +593,7 @@
 }
 
 .cp-promo-apply:hover {
-    background: var(--cp-secondary);
+    background: var(--cp-sidebar-bg-light);
 }
 
 /* =========================================
@@ -650,7 +654,7 @@
 .cp-order-reorder {
     margin-left: auto;
     padding: 0.5rem 1rem;
-    background: var(--cp-primary);
+    background: var(--cp-sidebar-bg);
     color: white;
     border: none;
     border-radius: 6px;
@@ -664,7 +668,150 @@
 }
 
 .cp-order-reorder:hover {
-    background: var(--cp-secondary);
+    background: var(--cp-sidebar-bg-light);
+}
+
+/* Nav Badge for Active Orders Count */
+.cp-nav-badge {
+    background: var(--cp-accent);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    margin-left: auto;
+}
+
+/* Active Order Cards */
+.cp-order-card {
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.cp-order-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--cp-border);
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.cp-order-number {
+    font-weight: 600;
+    color: var(--cp-text);
+    font-size: 1rem;
+}
+
+.cp-order-card-header .cp-order-date {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--cp-text-light);
+    margin-top: 0.25rem;
+}
+
+.cp-order-status-badge {
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.cp-order-status-badge.pending {
+    background: rgba(243, 156, 18, 0.15);
+    color: #f39c12;
+}
+
+.cp-order-status-badge.confirmed {
+    background: rgba(52, 152, 219, 0.15);
+    color: #3498db;
+}
+
+.cp-order-status-badge.preparing {
+    background: rgba(155, 89, 182, 0.15);
+    color: #9b59b6;
+}
+
+.cp-order-status-badge.ready {
+    background: rgba(39, 174, 96, 0.15);
+    color: #27ae60;
+}
+
+.cp-order-status-badge.completed,
+.cp-order-status-badge.picked_up {
+    background: rgba(39, 174, 96, 0.15);
+    color: #27ae60;
+}
+
+.cp-order-status-badge.cancelled {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+}
+
+.cp-order-card-body {
+    padding: 1.25rem;
+}
+
+.cp-order-items {
+    margin-bottom: 1rem;
+}
+
+.cp-order-item-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    font-size: 0.9rem;
+    color: var(--cp-text);
+    border-bottom: 1px dashed var(--cp-border);
+}
+
+.cp-order-item-row:last-child {
+    border-bottom: none;
+}
+
+.cp-order-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid var(--cp-border);
+}
+
+.cp-order-pickup {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--cp-text-light);
+    font-size: 0.9rem;
+}
+
+.cp-order-pickup i {
+    color: var(--cp-sidebar-bg);
+}
+
+.cp-order-total-display {
+    font-size: 1.1rem;
+    color: var(--cp-text);
+}
+
+.cp-order-ready-banner {
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+    color: white;
+    padding: 0.75rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
 }
 
 /* =========================================
@@ -685,7 +832,7 @@
 
 .cp-spin-header h3 {
     font-size: 1.25rem;
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
     margin-bottom: 0.5rem;
     display: flex;
     align-items: center;
@@ -735,7 +882,7 @@
             /* Free Dessert (5%) */
         );
     box-shadow:
-        0 0 0 8px var(--cp-primary),
+        0 0 0 8px var(--cp-sidebar-bg),
         0 0 0 12px white,
         var(--cp-shadow-lg);
     position: relative;
@@ -816,7 +963,7 @@
 
 .cp-spin-cooldown .time {
     font-weight: 700;
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
 }
 
 /* Prize Modal */
@@ -844,7 +991,7 @@
 
 .cp-prize-modal h3 {
     font-size: 1.5rem;
-    color: var(--cp-primary);
+    color: var(--cp-sidebar-bg);
     margin-bottom: 0.5rem;
 }
 
@@ -956,5 +1103,83 @@
         width: 100%;
         margin-top: 0.5rem;
         justify-content: center;
+    }
+}
+/* =========================================
+   3. FULL PAGE DASHBOARD
+   ========================================= */
+
+#account-page-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background: var(--cp-bg);
+    z-index: 2000;
+    overflow-y: auto;
+    display: none;
+    padding: 2rem;
+}
+
+#account-page-container .cp-dashboard {
+    width: 1000px;
+    max-width: 100%;
+    margin: 0 auto;
+    min-height: 80vh;
+    display: flex;
+    background: var(--cp-bg);
+    border-radius: var(--cp-radius-lg);
+    box-shadow: var(--cp-shadow-lg);
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--cp-border);
+}
+
+/* Mobile responsive for full page dashboard */
+@media (max-width: 768px) {
+    #account-page-container {
+        padding: 0;
+    }
+    
+    #account-page-container .cp-dashboard {
+        flex-direction: column;
+        height: 100%;
+        min-height: 100vh;
+        border-radius: 0;
+        box-shadow: none;
+        border: none;
+    }
+
+    #account-page-container .cp-sidebar {
+        width: 100%;
+        flex-direction: row;
+        border-radius: 0;
+        padding: 1rem;
+        align-items: center;
+        gap: 1rem;
+        overflow-x: auto;
+    }
+
+    #account-page-container .cp-sidebar-header {
+        margin-bottom: 0;
+        min-width: 100px;
+    }
+
+    #account-page-container .cp-nav {
+        flex-direction: row;
+        overflow-x: auto;
+    }
+    
+    #account-page-container .cp-nav-item span {
+        display: none;
+    }
+
+    #account-page-container .cp-sidebar-footer {
+        display: none; /* Move logout to nav or header on mobile? */
+    }
+
+    #account-page-container .cp-content {
+        border-radius: 0;
     }
 }
