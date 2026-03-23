@@ -29,8 +29,14 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "CI=true react-scripts test --watchAll=false --passWithNoTests && react-scripts build",
+    "build:only": "react-scripts build",
     "test": "react-scripts test",
+    "test:unit": "react-scripts test --watchAll=false --testPathPattern=__tests__/unit",
+    "test:integration": "react-scripts test --watchAll=false --testPathPattern=__tests__/integration",
+    "test:e2e": "FIRESTORE_EMULATOR_HOST=localhost:8080 react-scripts test --watchAll=false --testPathPattern=__tests__/e2e",
+    "test:pos": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration|e2e)",
+    "test:ci": "CI=true react-scripts test --watchAll=false --coverage --passWithNoTests",
     "eject": "react-scripts eject",
     "dev": "concurrently \"npm start\" \"firebase emulators:start\"",
     "emulate": "firebase emulators:start"
@@ -54,6 +60,7 @@
     ]
   },
   "devDependencies": {
+    "aria-query": "^5.3.2",
     "concurrently": "^9.1.2"
   }
 }
