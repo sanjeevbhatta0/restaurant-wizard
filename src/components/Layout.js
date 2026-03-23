@@ -17,6 +17,7 @@ const ROUTE_TO_FEATURE = {
   '/table-layout': 'menu-management', // Part of basic features
   '/payments': 'payments',
   '/orders': 'orders',
+  '/promotions': 'menu-management', // Promotions is accessible to all tiers
   '/seo-social': 'seo-social',
   '/website-integration': 'website-integration',
   '/website-builder': 'website-builder',
@@ -89,6 +90,7 @@ const Layout = ({ children }) => {
     { to: '/table-layout', icon: 'grid-3x3-gap', text: 'Table Layout' },
     { to: '/payments', icon: 'credit-card', text: 'Payments' },
     { to: '/orders', icon: 'cart', text: 'Orders' },
+    { to: '/promotions', icon: 'gift', text: 'Promotions' },
     { to: '/seo-social', icon: 'share', text: 'SEO & Social' },
     { to: '/website-integration', icon: 'code-slash', text: 'Website Integration' },
     { to: '/website-builder', icon: 'brush', text: 'Website Builder' },

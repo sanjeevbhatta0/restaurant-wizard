@@ -13,6 +13,7 @@ import Account from './components/Account';
 import MenuManagement from './components/MenuManagement';
 import CategoryItems from './components/CategoryItems';
 import Orders from './components/Orders';
+import PromotionsRewards from './components/PromotionsRewards';
 import POS from './components/POS';
 import Kitchen from './components/Kitchen';
 import Server from './components/Server';
@@ -75,6 +76,11 @@ function App() {
                 <Route path="/orders" element={
                   <PrivateRoute>
                     <Layout><Orders /></Layout>
+                  </PrivateRoute>
+                } />
+                <Route path="/promotions" element={
+                  <PrivateRoute>
+                    <Layout><PromotionsRewards /></Layout>
                   </PrivateRoute>
                 } />
                 <Route path="/pos" element={

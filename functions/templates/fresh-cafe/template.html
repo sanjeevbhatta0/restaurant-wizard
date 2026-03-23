@@ -1525,7 +1525,7 @@
             }
 
             function saveCart() { localStorage.setItem(`cart_${CONFIG.restaurantId}`, JSON.stringify(cart)); }
-            function loadCart() { const saved = localStorage.getItem(`cart_${CONFIG.restaurantId}`); if (saved) { cart = JSON.parse(saved); updateCartUI();}}
+            function loadCart() { const saved = localStorage.getItem(`cart_${CONFIG.restaurantId}`); if (saved) { cart = JSON.parse(saved); updateCartUI(); } }
             function clearCart() { cart = []; saveCart(); updateCartUI(); }
             function getCartTotals() { const subtotal = cart.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0); const tax = subtotal * CONFIG.taxRate; return { subtotal, tax, total: subtotal + tax }; }
 
@@ -1597,7 +1597,7 @@
                 const userName = user.fullName || '';
                 const userPhone = user.phone || '';
                 const userEmail = user.email || '';
-                
+
                 document.getElementById('checkoutForm').innerHTML = `
                 <div class="order-type-selector">
                     <div class="order-type-option active" id="pickupOption" onclick="selectOrderType('pickup')"><i class="bi bi-bag-check"></i><h4>Pickup</h4><p>~30 mins</p></div>
@@ -1694,7 +1694,7 @@
                     const totals = getCartTotals();
                     let paymentDetails = null;
                     if (paymentMethod === 'payNow' && stripe && cardElement) {
-                        const { error, paymentMethod: pm } = await stripe.createPaymentMethod({ type: 'card', card: cardElement, billing_details: { name, email, phone}});
+                        const { error, paymentMethod: pm } = await stripe.createPaymentMethod({ type: 'card', card: cardElement, billing_details: { name, email, phone } });
                         if (error) throw new Error(error.message);
                         paymentDetails = { paymentMethodId: pm.id, amount: totals.total, status: 'pending' };
                     }
@@ -1702,6 +1702,7 @@
                     const orderData = {
                         restaurantId: CONFIG.restaurantId,
                         locationId: CONFIG.locationId,
+                        customerId: window.customerPortal?.user?.id || null,
                         customer: { name, phone, email },
                         items: cart.map(item => ({ id: item.id, name: item.name, price: item.price, finalPrice: item.finalPrice, quantity: item.quantity })),
                         subtotal: totals.subtotal,
@@ -1737,9 +1738,19 @@
                     <div class="order-number"><span>Order Number</span><br><strong>${orderId}</strong></div>
                     <p>Ready for pickup at <strong>${pickupDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</strong></p>
                     <p style="margin-top:0.5rem;color:var(--text-light);">See you soon! 👋</p>
-                    <button class="btn btn-primary" onclick="closeCheckout()" style="width:100%;margin-top:1.5rem;">Done</button>
+                    <button class="btn btn-primary" onclick="goToDashboard()" style="width:100%;margin-top:1.5rem;"><i class="bi bi-bag-check"></i> View My Orders</button>
                 </div>
             `;
+            }
+
+            function goToDashboard() {
+                closeCheckout();
+                if (window.customerPortal && window.customerPortal.isAuthenticated) {
+                    window.customerPortal.currentView = 'active_orders';
+                    window.customerPortal.loadUserOrders().then(() => {
+                        window.customerPortal.showFullPageDashboard();
+                    });
+                }
             }
 
             function renderHours() {
@@ -1788,7 +1799,7 @@
         {{customerPortalScript}}
     </script>
     <script>
-        const customerPortal = new CustomerPortal({
+        window.customerPortal = new CustomerPortal({
             restaurantId: '{{restaurantId}}',
             themeConfig: {
                 primaryColor: '{{primaryColor}}',

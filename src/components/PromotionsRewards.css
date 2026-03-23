@@ -1,0 +1,543 @@
+.promotions-rewards {
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.promotions-rewards .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.promotions-rewards .page-header h1 {
+    font-size: 1.75rem;
+    margin-bottom: 0.25rem;
+}
+
+.promotions-rewards .page-header p {
+    color: #666;
+    margin: 0;
+}
+
+.promotions-rewards .btn-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.promotions-rewards .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.promotions-rewards .btn-ghost {
+    background: transparent;
+    border: 1px solid #ddd;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.promotions-rewards .btn-ghost:hover {
+    background: #f5f5f5;
+}
+
+.promotions-rewards .btn-ghost.danger:hover {
+    background: #fee;
+    border-color: #f88;
+    color: #c00;
+}
+
+/* Tabs */
+.promotions-rewards .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 0;
+}
+
+.promotions-rewards .tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.2s;
+}
+
+.promotions-rewards .tab:hover {
+    color: #333;
+}
+
+.promotions-rewards .tab.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    font-weight: 600;
+}
+
+/* Templates */
+.promotions-rewards .template-grid {
+    margin-bottom: 2rem;
+}
+
+.promotions-rewards .template-grid h3 {
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    color: #666;
+}
+
+.promotions-rewards .templates {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.promotions-rewards .template-card {
+    background: white;
+    border: 2px dashed #ddd;
+    border-radius: 12px;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.promotions-rewards .template-card:hover {
+    border-color: #667eea;
+    background: #f8f9ff;
+}
+
+.promotions-rewards .template-card h4 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+.promotions-rewards .template-card p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+/* Form */
+.promotions-rewards .promo-form-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.promotions-rewards .form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.promotions-rewards .form-header h3 {
+    margin: 0;
+}
+
+.promotions-rewards .promo-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.promotions-rewards .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.promotions-rewards .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.promotions-rewards .form-group label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #333;
+}
+
+.promotions-rewards .form-group input,
+.promotions-rewards .form-group select,
+.promotions-rewards .form-group textarea {
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.promotions-rewards .form-group input:focus,
+.promotions-rewards .form-group select:focus,
+.promotions-rewards .form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.promotions-rewards .code-input {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.promotions-rewards .code-input input {
+    flex: 1;
+}
+
+.promotions-rewards .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+/* Promotion Cards */
+.promotions-rewards .promotions-list h3 {
+    margin-bottom: 1rem;
+}
+
+.promotions-rewards .promo-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.promotions-rewards .promo-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    transition: all 0.2s;
+}
+
+.promotions-rewards .promo-card:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+
+.promotions-rewards .promo-card.draft {
+    opacity: 0.8;
+}
+
+.promotions-rewards .promo-image {
+    height: 140px;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+}
+
+.promotions-rewards .status-badge {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.promotions-rewards .status-badge.active {
+    background: #10b981;
+    color: white;
+}
+
+.promotions-rewards .status-badge.draft {
+    background: #6b7280;
+    color: white;
+}
+
+.promotions-rewards .status-badge.expired {
+    background: #ef4444;
+    color: white;
+}
+
+.promotions-rewards .status-badge.scheduled {
+    background: #f59e0b;
+    color: white;
+}
+
+.promotions-rewards .promo-discount-badge {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.promotions-rewards .promo-details {
+    padding: 1rem;
+}
+
+.promotions-rewards .promo-details h4 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+}
+
+.promotions-rewards .promo-details p {
+    margin: 0 0 0.75rem;
+    color: #666;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.promotions-rewards .promo-meta {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.promotions-rewards .promo-meta span {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: #888;
+}
+
+.promotions-rewards .promo-dates {
+    font-size: 0.8rem;
+    color: #999;
+}
+
+.promotions-rewards .promo-actions {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-top: 1px solid #eee;
+    background: #fafafa;
+}
+
+.promotions-rewards .btn-publish {
+    flex: 1;
+    padding: 0.5rem 1rem;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.promotions-rewards .btn-publish:hover {
+    background: #059669;
+}
+
+.promotions-rewards .btn-publish.unpublish {
+    background: #6b7280;
+}
+
+.promotions-rewards .btn-publish.unpublish:hover {
+    background: #4b5563;
+}
+
+/* Empty State */
+.promotions-rewards .empty-state {
+    text-align: center;
+    padding: 3rem;
+    background: #f8f9fa;
+    border-radius: 12px;
+}
+
+.promotions-rewards .empty-state i {
+    font-size: 3rem;
+    color: #ccc;
+    margin-bottom: 1rem;
+}
+
+.promotions-rewards .empty-state p {
+    color: #666;
+    margin: 0;
+}
+
+.promotions-rewards .loading {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+}
+
+/* Analytics */
+.promotions-rewards .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.promotions-rewards .stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.promotions-rewards .stat-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.promotions-rewards .stat-label {
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.promotions-rewards .coming-soon {
+    text-align: center;
+    color: #999;
+    padding: 2rem;
+    background: #f8f9fa;
+    border-radius: 12px;
+}
+
+/* Rewards Config */
+.promotions-rewards .rewards-config {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.promotions-rewards .config-section {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #eee;
+}
+
+.promotions-rewards .config-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.promotions-rewards .config-section h4 {
+    margin: 0 0 0.5rem;
+    color: #333;
+}
+
+.promotions-rewards .config-section p {
+    color: #666;
+    margin: 0 0 1rem;
+}
+
+.promotions-rewards .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+}
+
+.promotions-rewards .tier-card {
+    padding: 1rem;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.promotions-rewards .tier-card h5 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+.promotions-rewards .tier-card p {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.promotions-rewards .tier-card.bronze {
+    background: linear-gradient(135deg, #cd7f32 0%, #a0522d 100%);
+    color: white;
+}
+
+.promotions-rewards .tier-card.silver {
+    background: linear-gradient(135deg, #c0c0c0 0%, #808080 100%);
+    color: white;
+}
+
+.promotions-rewards .tier-card.gold {
+    background: linear-gradient(135deg, #ffd700 0%, #daa520 100%);
+    color: #333;
+}
+
+.promotions-rewards .tier-card.platinum {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.promotions-rewards .spin-prizes {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+}
+
+.promotions-rewards .spin-prizes li {
+    padding: 0.5rem 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .promotions-rewards {
+        padding: 1rem;
+    }
+
+    .promotions-rewards .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .promotions-rewards .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .promotions-rewards .promo-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .promotions-rewards .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .promotions-rewards .tier-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .promotions-rewards .spin-prizes {
+        grid-template-columns: 1fr;
+    }
+}

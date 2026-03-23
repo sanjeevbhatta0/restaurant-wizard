@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { subscribeToPublishedConfig, DEFAULT_CONFIG } from '../../services/adminConfigService';
+import { trackPageView } from '../../services/platformAnalyticsService';
 
 // Fallback constants (used while loading or if Firestore fetch fails)
 const FALLBACK_TRIAL_PERIOD_DAYS = 0;
@@ -156,6 +157,11 @@ const PricingTiers = () => {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Track pricing page view
+  useEffect(() => {
+    trackPageView('pricing');
   }, []);
 
   // Use config values or fallbacks

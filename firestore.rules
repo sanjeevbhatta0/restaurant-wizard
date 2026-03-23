@@ -124,11 +124,19 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
     
-    // Platform analytics - read by admins, write only by cloud functions
+    // Analytics events - anyone can write (for tracking), only admins can read
+    match /analyticsEvents/{eventId} {
+      allow read: if request.auth != null && 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow create: if true; // Public can log analytics events
+      allow update, delete: if false; // Events are immutable
+    }
+    
+    // Platform analytics - admins can read, public can write for real-time updates
     match /platformAnalytics/{docId} {
       allow read: if request.auth != null && 
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-      allow write: if false; // Only cloud functions can write
+      allow write: if true; // Allow real-time aggregate updates from client
     }
     
     // Admin users collection - read own document only

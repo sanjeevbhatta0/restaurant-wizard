@@ -8,6 +8,7 @@ import { Form, Button, Card, Alert, Badge, Spinner } from 'react-bootstrap';
 import PasswordInput from './PasswordInput';
 import { TIER_FEATURES, TRIAL_PERIOD_DAYS } from '../contexts/SubscriptionContext';
 import { getStripe, createTierPayment, calculateTierPrice, formatAmount } from '../services/stripeService';
+import { trackPageView, trackSignup } from '../services/platformAnalyticsService';
 import './Login.css';
 
 // Stripe card element styling
@@ -57,6 +58,11 @@ const SignupForm = () => {
 
   // Scout tier is free and single-location only
   const isFreeTier = validTier === 'scout';
+
+  // Track signup page view on mount
+  useEffect(() => {
+    trackPageView('signup');
+  }, []);
 
   // For scout tier, force single location
   const effectiveLocationCount = isFreeTier ? 1 : locationCount;
@@ -143,6 +149,9 @@ const SignupForm = () => {
           createdAt: new Date().toISOString()
         }
       });
+
+      // Track the signup
+      await trackSignup('scout');
 
       navigate('/home');
     } catch (err) {
@@ -247,6 +256,9 @@ const SignupForm = () => {
           });
         }
       }
+
+      // Track the signup
+      await trackSignup(validTier);
 
       navigate('/home');
     } catch (err) {

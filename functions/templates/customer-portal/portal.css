@@ -596,6 +596,63 @@
     background: var(--cp-sidebar-bg-light);
 }
 
+/* Claimed Promotion Styles */
+.cp-promo-card.claimed {
+    opacity: 0.9;
+}
+
+.cp-promo-card.claimed .cp-promo-image::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.cp-promo-claimed-badge {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    background: var(--cp-success);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    z-index: 1;
+}
+
+.cp-promo-remaining {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--cp-accent);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.cp-promo-code {
+    background: rgba(52, 152, 219, 0.1);
+    border: 1px dashed var(--cp-secondary);
+    border-radius: 6px;
+    padding: 0.5rem;
+    text-align: center;
+}
+
+.cp-promo-code span {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--cp-text-light);
+    margin-bottom: 0.25rem;
+}
+
+.cp-promo-code strong {
+    font-size: 0.9rem;
+    color: var(--cp-sidebar-bg);
+    letter-spacing: 1px;
+}
+
 /* =========================================
    7. ORDER HISTORY
    ========================================= */
@@ -721,6 +778,11 @@
     text-transform: uppercase;
 }
 
+.cp-order-status-badge.new {
+    background: rgba(52, 152, 219, 0.15);
+    color: #3498db;
+}
+
 .cp-order-status-badge.pending {
     background: rgba(243, 156, 18, 0.15);
     color: #f39c12;
@@ -810,8 +872,15 @@
 }
 
 @keyframes pulse-glow {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.85; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.85;
+    }
 }
 
 /* =========================================
@@ -1105,6 +1174,7 @@
         justify-content: center;
     }
 }
+
 /* =========================================
    3. FULL PAGE DASHBOARD
    ========================================= */
@@ -1141,7 +1211,7 @@
     #account-page-container {
         padding: 0;
     }
-    
+
     #account-page-container .cp-dashboard {
         flex-direction: column;
         height: 100%;
@@ -1170,13 +1240,14 @@
         flex-direction: row;
         overflow-x: auto;
     }
-    
+
     #account-page-container .cp-nav-item span {
         display: none;
     }
 
     #account-page-container .cp-sidebar-footer {
-        display: none; /* Move logout to nav or header on mobile? */
+        display: none;
+        /* Move logout to nav or header on mobile? */
     }
 
     #account-page-container .cp-content {

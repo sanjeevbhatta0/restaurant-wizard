@@ -22,6 +22,10 @@ class CustomerPortal {
     this.checkoutPending = false;
     this.activeOrders = [];
     this.pastOrders = [];
+    this.promotions = [];
+    this.customerRewards = [];
+    this.claimedPromotions = [];
+    this.spinInfo = { streak: 0, lastSpinDate: null };
 
     // DOM elements (created on init)
     this.overlay = null;
@@ -135,31 +139,124 @@ class CustomerPortal {
   }
 
   async loadUserOrders() {
-    if (!this.isAuthenticated || !this.user?.email) return;
+    if (!this.isAuthenticated || !this.user?.email) {
+      console.log('loadUserOrders: Not authenticated or no email');
+      return;
+    }
+
+    console.log('loadUserOrders: Loading for email:', this.user.email, 'restaurant:', this.config.restaurantId);
 
     try {
       if (typeof firebase !== 'undefined' && firebase.firestore) {
         const db = firebase.firestore();
+
+        // Query without orderBy to avoid needing composite index
+        // We'll sort client-side instead
         const ordersRef = db.collection('restaurants')
           .doc(this.config.restaurantId)
           .collection('orders')
           .where('customer.email', '==', this.user.email)
-          .orderBy('createdAt', 'desc')
           .limit(50);
 
+        console.log('loadUserOrders: Executing query...');
         const snapshot = await ordersRef.get();
-        const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log('loadUserOrders: Query returned', snapshot.docs.length, 'documents');
 
-        // Separate active and past orders
-        const activeStatuses = ['pending', 'confirmed', 'preparing', 'ready'];
-        this.activeOrders = allOrders.filter(o => activeStatuses.includes(o.status));
-        this.pastOrders = allOrders.filter(o => !activeStatuses.includes(o.status));
+        let allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Sort client-side by createdAt (descending)
+        allOrders.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+          const timeB = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+          return timeB - timeA;
+        });
+
+        // Time-based active orders: within 30 minutes OR has active status
+        const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
+        const activeStatuses = ['new', 'pending', 'confirmed', 'preparing', 'ready'];
+
+        this.activeOrders = allOrders.filter(o => {
+          const orderTime = o.createdAt?.toMillis?.() || o.createdAt?.seconds * 1000 || 0;
+          const isRecent = orderTime > thirtyMinutesAgo;
+          const isActiveStatus = activeStatuses.includes(o.status);
+          return isActiveStatus || isRecent;
+        });
+
+        // Past orders: not in active list
+        const activeIds = new Set(this.activeOrders.map(o => o.id));
+        this.pastOrders = allOrders.filter(o => !activeIds.has(o.id));
 
         console.log(`Loaded ${this.activeOrders.length} active orders, ${this.pastOrders.length} past orders`);
+      } else {
+        console.log('loadUserOrders: Firebase not available');
       }
     } catch (err) {
       console.error('Error loading orders:', err);
+      console.error('Error details:', err.code, err.message);
     }
+  }
+
+  async loadPromotions() {
+    try {
+      const apiBaseUrl = this.config.apiBaseUrl || 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net';
+      const response = await fetch(`${apiBaseUrl}/getPromotions?restaurantId=${this.config.restaurantId}`);
+      const data = await response.json();
+
+      if (data.success && data.promotions) {
+        this.promotions = data.promotions;
+        console.log(`Loaded ${this.promotions.length} promotions`);
+      }
+    } catch (err) {
+      console.error('Error loading promotions:', err);
+      // Fall back to mock data if available
+      this.promotions = window.MockData?.promotions || [];
+    }
+  }
+
+  async loadCustomerData() {
+    if (!this.isAuthenticated || !this.user?.id) return;
+
+    try {
+      if (typeof firebase !== 'undefined' && firebase.firestore) {
+        const db = firebase.firestore();
+
+        // Load customer document for loyalty points
+        const customerDoc = await db
+          .doc(`restaurants/${this.config.restaurantId}/customers/${this.user.id}`)
+          .get();
+
+        if (customerDoc.exists) {
+          const data = customerDoc.data();
+          this.user.rewardPoints = data.rewardPoints || 0;
+          this.user.tier = data.tier || this.calculateTier(data.rewardPoints || 0);
+          this.user.totalOrders = data.totalOrders || 0;
+        }
+
+        // Load rewards via Cloud Function
+        if (typeof firebase.functions !== 'undefined') {
+          try {
+            const getCustomerRewards = firebase.functions().httpsCallable('getCustomerRewards');
+            const result = await getCustomerRewards({ restaurantId: this.config.restaurantId });
+            if (result.data.success) {
+              this.customerRewards = result.data.rewards || [];
+              this.claimedPromotions = result.data.claimedPromotions || [];
+              this.spinInfo = result.data.spinInfo || { streak: 0, lastSpinDate: null };
+            }
+          } catch (err) {
+            console.log('Could not load rewards via function:', err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error loading customer data:', err);
+    }
+  }
+
+  calculateTier(points) {
+    if (points >= 2000) return 'Platinum';
+    if (points >= 1000) return 'Gold';
+    if (points >= 500) return 'Silver';
+    return 'Bronze';
   }
 
   // =========================================
@@ -178,8 +275,12 @@ class CustomerPortal {
     const mainContent = document.getElementById('main-content');
     const accountPage = document.getElementById('account-page-container');
 
-    // Load orders first
-    await this.loadUserOrders();
+    // Load all data in parallel
+    await Promise.all([
+      this.loadUserOrders(),
+      this.loadPromotions(),
+      this.loadCustomerData()
+    ]);
 
     // Create container if missing
     if (!accountPage) {
@@ -700,36 +801,61 @@ class CustomerPortal {
   }
 
   renderPromotions() {
-    const promotions = window.MockData?.promotions || [];
+    const promotions = this.promotions.length > 0 ? this.promotions : (window.MockData?.promotions || []);
+    const claimedIds = new Set(this.claimedPromotions.map(c => c.promotionId));
 
     return `
-  <div class="cp-content-header" >
+      <div class="cp-content-header">
         <h2>Active Promotions</h2>
         <p>Exclusive offers just for you</p>
       </div>
 
-  <div class="cp-promo-grid">
-    ${promotions.map(promo => `
-          <div class="cp-promo-card">
-            <div class="cp-promo-image" style="background-image: url('${promo.image}')">
-              <span class="cp-promo-badge">${promo.discount}</span>
-            </div>
-            <div class="cp-promo-content">
-              <h4>${promo.title}</h4>
-              <p>${promo.description}</p>
-              <button class="cp-promo-apply" onclick="customerPortal.applyPromo('${promo.code}')">
-                Apply to Order
-              </button>
-            </div>
-          </div>
-        `).join('')}
-  </div>
-`;
+      ${promotions.length === 0 ? `
+        <div class="cp-card" style="text-align: center; padding: 3rem">
+          <i class="bi bi-tag" style="font-size: 3rem; opacity: 0.3"></i>
+          <p style="color: var(--cp-text-light); margin-top: 1rem">No promotions available right now</p>
+          <p style="color: var(--cp-text-light); font-size: 0.9rem">Check back soon for exclusive offers!</p>
+        </div>
+      ` : `
+        <div class="cp-promo-grid">
+          ${promotions.map(promo => {
+      const isClaimed = claimedIds.has(promo.id);
+      const remainingText = promo.remainingClaims !== null
+        ? `<span class="cp-promo-remaining">${promo.remainingClaims} remaining - claim fast!</span>`
+        : '';
+
+      return `
+              <div class="cp-promo-card ${isClaimed ? 'claimed' : ''}">
+                <div class="cp-promo-image" style="background-image: url('${promo.imageUrl || promo.image || 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=250&fit=crop'}')"> 
+                  <span class="cp-promo-badge">${promo.discount || promo.type}</span>
+                  ${isClaimed ? '<span class="cp-promo-claimed-badge">✓ Claimed</span>' : ''}
+                </div>
+                <div class="cp-promo-content">
+                  <h4>${promo.title}</h4>
+                  <p>${promo.description}</p>
+                  ${remainingText}
+                  ${isClaimed ? `
+                    <div class="cp-promo-code">
+                      <span>Your code:</span>
+                      <strong>${promo.code}</strong>
+                    </div>
+                  ` : `
+                    <button class="cp-promo-apply" onclick="customerPortal.claimPromo('${promo.id}', '${promo.code}')">
+                      <i class="bi bi-gift"></i> Claim Offer
+                    </button>
+                  `}
+                </div>
+              </div>
+            `;
+    }).join('')}
+        </div>
+      `}
+    `;
   }
 
   renderActiveOrders() {
-    const activeStatuses = ['pending', 'confirmed', 'preparing', 'ready'];
-    const orders = this.activeOrders.filter(o => activeStatuses.includes(o.status));
+    // Use all active orders (already filtered by time + status in loadUserOrders)
+    const orders = this.activeOrders;
 
     return `
       <div class="cp-content-header">
@@ -821,6 +947,7 @@ class CustomerPortal {
 
   formatStatus(status) {
     const statusMap = {
+      'new': 'Order Received',
       'pending': 'Pending',
       'confirmed': 'Confirmed',
       'preparing': 'Preparing',
@@ -836,8 +963,8 @@ class CustomerPortal {
   formatDateTime(timestamp) {
     if (!timestamp) return '';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit'
@@ -846,8 +973,8 @@ class CustomerPortal {
 
   formatPickupTime(timestamp) {
     if (!timestamp) return 'ASAP';
-    const date = typeof timestamp === 'string' ? new Date(timestamp) : 
-                 timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const date = typeof timestamp === 'string' ? new Date(timestamp) :
+      timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
@@ -996,13 +1123,34 @@ class CustomerPortal {
     wheel.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
     wheel.style.transform = `rotate(${targetDeg}deg)`;
 
-    // Save spin time
+    // Save spin time (keep localStorage for initial check, but also save to Firestore)
     localStorage.setItem('cp_lastSpin', Date.now().toString());
 
     // Show result after animation
-    setTimeout(() => {
+    setTimeout(async () => {
       this.isSpinning = false;
       this.showPrizeModal(selectedPrize);
+
+      // Save result to Firestore via Cloud Function
+      if (typeof firebase !== 'undefined' && firebase.functions) {
+        try {
+          const saveDailySpinResult = firebase.functions().httpsCallable('saveDailySpinResult');
+          const result = await saveDailySpinResult({
+            restaurantId: this.config.restaurantId,
+            prizeId: selectedPrize.id,
+            prizeName: selectedPrize.name,
+            prizeType: selectedPrize.type,
+            prizeValue: selectedPrize.value
+          });
+
+          if (result.data.success) {
+            this.spinInfo.streak = result.data.streak;
+            console.log('Spin saved! Streak:', result.data.streak);
+          }
+        } catch (err) {
+          console.error('Error saving spin result:', err);
+        }
+      }
 
       // Add points if applicable
       if (selectedPrize.type === 'points' && this.user) {
@@ -1019,6 +1167,40 @@ class CustomerPortal {
   // Actions
   // =========================================
 
+  async claimPromo(promoId, code) {
+    if (!this.isAuthenticated) {
+      this.showAuth('signin');
+      return;
+    }
+
+    try {
+      if (typeof firebase !== 'undefined' && firebase.functions) {
+        const claimPromotion = firebase.functions().httpsCallable('claimPromotion');
+        const result = await claimPromotion({
+          restaurantId: this.config.restaurantId,
+          promotionId: promoId
+        });
+
+        if (result.data.success) {
+          // Add to claimed list
+          this.claimedPromotions.push({ promotionId: promoId, promoCode: code });
+
+          // Show success message
+          alert(`🎉 Promotion claimed! Your code is: ${code}\n\nUse this code at checkout to get your discount.`);
+
+          // Refresh promotions view
+          this.renderFullPageDashboard();
+        }
+      } else {
+        // Fallback for mock mode
+        this.applyPromo(code);
+      }
+    } catch (err) {
+      console.error('Error claiming promotion:', err);
+      alert(err.message || 'Failed to claim promotion. Please try again.');
+    }
+  }
+
   applyPromo(code) {
     // Copy promo code and notify user
     if (navigator.clipboard) {
@@ -1030,12 +1212,38 @@ class CustomerPortal {
   }
 
   reorder(orderId) {
-    const orders = window.MockData?.orders || [];
-    const order = orders.find(o => o.id === orderId);
+    // Find order from our loaded orders
+    const allOrders = [...this.activeOrders, ...this.pastOrders];
+    const order = allOrders.find(o => o.id === orderId);
 
-    if (order) {
-      // In production, would add items to cart
-      alert(`Re - ordering ${order.items.length} items from order ${order.orderNumber}. This would add items to your cart.`);
+    if (order && order.items) {
+      // Add items to cart (assumes global cart array exists)
+      if (typeof window.cart !== 'undefined' && typeof window.saveCart === 'function') {
+        order.items.forEach(item => {
+          const existing = window.cart.find(i => i.id === item.id);
+          if (existing) {
+            existing.quantity += item.quantity;
+          } else {
+            window.cart.push({
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              finalPrice: item.finalPrice || item.price,
+              quantity: item.quantity
+            });
+          }
+        });
+        window.saveCart();
+        if (typeof window.updateCartUI === 'function') {
+          window.updateCartUI();
+        }
+        alert(`Added ${order.items.length} items to your cart!`);
+        this.hideFullPageDashboard();
+      } else {
+        alert(`To re-order, please add these items to your cart:\n\n${order.items.map(i => `• ${i.quantity}x ${i.name}`).join('\n')}`);
+      }
+    } else {
+      alert('Could not find order details. Please try again.');
     }
   }
 

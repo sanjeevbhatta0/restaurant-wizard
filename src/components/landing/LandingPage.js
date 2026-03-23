@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PricingTiers from './PricingTiers';
+import { trackPageView } from '../../services/platformAnalyticsService';
 import './LandingPage.css';
 
 const LandingPage = () => {
@@ -14,6 +15,11 @@ const LandingPage = () => {
     });
     const [formSubmitted, setFormSubmitted] = useState(false);
     const navigate = useNavigate();
+
+    // Track page view on mount
+    useEffect(() => {
+        trackPageView('homepage');
+    }, []);
 
     useEffect(() => {
         const handleScroll = () => {

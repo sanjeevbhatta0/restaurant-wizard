@@ -1277,6 +1277,9 @@ exports.submitOrder = onRequest((request, response) => {
       // Generate order number (timestamp + random digits)
       const orderNumber = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+      // Calculate loyalty points earned (1 point per dollar spent)
+      const loyaltyPointsEarned = Math.floor(orderData.total || 0);
+
       // Create the order document
       // For website orders, locationId defaults to restaurantId (single location setup)
       // orderType: 'pickup' or 'delivery' from website, 'dine_in' from POS
@@ -1284,12 +1287,14 @@ exports.submitOrder = onRequest((request, response) => {
         orderNumber,
         restaurantId: orderData.restaurantId,
         locationId: orderData.locationId || orderData.restaurantId, // Default to restaurantId for single-location
+        customerId: orderData.customerId || null, // Track authenticated customer
         customer: orderData.customer,
         items: orderData.items,
         subtotal: orderData.subtotal || 0,
         tax: orderData.tax || 0,
         taxRate: orderData.taxRate || 0, // Store tax rate used
         total: orderData.total,
+        loyaltyPointsEarned, // Track points earned for this order
         pickupTime: orderData.pickupTime,
         orderType: orderData.orderType || 'pickup', // Default to pickup for website orders
         paymentMethod: orderData.paymentMethod,
@@ -1300,7 +1305,7 @@ exports.submitOrder = onRequest((request, response) => {
       };
 
       // Save order to Firestore
-      const orderRef = await admin.firestore()
+      await admin.firestore()
         .collection('orders')
         .doc(orderNumber)
         .set(orderDoc);
@@ -1311,10 +1316,48 @@ exports.submitOrder = onRequest((request, response) => {
         .doc(orderNumber)
         .set(orderDoc);
 
-      // Return success with order ID
+      // Update customer loyalty points if authenticated
+      if (orderData.customerId) {
+        try {
+          const customerRef = admin.firestore()
+            .doc(`restaurants/${orderData.restaurantId}/customers/${orderData.customerId}`);
+
+          const customerDoc = await customerRef.get();
+
+          if (customerDoc.exists) {
+            // Update existing customer
+            await customerRef.update({
+              rewardPoints: FieldValue.increment(loyaltyPointsEarned),
+              totalOrders: FieldValue.increment(1),
+              lastOrderAt: FieldValue.serverTimestamp()
+            });
+            console.log(`Updated customer ${orderData.customerId} with ${loyaltyPointsEarned} points`);
+          } else {
+            // Create customer document if it doesn't exist
+            await customerRef.set({
+              email: orderData.customer.email,
+              fullName: orderData.customer.name,
+              phone: orderData.customer.phone || '',
+              rewardPoints: loyaltyPointsEarned + 100, // Welcome bonus + order points
+              totalOrders: 1,
+              tier: 'Bronze',
+              memberSince: new Date().toISOString().split('T')[0],
+              lastOrderAt: FieldValue.serverTimestamp(),
+              createdAt: FieldValue.serverTimestamp()
+            });
+            console.log(`Created new customer ${orderData.customerId} with ${loyaltyPointsEarned + 100} points (including welcome bonus)`);
+          }
+        } catch (customerError) {
+          // Log but don't fail the order if customer update fails
+          console.error('Error updating customer loyalty:', customerError);
+        }
+      }
+
+      // Return success with order ID and points earned
       response.json({
         success: true,
         orderId: orderNumber,
+        loyaltyPointsEarned,
         message: 'Order submitted successfully'
       });
     } catch (error) {
@@ -1323,6 +1366,7 @@ exports.submitOrder = onRequest((request, response) => {
     }
   });
 });
+
 
 exports.updateWebsite = onCall(async (request) => {
   try {
@@ -2429,4 +2473,326 @@ Return ONLY valid JSON.`;
     }
     throw new HttpsError('internal', error.message || 'Failed to generate AI analytics');
   }
-}); 
+});
+
+// ============================================
+// PROMOTIONS & REWARDS FUNCTIONS
+// ============================================
+
+/**
+ * Get active promotions for a restaurant (public endpoint for website)
+ */
+exports.getPromotions = onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const restaurantId = req.query.restaurantId;
+
+      if (!restaurantId) {
+        return res.status(400).json({ error: 'Restaurant ID is required' });
+      }
+
+      const db = admin.firestore();
+      const now = new Date();
+
+      // Get all published promotions that haven't expired
+      const promotionsSnapshot = await db
+        .collection(`restaurants/${restaurantId}/promotions`)
+        .where('isPublished', '==', true)
+        .get();
+
+      const promotions = [];
+
+      promotionsSnapshot.forEach(doc => {
+        const promo = { id: doc.id, ...doc.data() };
+
+        // Check if promotion is still valid
+        const validUntil = promo.validUntil?.toDate ? promo.validUntil.toDate() : new Date(promo.validUntil);
+        const validFrom = promo.validFrom?.toDate ? promo.validFrom.toDate() : new Date(promo.validFrom || 0);
+
+        if (validUntil >= now && validFrom <= now) {
+          // Check if there are claims remaining
+          const remainingClaims = (promo.maxClaims || 0) - (promo.claimCount || 0);
+          if (promo.maxClaims === 0 || promo.maxClaims === null || remainingClaims > 0) {
+            promotions.push({
+              ...promo,
+              remainingClaims: promo.maxClaims ? remainingClaims : null,
+              validUntil: validUntil.toISOString(),
+              validFrom: validFrom.toISOString()
+            });
+          }
+        }
+      });
+
+      // Sort by creation date (newest first)
+      promotions.sort((a, b) => {
+        const dateA = a.createdAt?.toMillis?.() || 0;
+        const dateB = b.createdAt?.toMillis?.() || 0;
+        return dateB - dateA;
+      });
+
+      res.json({ success: true, promotions });
+    } catch (error) {
+      console.error('Error getting promotions:', error);
+      res.status(500).json({ error: 'Failed to load promotions' });
+    }
+  });
+});
+
+/**
+ * Claim a promotion (authenticated users only)
+ */
+exports.claimPromotion = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated to claim promotions');
+    }
+
+    const { restaurantId, promotionId } = request.data;
+    const userId = request.auth.uid;
+
+    if (!restaurantId || !promotionId) {
+      throw new HttpsError('invalid-argument', 'Restaurant ID and Promotion ID are required');
+    }
+
+    const db = admin.firestore();
+    const promoRef = db.doc(`restaurants/${restaurantId}/promotions/${promotionId}`);
+    const claimRef = db.doc(`restaurants/${restaurantId}/promotionClaims/${promotionId}_${userId}`);
+
+    // Use transaction to ensure atomic update
+    const result = await db.runTransaction(async (transaction) => {
+      const promoDoc = await transaction.get(promoRef);
+      const claimDoc = await transaction.get(claimRef);
+
+      if (!promoDoc.exists) {
+        throw new HttpsError('not-found', 'Promotion not found');
+      }
+
+      const promo = promoDoc.data();
+
+      // Check if already claimed by this user
+      if (claimDoc.exists) {
+        throw new HttpsError('already-exists', 'You have already claimed this promotion');
+      }
+
+      // Check if promotion is still valid
+      const now = new Date();
+      const validUntil = promo.validUntil?.toDate ? promo.validUntil.toDate() : new Date(promo.validUntil);
+      if (validUntil < now) {
+        throw new HttpsError('failed-precondition', 'This promotion has expired');
+      }
+
+      // Check if claims are available
+      if (promo.maxClaims && (promo.claimCount || 0) >= promo.maxClaims) {
+        throw new HttpsError('resource-exhausted', 'This promotion has reached its claim limit');
+      }
+
+      // Record the claim
+      transaction.set(claimRef, {
+        userId,
+        promotionId,
+        promotionTitle: promo.title,
+        promoCode: promo.code,
+        discount: promo.discount,
+        type: promo.type,
+        claimedAt: FieldValue.serverTimestamp(),
+        used: false
+      });
+
+      // Increment claim count
+      transaction.update(promoRef, {
+        claimCount: FieldValue.increment(1)
+      });
+
+      return {
+        promoCode: promo.code,
+        discount: promo.discount,
+        type: promo.type,
+        title: promo.title
+      };
+    });
+
+    return {
+      success: true,
+      message: 'Promotion claimed successfully!',
+      ...result
+    };
+  } catch (error) {
+    console.error('Error claiming promotion:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Save daily spin result (authenticated users only)
+ */
+exports.saveDailySpinResult = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { restaurantId, prizeId, prizeName, prizeType, prizeValue } = request.data;
+    const userId = request.auth.uid;
+
+    if (!restaurantId || !prizeId) {
+      throw new HttpsError('invalid-argument', 'Restaurant ID and prize details are required');
+    }
+
+    const db = admin.firestore();
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const spinRef = db.doc(`restaurants/${restaurantId}/customerSpins/${userId}`);
+
+    // Check if already spun today
+    const spinDoc = await spinRef.get();
+    if (spinDoc.exists) {
+      const lastSpinDate = spinDoc.data().lastSpinDate;
+      if (lastSpinDate === today) {
+        throw new HttpsError('resource-exhausted', 'You have already spun today. Come back tomorrow!');
+      }
+    }
+
+    // Calculate streak
+    let streak = 1;
+    if (spinDoc.exists) {
+      const lastSpinDate = spinDoc.data().lastSpinDate;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+      if (lastSpinDate === yesterdayStr) {
+        streak = (spinDoc.data().streak || 0) + 1;
+      }
+    }
+
+    // Generate reward code if won something
+    let rewardCode = null;
+    if (prizeType !== 'none') {
+      rewardCode = `SPIN-${prizeId.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+    }
+
+    // Save spin result
+    await spinRef.set({
+      lastSpinDate: today,
+      streak,
+      lastPrize: {
+        prizeId,
+        prizeName,
+        prizeType,
+        prizeValue,
+        rewardCode,
+        wonAt: FieldValue.serverTimestamp()
+      }
+    }, { merge: true });
+
+    // If won points, add to customer's reward points
+    if (prizeType === 'points' && prizeValue) {
+      const customerRef = db.doc(`restaurants/${restaurantId}/customers/${userId}`);
+      await customerRef.update({
+        rewardPoints: FieldValue.increment(prizeValue)
+      }).catch(() => {
+        // Customer doc might not exist yet
+      });
+    }
+
+    // Save to rewards history
+    if (prizeType !== 'none') {
+      await db.collection(`restaurants/${restaurantId}/customerRewards`).add({
+        userId,
+        prizeId,
+        prizeName,
+        prizeType,
+        prizeValue,
+        rewardCode,
+        source: 'daily_spin',
+        used: false,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        wonAt: FieldValue.serverTimestamp()
+      });
+    }
+
+    return {
+      success: true,
+      streak,
+      rewardCode,
+      message: prizeType !== 'none' ? 'Congratulations! Your reward has been saved.' : 'Better luck next time!'
+    };
+  } catch (error) {
+    console.error('Error saving spin result:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Get customer's earned rewards
+ */
+exports.getCustomerRewards = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { restaurantId } = request.data;
+    const userId = request.auth.uid;
+
+    if (!restaurantId) {
+      throw new HttpsError('invalid-argument', 'Restaurant ID is required');
+    }
+
+    const db = admin.firestore();
+    const now = new Date();
+
+    // Get unused rewards that haven't expired
+    const rewardsSnapshot = await db
+      .collection(`restaurants/${restaurantId}/customerRewards`)
+      .where('userId', '==', userId)
+      .where('used', '==', false)
+      .get();
+
+    const rewards = [];
+    rewardsSnapshot.forEach(doc => {
+      const reward = { id: doc.id, ...doc.data() };
+      const expiresAt = reward.expiresAt?.toDate ? reward.expiresAt.toDate() : new Date(reward.expiresAt);
+      if (expiresAt > now) {
+        rewards.push({
+          ...reward,
+          expiresAt: expiresAt.toISOString()
+        });
+      }
+    });
+
+    // Get claimed promotions
+    const claimsSnapshot = await db
+      .collection(`restaurants/${restaurantId}/promotionClaims`)
+      .where('userId', '==', userId)
+      .where('used', '==', false)
+      .get();
+
+    const claimedPromotions = [];
+    claimsSnapshot.forEach(doc => {
+      claimedPromotions.push({ id: doc.id, ...doc.data() });
+    });
+
+    // Get spin info
+    const spinDoc = await db.doc(`restaurants/${restaurantId}/customerSpins/${userId}`).get();
+    const spinInfo = spinDoc.exists ? spinDoc.data() : { streak: 0, lastSpinDate: null };
+
+    return {
+      success: true,
+      rewards,
+      claimedPromotions,
+      spinInfo
+    };
+  } catch (error) {
+    console.error('Error getting customer rewards:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', error.message);
+  }
+});

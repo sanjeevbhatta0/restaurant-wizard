@@ -1769,7 +1769,7 @@
                 document.getElementById('checkoutModal').classList.add('active');
                 renderCheckoutForm();
             }
-            
+
             // Make openCheckout available globally for portal callback
             window.openCheckout = openCheckout;
 
@@ -1780,7 +1780,7 @@
             function renderCheckoutForm() {
                 const totals = getCartTotals();
                 const container = document.getElementById('checkoutForm');
-                
+
                 // Get user details if logged in
                 const user = window.customerPortal?.user || {};
                 const userName = user.fullName || '';
@@ -2008,6 +2008,7 @@
                     const orderData = {
                         restaurantId: CONFIG.restaurantId,
                         locationId: CONFIG.locationId, // For multi-location support
+                        customerId: window.customerPortal?.user?.id || null,
                         customer: { name, phone, email },
                         items: cart.map(item => ({
                             id: item.id,
@@ -2069,11 +2070,21 @@
                     <p style="color: var(--text-light); margin-bottom: 2rem;">
                         Please bring this order number when you arrive at the restaurant.
                     </p>
-                    <button class="btn btn-primary" onclick="closeCheckout()" style="width: 100%;">
-                        Done
+                    <button class="btn btn-primary" onclick="goToDashboard()" style="width: 100%;">
+                        <i class="bi bi-bag-check"></i> View My Orders
                     </button>
                 </div>
             `;
+            }
+
+            function goToDashboard() {
+                closeCheckout();
+                if (window.customerPortal && window.customerPortal.isAuthenticated) {
+                    window.customerPortal.currentView = 'active_orders';
+                    window.customerPortal.loadUserOrders().then(() => {
+                        window.customerPortal.showFullPageDashboard();
+                    });
+                }
             }
 
             // Render business hours
@@ -2139,7 +2150,7 @@
     </script>
     <script>
         // Initialize Customer Portal with restaurant theme
-        const customerPortal = new CustomerPortal({
+        window.customerPortal = new CustomerPortal({
             restaurantId: '{{restaurantId}}',
             themeConfig: {
                 primaryColor: '{{primaryColor}}',
