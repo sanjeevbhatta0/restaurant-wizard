@@ -5,6 +5,7 @@ import {
   addDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import lanSyncService from '../services/lanSyncService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useMenu } from '../contexts/MenuContext';
@@ -173,10 +174,13 @@ const POS = () => {
         updatedAt: new Date()
       };
 
-      await addDoc(
+      const docRef = await addDoc(
         collection(db, `restaurants/${currentUser.uid}/orders`),
         orderData
       );
+
+      // Broadcast order via LAN relay for offline cross-device sync
+      lanSyncService.sendOrder({ id: docRef.id, ...orderData });
 
       // Track order usage for tier limits
       try {

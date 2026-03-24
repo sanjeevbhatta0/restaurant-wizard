@@ -6,6 +6,8 @@ import { useLocation } from '../contexts/LocationContext';
 import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row, Col } from 'react-bootstrap';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import activityService from '../services/activityService';
+import lanSyncService from '../services/lanSyncService';
+import offlineService from '../services/offlineService';
 import { getStripe, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
 import { initializeNotifications, notifyPayments, unlockAudio } from '../services/notificationService';
 import useFullscreen from '../hooks/useFullscreen';
@@ -312,7 +314,33 @@ const Payments = () => {
       setError('Failed to load orders: ' + error.message);
     });
 
-    return () => unsubscribe();
+    // LAN Relay listeners — pick up served orders from relay when offline
+    const unsubRelayStatus = lanSyncService.onStatusUpdate(({ orderId, updates }) => {
+      if (updates.status === 'served') {
+        setOrders(prev => {
+          const exists = prev.find(o => o.id === orderId);
+          if (exists) return prev;
+          return [...prev, { id: orderId, ...updates }];
+        });
+      }
+      if (updates.status === 'completed' || updates.status === 'reimbursed') {
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        setSelectedOrders(prev => prev.filter(id => id !== orderId));
+      }
+    });
+
+    const unsubRelayBatch = lanSyncService.onBatchUpdate(({ orderIds, updates }) => {
+      if (updates.status === 'completed' || updates.status === 'reimbursed') {
+        setOrders(prev => prev.filter(o => !orderIds.includes(o.id)));
+        setSelectedOrders(prev => prev.filter(id => !orderIds.includes(id)));
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubRelayStatus();
+      unsubRelayBatch();
+    };
   }, [currentUser, selectedLocation, isMultiLocation, selectedTable]);
 
   // Load online orders (pickup/delivery from website) that are new or served
@@ -619,6 +647,9 @@ const Payments = () => {
       });
 
       await Promise.all(updatePromises);
+
+      // Broadcast batch status update via LAN relay
+      lanSyncService.sendBatchUpdate(selectedOrders, { status: 'completed', updatedAt: new Date() });
 
       // Get order numbers for activity logging
       const orderNumbers = selectedOrders.map(orderId => {

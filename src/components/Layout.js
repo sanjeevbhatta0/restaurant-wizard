@@ -4,6 +4,7 @@ import { Nav, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation as useLocationContext } from '../contexts/LocationContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
+import NetworkStatus from './NetworkStatus';
 import './Layout.css';
 
 // Feature mapping: maps sidebar routes to feature IDs
@@ -117,6 +118,7 @@ const Layout = ({ children }) => {
 
   return (
     <div className="layout-container">
+      <NetworkStatus />
       <header className="header">
         <div className="header-left">
           <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Toggle menu">

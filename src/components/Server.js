@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
+import lanSyncService from '../services/lanSyncService';
 import { initializeNotifications, notifyServer, unlockAudio } from '../services/notificationService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import useFullscreen from '../hooks/useFullscreen';
@@ -182,7 +183,61 @@ const Server = () => {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // LAN Relay listeners — receive orders/updates from other devices even when offline
+    const unsubRelayOrder = lanSyncService.onOrderReceived((order) => {
+      setOrders(prev => {
+        const exists = prev.find(o => o.id === order.id || o.orderNumber === order.orderNumber);
+        if (exists) return prev;
+        const serverStatuses = ['preparing', 'ready'];
+        if (!serverStatuses.includes(order.status)) return prev;
+        return [...prev, order].sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return aTime - bTime;
+        });
+      });
+    });
+
+    const unsubRelayStatus = lanSyncService.onStatusUpdate(({ orderId, updates }) => {
+      setOrders(prev => {
+        const serverStatuses = ['preparing', 'ready'];
+        return prev.map(order => {
+          if (order.id === orderId) {
+            const updated = { ...order, ...updates };
+            if (!serverStatuses.includes(updated.status)) return null;
+            return updated;
+          }
+          return order;
+        }).filter(Boolean);
+      });
+    });
+
+    const unsubRelaySync = lanSyncService.onSync(({ orders: relayOrders }) => {
+      if (relayOrders && relayOrders.length > 0) {
+        setOrders(prev => {
+          const serverStatuses = ['preparing', 'ready'];
+          const relayServerOrders = relayOrders.filter(o => serverStatuses.includes(o.status));
+          const merged = [...prev];
+          relayServerOrders.forEach(ro => {
+            if (!merged.find(o => o.id === ro.id || o.orderNumber === ro.orderNumber)) {
+              merged.push(ro);
+            }
+          });
+          return merged.sort((a, b) => {
+            const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return aTime - bTime;
+          });
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubRelayOrder();
+      unsubRelayStatus();
+      unsubRelaySync();
+    };
   }, [currentUser, selectedLocation, isMultiLocation]);
 
   const addNotification = (message, type = 'info', urgent = false) => {
@@ -225,6 +280,13 @@ const Server = () => {
       const order = orders.find(o => o.id === orderId);
 
       await updateDoc(orderRef, {
+        status: 'served',
+        updatedAt: new Date(),
+        servedAt: new Date()
+      });
+
+      // Broadcast status change via LAN relay
+      lanSyncService.sendStatusUpdate(orderId, {
         status: 'served',
         updatedAt: new Date(),
         servedAt: new Date()

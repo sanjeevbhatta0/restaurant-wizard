@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import activityService from '../services/activityService';
+import lanSyncService from '../services/lanSyncService';
 import { initializeNotifications, notifyKitchen, unlockAudio } from '../services/notificationService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import useFullscreen from '../hooks/useFullscreen';
@@ -189,7 +190,62 @@ const Kitchen = () => {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // LAN Relay listeners — receive orders from other devices even when offline
+    const unsubRelayOrder = lanSyncService.onOrderReceived((order) => {
+      setOrders(prev => {
+        // Only add if not already present and status matches kitchen view
+        const exists = prev.find(o => o.id === order.id || o.orderNumber === order.orderNumber);
+        if (exists) return prev;
+        const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing'];
+        if (!kitchenStatuses.includes(order.status)) return prev;
+        const sorted = [...prev, order].sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return aTime - bTime;
+        });
+        return sorted;
+      });
+    });
+
+    const unsubRelayStatus = lanSyncService.onStatusUpdate(({ orderId, updates }) => {
+      setOrders(prev => prev.map(order => {
+        if (order.id === orderId) {
+          const updated = { ...order, ...updates };
+          // Remove from kitchen view if no longer in kitchen statuses
+          const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing'];
+          if (!kitchenStatuses.includes(updated.status)) return null;
+          return updated;
+        }
+        return order;
+      }).filter(Boolean));
+    });
+
+    const unsubRelaySync = lanSyncService.onSync(({ orders: relayOrders }) => {
+      if (relayOrders && relayOrders.length > 0) {
+        setOrders(prev => {
+          const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing'];
+          const relayKitchenOrders = relayOrders.filter(o => kitchenStatuses.includes(o.status));
+          const merged = [...prev];
+          relayKitchenOrders.forEach(ro => {
+            if (!merged.find(o => o.id === ro.id || o.orderNumber === ro.orderNumber)) {
+              merged.push(ro);
+            }
+          });
+          return merged.sort((a, b) => {
+            const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return aTime - bTime;
+          });
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubRelayOrder();
+      unsubRelayStatus();
+      unsubRelaySync();
+    };
   }, [currentUser, selectedLocation, isMultiLocation]);
 
   const handleStatusChange = async (orderId, newStatus) => {
@@ -211,6 +267,9 @@ const Kitchen = () => {
       }
 
       await updateDoc(orderRef, updateData);
+
+      // Broadcast status change via LAN relay
+      lanSyncService.sendStatusUpdate(orderId, updateData);
 
       // Log activity
       if (order) {

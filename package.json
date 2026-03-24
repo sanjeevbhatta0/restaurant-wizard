@@ -25,7 +25,8 @@
     "react-router-dom": "^6.3.0",
     "react-scripts": "5.0.1",
     "twitter-api-v2": "^1.15.1",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "ws": "^8.20.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -39,6 +40,7 @@
     "test:ci": "CI=true react-scripts test --watchAll=false --coverage --passWithNoTests",
     "eject": "react-scripts eject",
     "dev": "concurrently \"npm start\" \"firebase emulators:start\"",
+    "relay": "node scripts/lan-relay.js",
     "emulate": "firebase emulators:start"
   },
   "eslintConfig": {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, addDoc, deleteDoc, getDocs, setDoc } from 'firebase/firestore';
 import { updatePassword, reauthenticateWithCredential, EmailAuthProvider, signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
+import lanSyncService from '../services/lanSyncService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useSubscription, TIER_FEATURES, PRICING, BILLING_MULTIPLIERS, ORDER_LIMITS } from '../contexts/SubscriptionContext';
@@ -1323,6 +1324,143 @@ const Account = () => {
           </Card>
         );
 
+      case 'relay':
+        const relayConfig = lanSyncService.getConfig();
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-broadcast"></i> LAN Relay Settings</h3>
+            </Card.Header>
+            <Card.Body>
+              <div style={{
+                padding: '20px',
+                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                borderRadius: '12px',
+                marginBottom: '24px'
+              }}>
+                <h5 style={{ margin: '0 0 8px', fontWeight: 700 }}>Offline Order Sync</h5>
+                <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>
+                  When internet goes down, orders can still flow between POS, Kitchen, and Server devices
+                  via your local network (WiFi). One device runs the relay server.
+                </p>
+              </div>
+
+              <Form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const ip = formData.get('relayIp').trim();
+                const port = parseInt(formData.get('relayPort')) || 8765;
+                if (!ip) {
+                  setError('Please enter the relay server IP address');
+                  return;
+                }
+                lanSyncService.saveConfig(ip, port, true);
+                setSuccess('LAN Relay configured and connecting...');
+              }}>
+                <Form.Group className="mb-3">
+                  <Form.Label style={{ fontWeight: 600 }}>Relay Server IP Address</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="relayIp"
+                    defaultValue={relayConfig.relayIp || ''}
+                    placeholder="e.g., 192.168.1.100"
+                    style={{ fontSize: '1rem' }}
+                  />
+                  <Form.Text className="text-muted">
+                    The IP address of the device running <code>node scripts/lan-relay.js</code>
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label style={{ fontWeight: 600 }}>Port</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="relayPort"
+                    defaultValue={relayConfig.port || 8765}
+                    style={{ fontSize: '1rem', maxWidth: '150px' }}
+                  />
+                </Form.Group>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+                  <Button type="submit" variant="primary" style={{ fontWeight: 600 }}>
+                    <i className="bi bi-broadcast me-1"></i>
+                    {lanSyncService.isConnected() ? 'Reconnect' : 'Connect'}
+                  </Button>
+                  {lanSyncService.isEnabled() && (
+                    <Button
+                      variant="outline-danger"
+                      onClick={() => {
+                        lanSyncService.disconnect();
+                        setSuccess('LAN Relay disconnected');
+                      }}
+                      style={{ fontWeight: 600 }}
+                    >
+                      <i className="bi bi-x-circle me-1"></i>
+                      Disconnect
+                    </Button>
+                  )}
+                </div>
+              </Form>
+
+              <div style={{
+                marginTop: '24px',
+                padding: '16px',
+                background: '#f8fafc',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb'
+              }}>
+                <h6 style={{ fontWeight: 700, marginBottom: '12px' }}>Connection Status</h6>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    background: lanSyncService.isConnected() ? '#22c55e' : '#dc3545',
+                    display: 'inline-block',
+                    boxShadow: lanSyncService.isConnected() ? '0 0 8px rgba(34, 197, 94, 0.5)' : 'none'
+                  }}></span>
+                  <span style={{ fontWeight: 600 }}>
+                    {lanSyncService.isConnected() ? 'Connected to relay' : 'Not connected'}
+                  </span>
+                </div>
+                {relayConfig.relayUrl && (
+                  <p style={{ margin: '8px 0 0', color: '#666', fontSize: '0.85rem' }}>
+                    URL: {relayConfig.relayUrl}
+                  </p>
+                )}
+              </div>
+
+              <div style={{
+                marginTop: '24px',
+                padding: '16px',
+                background: 'rgba(245, 158, 11, 0.08)',
+                borderRadius: '12px',
+                border: '1px solid rgba(245, 158, 11, 0.2)'
+              }}>
+                <h6 style={{ fontWeight: 700, marginBottom: '8px' }}>
+                  <i className="bi bi-terminal me-1"></i> How to start the relay server
+                </h6>
+                <p style={{ margin: '0 0 8px', color: '#555', fontSize: '0.85rem' }}>
+                  On the POS computer (or a dedicated device), open a terminal and run:
+                </p>
+                <code style={{
+                  display: 'block',
+                  padding: '10px 14px',
+                  background: '#1a1a2e',
+                  color: '#a5b4fc',
+                  borderRadius: '8px',
+                  fontSize: '0.9rem'
+                }}>
+                  node scripts/lan-relay.js
+                </code>
+                <p style={{ margin: '12px 0 0', color: '#555', fontSize: '0.85rem' }}>
+                  The relay will display its LAN IP address. Enter that IP above on all devices.
+                </p>
+              </div>
+            </Card.Body>
+          </Card>
+        );
+
       default:
         return null;
     }
@@ -1391,6 +1529,13 @@ const Account = () => {
               {usageStats?.isOverLimit && (
                 <Badge bg="danger" style={{ marginLeft: '8px', fontSize: '0.7rem' }}>!</Badge>
               )}
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'relay' ? 'active' : ''}`}
+              onClick={() => setActiveSection('relay')}
+            >
+              <i className="bi bi-broadcast"></i>
+              <span>LAN Relay</span>
             </button>
           </nav>
         </div>
