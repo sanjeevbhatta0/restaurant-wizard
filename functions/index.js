@@ -1948,6 +1948,11 @@ exports.updateWebsite = onCall(async (request) => {
 const geminiApiKeySecret = defineSecret('GEMINI_API_KEY');
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
+// Business Listings API keys
+const yelpApiKeySecret = defineSecret('YELP_API_KEY');
+const googleBusinessClientId = defineSecret('GOOGLE_BUSINESS_CLIENT_ID');
+const googleBusinessClientSecret = defineSecret('GOOGLE_BUSINESS_CLIENT_SECRET');
+
 // Helper to get Gemini API key (from secret or env)
 function getGeminiApiKey() {
   return geminiApiKeySecret.value() || process.env.GEMINI_API_KEY || '';
@@ -2076,7 +2081,7 @@ exports.generateAIContent = onCall({ secrets: [geminiApiKeySecret] }, async (req
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { type, platform, tone, context } = request.data;
+    const { type, platform, tone, context, businessContext } = request.data;
 
     // Build the prompt based on content type
     let prompt = `You are a social media expert for restaurants. Generate a ${platform} post for a restaurant.
@@ -2084,6 +2089,17 @@ exports.generateAIContent = onCall({ secrets: [geminiApiKeySecret] }, async (req
 Restaurant Name: ${context.restaurantName || 'Our Restaurant'}
 Cuisine Type: ${context.cuisineType || 'Restaurant'}
 `;
+
+    // Enrich prompt with business listings data when available
+    if (businessContext) {
+      prompt += `\nBusiness Insights (use these to create more impactful content):`;
+      if (businessContext.avgRating) prompt += `\n- Average Rating: ${businessContext.avgRating}/5 across review platforms`;
+      if (businessContext.totalReviews) prompt += `\n- Total Reviews: ${businessContext.totalReviews}`;
+      if (businessContext.topPraises) prompt += `\n- What customers love: ${businessContext.topPraises}`;
+      if (businessContext.commonComplaints) prompt += `\n- Areas to address: ${businessContext.commonComplaints}`;
+      if (businessContext.recentKeywords) prompt += `\n- Trending keywords from reviews: ${businessContext.recentKeywords}`;
+      prompt += `\nLeverage these insights to create content that highlights strengths and addresses customer sentiment.\n`;
+    }
 
     switch (type) {
       case 'menu_feature':
@@ -3385,6 +3401,693 @@ exports.getCustomerRewards = onCall(async (request) => {
     if (error instanceof HttpsError) {
       throw error;
     }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+// ============================================
+// BUSINESS LISTINGS — Yelp, Google Business, Apple
+// ============================================
+
+const YELP_API_BASE = 'https://api.yelp.com/v3';
+
+/**
+ * Helper: Get Google OAuth access token from a per-user refresh token
+ */
+async function getGoogleAccessToken(refreshToken) {
+  const clientId = googleBusinessClientId.value() || process.env.GOOGLE_BUSINESS_CLIENT_ID || '';
+  const clientSecret = googleBusinessClientSecret.value() || process.env.GOOGLE_BUSINESS_CLIENT_SECRET || '';
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('Google Business credentials not configured');
+  }
+
+  const response = await axios.post('https://oauth2.googleapis.com/token', {
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token'
+  });
+
+  return response.data.access_token;
+}
+
+/**
+ * Helper: Get Yelp API key
+ */
+function getYelpApiKey() {
+  return yelpApiKeySecret.value() || process.env.YELP_API_KEY || '';
+}
+
+// ---- YELP FUNCTIONS ----
+
+/**
+ * Search Yelp for a business by name and location
+ */
+exports.searchYelpBusiness = onCall({ secrets: [yelpApiKeySecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const apiKey = getYelpApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'not_configured', message: 'Yelp API key is not configured. Set YELP_API_KEY in Firebase Secrets.' };
+    }
+
+    const { name, location } = request.data;
+    if (!name || !location) {
+      throw new HttpsError('invalid-argument', 'Business name and location are required');
+    }
+
+    const response = await axios.get(`${YELP_API_BASE}/businesses/search`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      params: { term: name, location: location, categories: 'restaurants,food', limit: 5 }
+    });
+
+    const businesses = (response.data.businesses || []).map(biz => ({
+      id: biz.id,
+      name: biz.name,
+      rating: biz.rating,
+      reviewCount: biz.review_count,
+      url: biz.url,
+      imageUrl: biz.image_url,
+      address: biz.location?.display_address?.join(', ') || '',
+      phone: biz.display_phone || '',
+      categories: (biz.categories || []).map(c => c.title),
+      isClosed: biz.is_closed
+    }));
+
+    return { success: true, businesses };
+  } catch (error) {
+    console.error('Error searching Yelp:', error.response?.data || error.message);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to search Yelp: ' + (error.response?.data?.error?.description || error.message));
+  }
+});
+
+/**
+ * Connect a Yelp business — fetch details + reviews, cache in Firestore
+ */
+exports.connectYelpBusiness = onCall({ secrets: [yelpApiKeySecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const apiKey = getYelpApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'not_configured', message: 'Yelp API key is not configured.' };
+    }
+
+    const { businessId } = request.data;
+    if (!businessId) {
+      throw new HttpsError('invalid-argument', 'Business ID is required');
+    }
+
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    // Fetch business details
+    const bizResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    const biz = bizResponse.data;
+
+    // Fetch reviews (max 3 from Yelp API)
+    const reviewsResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}/reviews?limit=3&sort_by=newest`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    const yelpReviews = reviewsResponse.data.reviews || [];
+
+    // Save connection state
+    const connectionData = {
+      connected: true,
+      businessId: biz.id,
+      businessName: biz.name,
+      businessUrl: biz.url,
+      rating: biz.rating,
+      reviewCount: biz.review_count,
+      imageUrl: biz.image_url || '',
+      address: biz.location?.display_address?.join(', ') || '',
+      phone: biz.display_phone || '',
+      categories: (biz.categories || []).map(c => c.title),
+      connectedAt: new Date().toISOString(),
+      lastSyncedAt: new Date().toISOString()
+    };
+
+    await db.doc(`restaurants/${uid}/settings/businessListings`).set(
+      { yelp: connectionData },
+      { merge: true }
+    );
+
+    // Cache reviews
+    const batch = db.batch();
+    for (const review of yelpReviews) {
+      const reviewRef = db.collection(`restaurants/${uid}/businessReviews`).doc(`yelp_${review.id}`);
+      batch.set(reviewRef, {
+        platform: 'yelp',
+        externalId: review.id,
+        authorName: review.user?.name || 'Anonymous',
+        authorImageUrl: review.user?.image_url || '',
+        rating: review.rating,
+        text: review.text,
+        createdAt: admin.firestore.Timestamp.fromDate(new Date(review.time_created)),
+        fetchedAt: admin.firestore.Timestamp.now(),
+        platformUrl: review.url || biz.url
+      });
+    }
+    await batch.commit();
+
+    return { success: true, connection: connectionData, reviewCount: yelpReviews.length };
+  } catch (error) {
+    console.error('Error connecting Yelp business:', error.response?.data || error.message);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to connect Yelp business: ' + (error.response?.data?.error?.description || error.message));
+  }
+});
+
+/**
+ * Refresh cached Yelp reviews
+ */
+exports.fetchYelpReviews = onCall({ secrets: [yelpApiKeySecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const apiKey = getYelpApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'not_configured', message: 'Yelp API key is not configured.' };
+    }
+
+    const { businessId } = request.data;
+    if (!businessId) {
+      throw new HttpsError('invalid-argument', 'Business ID is required');
+    }
+
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    const reviewsResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}/reviews?limit=3&sort_by=newest`, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    const yelpReviews = reviewsResponse.data.reviews || [];
+
+    // Update cached reviews
+    const batch = db.batch();
+    for (const review of yelpReviews) {
+      const reviewRef = db.collection(`restaurants/${uid}/businessReviews`).doc(`yelp_${review.id}`);
+      batch.set(reviewRef, {
+        platform: 'yelp',
+        externalId: review.id,
+        authorName: review.user?.name || 'Anonymous',
+        authorImageUrl: review.user?.image_url || '',
+        rating: review.rating,
+        text: review.text,
+        createdAt: admin.firestore.Timestamp.fromDate(new Date(review.time_created)),
+        fetchedAt: admin.firestore.Timestamp.now(),
+        platformUrl: review.url || ''
+      });
+    }
+    await batch.commit();
+
+    // Update lastSyncedAt
+    await db.doc(`restaurants/${uid}/settings/businessListings`).set(
+      { yelp: { lastSyncedAt: new Date().toISOString() } },
+      { merge: true }
+    );
+
+    return { success: true, reviews: yelpReviews.length };
+  } catch (error) {
+    console.error('Error fetching Yelp reviews:', error.response?.data || error.message);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to fetch Yelp reviews');
+  }
+});
+
+// ---- GOOGLE BUSINESS FUNCTIONS ----
+
+/**
+ * Initiate Google Business OAuth — returns the authorization URL
+ */
+exports.initiateGoogleAuth = onCall({ secrets: [googleBusinessClientId, googleBusinessClientSecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const clientId = googleBusinessClientId.value() || process.env.GOOGLE_BUSINESS_CLIENT_ID || '';
+    if (!clientId) {
+      return { success: false, error: 'not_configured', message: 'Google Business credentials are not configured.' };
+    }
+
+    const uid = request.auth.uid;
+    const { redirectUri } = request.data;
+
+    // Build the OAuth URL
+    const scopes = [
+      'https://www.googleapis.com/auth/business.manage'
+    ].join(' ');
+
+    const state = Buffer.from(JSON.stringify({ uid })).toString('base64');
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri || 'https://restaurant-portal-6b147.web.app/auth/google-business/callback')}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(scopes)}` +
+      `&access_type=offline` +
+      `&prompt=consent` +
+      `&state=${encodeURIComponent(state)}`;
+
+    return { success: true, authUrl };
+  } catch (error) {
+    console.error('Error initiating Google auth:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Handle Google Business OAuth callback — exchange code for tokens
+ */
+exports.handleGoogleAuthCallback = onRequest({ secrets: [googleBusinessClientId, googleBusinessClientSecret] }, async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { code, state } = req.query;
+      if (!code || !state) {
+        return res.status(400).json({ error: 'Missing code or state parameter' });
+      }
+
+      const clientId = googleBusinessClientId.value() || process.env.GOOGLE_BUSINESS_CLIENT_ID || '';
+      const clientSecret = googleBusinessClientSecret.value() || process.env.GOOGLE_BUSINESS_CLIENT_SECRET || '';
+
+      // Decode state to get uid
+      let uid;
+      try {
+        const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+        uid = stateData.uid;
+      } catch {
+        return res.status(400).json({ error: 'Invalid state parameter' });
+      }
+
+      // Exchange code for tokens
+      const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: req.query.redirect_uri || 'https://restaurant-portal-6b147.web.app/auth/google-business/callback',
+        grant_type: 'authorization_code'
+      });
+
+      const { access_token, refresh_token } = tokenResponse.data;
+
+      // Fetch account info using the access token
+      let accountName = 'Google Business Profile';
+      let locationId = '';
+      try {
+        const accountsResponse = await axios.get('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', {
+          headers: { Authorization: `Bearer ${access_token}` }
+        });
+        const accounts = accountsResponse.data.accounts || [];
+        if (accounts.length > 0) {
+          accountName = accounts[0].accountName || accounts[0].name;
+
+          // Try to get locations
+          const locationsResponse = await axios.get(
+            `https://mybusinessbusinessinformation.googleapis.com/v1/${accounts[0].name}/locations`,
+            { headers: { Authorization: `Bearer ${access_token}` } }
+          );
+          const locations = locationsResponse.data.locations || [];
+          if (locations.length > 0) {
+            locationId = locations[0].name;
+            accountName = locations[0].title || accountName;
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching Google Business info:', err.response?.data || err.message);
+      }
+
+      // Save connection to Firestore
+      const db = admin.firestore();
+      await db.doc(`restaurants/${uid}/settings/businessListings`).set({
+        google: {
+          connected: true,
+          accountName,
+          locationId,
+          refreshToken: refresh_token,
+          connectedAt: new Date().toISOString(),
+          lastSyncedAt: new Date().toISOString()
+        }
+      }, { merge: true });
+
+      // Redirect back to the app
+      res.redirect('https://restaurant-portal-6b147.web.app/seo-social?google_connected=true');
+    } catch (error) {
+      console.error('Error in Google auth callback:', error.response?.data || error.message);
+      res.redirect('https://restaurant-portal-6b147.web.app/seo-social?google_error=true');
+    }
+  });
+});
+
+/**
+ * Fetch Google Business reviews
+ */
+exports.fetchGoogleReviews = onCall({ secrets: [googleBusinessClientId, googleBusinessClientSecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    // Get stored connection with refresh token
+    const settingsDoc = await db.doc(`restaurants/${uid}/settings/businessListings`).get();
+    if (!settingsDoc.exists || !settingsDoc.data()?.google?.connected) {
+      throw new HttpsError('failed-precondition', 'Google Business is not connected');
+    }
+
+    const googleData = settingsDoc.data().google;
+    if (!googleData.refreshToken) {
+      throw new HttpsError('failed-precondition', 'Google Business refresh token missing. Please reconnect.');
+    }
+
+    const accessToken = await getGoogleAccessToken(googleData.refreshToken);
+    const locationId = googleData.locationId;
+
+    if (!locationId) {
+      return { success: true, reviews: [], message: 'No location found. Please reconnect Google Business.' };
+    }
+
+    // Fetch reviews
+    const reviewsResponse = await axios.get(
+      `https://mybusiness.googleapis.com/v4/${locationId}/reviews`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    const googleReviews = reviewsResponse.data.reviews || [];
+
+    // Cache reviews in Firestore
+    const batch = db.batch();
+    for (const review of googleReviews) {
+      const reviewRef = db.collection(`restaurants/${uid}/businessReviews`).doc(`google_${review.reviewId}`);
+      batch.set(reviewRef, {
+        platform: 'google',
+        externalId: review.reviewId,
+        authorName: review.reviewer?.displayName || 'Google User',
+        authorImageUrl: review.reviewer?.profilePhotoUrl || '',
+        rating: review.starRating === 'FIVE' ? 5 : review.starRating === 'FOUR' ? 4 : review.starRating === 'THREE' ? 3 : review.starRating === 'TWO' ? 2 : 1,
+        text: review.comment || '',
+        createdAt: admin.firestore.Timestamp.fromDate(new Date(review.createTime)),
+        fetchedAt: admin.firestore.Timestamp.now(),
+        ownerResponse: review.reviewReply?.comment || null,
+        ownerRespondedAt: review.reviewReply?.updateTime || null,
+        platformUrl: review.name || ''
+      });
+    }
+    await batch.commit();
+
+    // Update lastSyncedAt
+    await db.doc(`restaurants/${uid}/settings/businessListings`).set(
+      { google: { lastSyncedAt: new Date().toISOString() } },
+      { merge: true }
+    );
+
+    return { success: true, reviews: googleReviews.length };
+  } catch (error) {
+    console.error('Error fetching Google reviews:', error.response?.data || error.message);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to fetch Google reviews');
+  }
+});
+
+/**
+ * Reply to a Google Business review
+ */
+exports.replyToGoogleReview = onCall({ secrets: [googleBusinessClientId, googleBusinessClientSecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { reviewName, replyText } = request.data;
+    if (!reviewName || !replyText) {
+      throw new HttpsError('invalid-argument', 'Review name and reply text are required');
+    }
+
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    const settingsDoc = await db.doc(`restaurants/${uid}/settings/businessListings`).get();
+    if (!settingsDoc.exists || !settingsDoc.data()?.google?.refreshToken) {
+      throw new HttpsError('failed-precondition', 'Google Business is not connected');
+    }
+
+    const accessToken = await getGoogleAccessToken(settingsDoc.data().google.refreshToken);
+
+    // Post the reply
+    await axios.put(
+      `https://mybusiness.googleapis.com/v4/${reviewName}/reply`,
+      { comment: replyText },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+    );
+
+    // Update cached review in Firestore
+    const reviewId = reviewName.split('/').pop();
+    const reviewRef = db.collection(`restaurants/${uid}/businessReviews`).doc(`google_${reviewId}`);
+    const reviewDoc = await reviewRef.get();
+    if (reviewDoc.exists) {
+      await reviewRef.update({
+        ownerResponse: replyText,
+        ownerRespondedAt: new Date().toISOString()
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error replying to Google review:', error.response?.data || error.message);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to reply to review');
+  }
+});
+
+// ---- AI-POWERED BUSINESS FUNCTIONS ----
+
+/**
+ * Generate an AI-powered review response using Gemini
+ */
+exports.generateReviewResponse = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { reviewText, rating, authorName, restaurantName, cuisineType, tone } = request.data;
+    if (!reviewText) {
+      throw new HttpsError('invalid-argument', 'Review text is required');
+    }
+
+    const prompt = `You are a restaurant owner responding to a customer review. Generate a thoughtful, professional response.
+
+Restaurant: ${restaurantName || 'Our Restaurant'}
+Cuisine: ${cuisineType || 'Restaurant'}
+Reviewer: ${authorName || 'Customer'}
+Rating: ${rating || 'N/A'} out of 5 stars
+Review: "${reviewText}"
+
+Tone: ${tone || 'warm and professional'}
+
+Guidelines:
+- If positive (4-5 stars): Thank them genuinely, reference specific things they mentioned, invite them back
+- If neutral (3 stars): Thank them, acknowledge both positives and concerns, explain how you're improving
+- If negative (1-2 stars): Apologize sincerely, take responsibility, offer to make it right, provide contact info
+- Keep it concise (2-4 sentences)
+- Be authentic and personal, not corporate
+- Never be defensive or argumentative
+
+Return as JSON:
+{
+  "response": "The primary response text",
+  "alternativeResponses": ["A shorter version", "A more formal version"],
+  "sentiment": "positive|neutral|negative",
+  "keyThemes": ["food quality", "service", "atmosphere"]
+}`;
+
+    const result = await callGeminiAPI(prompt);
+
+    try {
+      let jsonStr = result;
+      const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) jsonStr = jsonMatch[1];
+      const parsed = JSON.parse(jsonStr.trim());
+      return { success: true, ...parsed };
+    } catch {
+      return { success: true, response: result, alternativeResponses: [], sentiment: 'neutral', keyThemes: [] };
+    }
+  } catch (error) {
+    console.error('Error generating review response:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Generate AI-powered visibility improvement tasks
+ */
+exports.generateVisibilityTasks = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { restaurantData, connectedPlatforms, reviewSummary } = request.data;
+
+    const prompt = `You are a digital marketing expert for restaurants. Generate a prioritized list of actionable tasks to improve this restaurant's online visibility across Yelp, Google Business Profile, and Apple Business Connect.
+
+Restaurant: ${restaurantData?.name || 'Restaurant'}
+Cuisine: ${restaurantData?.cuisineType || 'Not specified'}
+Location: ${restaurantData?.address || 'Not specified'}
+Connected Platforms: ${JSON.stringify(connectedPlatforms || {})}
+Review Summary: ${reviewSummary || 'No review data available'}
+
+Generate 8-12 specific, actionable tasks. For each task provide DETAILED step-by-step instructions that a non-technical restaurant owner can follow.
+
+Return as JSON array:
+[
+  {
+    "platform": "yelp|google|apple|general",
+    "title": "Task title",
+    "description": "Why this matters",
+    "priority": "high|medium|low",
+    "category": "profile|reviews|photos|content",
+    "impactScore": 15,
+    "steps": [
+      "Step 1: Go to...",
+      "Step 2: Click on...",
+      "Step 3: Fill in..."
+    ]
+  }
+]`;
+
+    const result = await callGeminiAPI(prompt);
+
+    try {
+      let jsonStr = result;
+      const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) jsonStr = jsonMatch[1];
+      const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
+      if (arrayMatch) jsonStr = arrayMatch[0];
+      const tasks = JSON.parse(jsonStr.trim());
+
+      // Store tasks in Firestore
+      const uid = request.auth.uid;
+      const db = admin.firestore();
+      const batch = db.batch();
+
+      for (const task of tasks) {
+        const taskRef = db.collection(`restaurants/${uid}/visibilityTasks`).doc();
+        batch.set(taskRef, {
+          ...task,
+          status: 'pending',
+          createdAt: admin.firestore.Timestamp.now(),
+          completedAt: null,
+          generatedByAI: true
+        });
+      }
+      await batch.commit();
+
+      return { success: true, tasks };
+    } catch {
+      return {
+        success: true,
+        tasks: [
+          { platform: 'google', title: 'Complete your Google Business Profile', description: 'A complete profile gets 7x more clicks', priority: 'high', category: 'profile', impactScore: 20, steps: ['Go to google.com/business', 'Sign in and claim your business', 'Complete all sections'] },
+          { platform: 'yelp', title: 'Add photos to your Yelp page', description: 'Businesses with photos get 42% more direction requests', priority: 'high', category: 'photos', impactScore: 15, steps: ['Log into biz.yelp.com', 'Go to Photos section', 'Upload 10+ high-quality food photos'] },
+          { platform: 'apple', title: 'Claim your Apple Business Connect listing', description: 'Reach customers on Apple Maps, Siri, and Wallet', priority: 'medium', category: 'profile', impactScore: 10, steps: ['Go to businessconnect.apple.com', 'Sign in with your Apple ID', 'Search for and claim your business'] }
+        ]
+      };
+    }
+  } catch (error) {
+    console.error('Error generating visibility tasks:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Get aggregated overview of all connected business listings
+ */
+exports.getBusinessListingsOverview = onCall({ secrets: [yelpApiKeySecret, googleBusinessClientId, googleBusinessClientSecret] }, async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    // Get connection states
+    const settingsDoc = await db.doc(`restaurants/${uid}/settings/businessListings`).get();
+    const connections = settingsDoc.exists ? settingsDoc.data() : {};
+
+    // Get cached reviews
+    const reviewsSnapshot = await db.collection(`restaurants/${uid}/businessReviews`)
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const reviews = reviewsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Calculate aggregate stats
+    const totalReviews = reviews.length;
+    const avgRating = totalReviews > 0
+      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / totalReviews
+      : 0;
+
+    const platformStats = {};
+    for (const review of reviews) {
+      const p = review.platform || 'unknown';
+      if (!platformStats[p]) platformStats[p] = { count: 0, totalRating: 0, responded: 0 };
+      platformStats[p].count++;
+      platformStats[p].totalRating += review.rating || 0;
+      if (review.ownerResponse) platformStats[p].responded++;
+    }
+
+    // Sentiment breakdown
+    let positive = 0, neutral = 0, negative = 0;
+    for (const r of reviews) {
+      if (r.rating >= 4) positive++;
+      else if (r.rating === 3) neutral++;
+      else negative++;
+    }
+
+    // Get visibility tasks
+    const tasksSnapshot = await db.collection(`restaurants/${uid}/visibilityTasks`)
+      .orderBy('createdAt', 'desc')
+      .limit(20)
+      .get();
+    const tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+
+    return {
+      success: true,
+      connections,
+      overview: {
+        totalReviews,
+        avgRating: Math.round(avgRating * 10) / 10,
+        platformStats,
+        sentiment: { positive, neutral, negative },
+        responseRate: totalReviews > 0 ? Math.round((reviews.filter(r => r.ownerResponse).length / totalReviews) * 100) : 0
+      },
+      reviews,
+      tasks,
+      taskProgress: { total: tasks.length, completed: completedTasks }
+    };
+  } catch (error) {
+    console.error('Error getting business listings overview:', error);
+    if (error instanceof HttpsError) throw error;
     throw new HttpsError('internal', error.message);
   }
 });

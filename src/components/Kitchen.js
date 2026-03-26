@@ -81,7 +81,7 @@ const Kitchen = () => {
         q = query(
           ordersRef,
           where('locationId', '==', selectedLocation),
-          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing']),
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready']),
           orderBy('createdAt', 'asc') // Oldest first (FIFO)
         );
       } else {
@@ -90,7 +90,7 @@ const Kitchen = () => {
         q = query(
           ordersRef,
           where('locationId', '==', currentUser.uid),
-          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing']),
+          where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready']),
           orderBy('createdAt', 'asc')
         );
       }
@@ -102,13 +102,13 @@ const Kitchen = () => {
           q = query(
             ordersRef,
             where('locationId', '==', selectedLocation),
-            where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
+            where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
           );
         } else {
           q = query(
             ordersRef,
             where('locationId', '==', currentUser.uid),
-            where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
+            where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
           );
         }
       } catch (fallbackError) {
@@ -131,12 +131,19 @@ const Kitchen = () => {
         return aTime - bTime; // Oldest first
       });
 
+      // Filter: only show 'ready' orders in kitchen if they were paid at POS
+      // (regular dine-in 'ready' orders belong to Server view)
+      const filteredOrders = ordersData.filter(order => {
+        if (order.status === 'ready' && !order.paidAtPOS) return false;
+        return true;
+      });
+
       // Detect new orders and trigger notifications
       if (!isInitialLoad.current) {
-        const currentOrderIds = new Set(ordersData.map(o => o.id));
+        const currentOrderIds = new Set(filteredOrders.map(o => o.id));
 
         // Find new orders (in current but not in previous)
-        ordersData.forEach(order => {
+        filteredOrders.forEach(order => {
           if (!prevOrderIds.current.has(order.id)) {
             // New order detected!
             console.log('New order detected:', order.orderNumber || order.id);
@@ -151,11 +158,11 @@ const Kitchen = () => {
         prevOrderIds.current = currentOrderIds;
       } else {
         // Initial load - just record the IDs without notifying
-        prevOrderIds.current = new Set(ordersData.map(o => o.id));
+        prevOrderIds.current = new Set(filteredOrders.map(o => o.id));
         isInitialLoad.current = false;
       }
 
-      setOrders(ordersData);
+      setOrders(filteredOrders);
       setLoading(false);
       setError(''); // Clear any previous errors
     }, (error) => {
@@ -196,7 +203,7 @@ const Kitchen = () => {
         // Only add if not already present and status matches kitchen view
         const exists = prev.find(o => o.id === order.id || o.orderNumber === order.orderNumber);
         if (exists) return prev;
-        const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing'];
+        const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing', 'ready'];
         if (!kitchenStatuses.includes(order.status)) return prev;
         const sorted = [...prev, order].sort((a, b) => {
           const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
@@ -212,7 +219,7 @@ const Kitchen = () => {
         if (order.id === orderId) {
           const updated = { ...order, ...updates };
           // Remove from kitchen view if no longer in kitchen statuses
-          const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing'];
+          const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing', 'ready'];
           if (!kitchenStatuses.includes(updated.status)) return null;
           return updated;
         }
@@ -223,7 +230,7 @@ const Kitchen = () => {
     const unsubRelaySync = lanSyncService.onSync(({ orders: relayOrders }) => {
       if (relayOrders && relayOrders.length > 0) {
         setOrders(prev => {
-          const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing'];
+          const kitchenStatuses = ['new', 'sent_to_kitchen', 'preparing', 'ready'];
           const relayKitchenOrders = relayOrders.filter(o => kitchenStatuses.includes(o.status));
           const merged = [...prev];
           relayKitchenOrders.forEach(ro => {
@@ -329,11 +336,54 @@ const Kitchen = () => {
     return tableNumber || 'N/A';
   };
 
+  // Handle "Order Picked Up" for pay-first orders (marks as completed directly)
+  const handleOrderPickedUp = async (orderId) => {
+    setUpdatingOrders(prev => new Set(prev).add(orderId));
+    try {
+      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      const order = orders.find(o => o.id === orderId);
+
+      const updateData = {
+        status: 'completed',
+        pickedUpAt: new Date(),
+        completedAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await updateDoc(orderRef, updateData);
+      lanSyncService.sendStatusUpdate(orderId, updateData);
+
+      if (order) {
+        const tableNumber = Array.isArray(order.tableNumber)
+          ? order.tableNumber.join(' and ')
+          : order.tableNumber;
+        await activityService.logOrderActivity(currentUser.uid, 'picked_up', {
+          orderNumber: order.orderNumber || orderId,
+          orderId: orderId,
+          tableNumber: tableNumber || 'Counter',
+          status: 'completed',
+          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        });
+      }
+    } catch (error) {
+      console.error('Error completing order:', error);
+      alert('Failed to complete order: ' + error.message);
+    } finally {
+      setUpdatingOrders(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(orderId);
+        return newSet;
+      });
+    }
+  };
+
   // Format order type for display
   const getOrderTypeInfo = (orderType) => {
     switch (orderType) {
       case 'dine_in':
         return { label: 'Dine-In', icon: 'bi-cup-hot', variant: 'info' };
+      case 'counter':
+        return { label: 'Counter', icon: 'bi-shop', variant: 'primary' };
       case 'pickup':
         return { label: 'Pickup', icon: 'bi-bag-check', variant: 'success' };
       case 'delivery':
@@ -436,21 +486,30 @@ const Kitchen = () => {
           {orders.map(order => {
             const isUpdating = updatingOrders.has(order.id);
             const isPreparing = order.status === 'preparing';
+            const isReady = order.status === 'ready';
             const orderTypeInfo = getOrderTypeInfo(order.orderType);
             const isWebsiteOrder = order.source === 'website' || order.orderType === 'pickup' || order.orderType === 'delivery';
+            const isCounterOrder = order.paidAtPOS || order.orderType === 'counter';
 
             return (
-              <Card key={order.id} className={`kitchen-order-card ${isPreparing ? 'preparing' : ''}`}>
+              <Card key={order.id} className={`kitchen-order-card ${isPreparing ? 'preparing' : ''} ${isReady ? 'ready-pickup' : ''}`}>
                 <Card.Header className="kitchen-order-header">
                   <div className="order-header-top">
                     <div className="order-badges">
-                      <Badge bg={isPreparing ? 'warning' : 'primary'} className="order-status-badge">
-                        {isPreparing ? 'Preparing' : 'New Order'}
+                      <Badge bg={isReady ? 'success' : isPreparing ? 'warning' : 'primary'} className="order-status-badge">
+                        {isReady ? 'Ready for Pickup' : isPreparing ? 'Preparing' : 'New Order'}
                       </Badge>
                       <Badge bg={orderTypeInfo.variant} className="order-type-badge">
                         <i className={`bi ${orderTypeInfo.icon}`}></i> {orderTypeInfo.label}
                       </Badge>
-                      <span className="order-number">#{order.orderNumber || order.id}</span>
+                      {order.paidAtPOS && (
+                        <Badge bg="success" className="paid-badge">
+                          <i className="bi bi-check-circle"></i> PAID
+                        </Badge>
+                      )}
+                      <span className={`order-number ${isCounterOrder ? 'order-number-prominent' : ''}`}>
+                        #{order.orderNumber || order.id}
+                      </span>
                     </div>
                     <div className="order-time">
                       <i className="bi bi-clock"></i>
@@ -463,6 +522,12 @@ const Kitchen = () => {
                       <span className="customer-info">
                         <i className="bi bi-person"></i>
                         {order.customer.name} {order.customer.phone && `• ${order.customer.phone}`}
+                      </span>
+                    ) : isCounterOrder && !order.tableNumber ? (
+                      <span className="counter-info">
+                        <i className="bi bi-shop"></i>
+                        Counter Order
+                        {order.paymentDetails && ` • ${order.paymentDetails.paymentMethod === 'card' ? 'Card' : 'Cash'}`}
                       </span>
                     ) : (
                       <span className="table-info">
@@ -500,7 +565,24 @@ const Kitchen = () => {
                   </div>
                 </Card.Body>
                 <Card.Footer className="kitchen-order-footer">
-                  {!isPreparing ? (
+                  {isReady && order.paidAtPOS ? (
+                    <Button
+                      variant="success"
+                      className="kitchen-action-button kitchen-pickup-btn"
+                      onClick={() => handleOrderPickedUp(order.id)}
+                      disabled={isUpdating}
+                    >
+                      {isUpdating ? (
+                        <>
+                          <Spinner animation="border" size="sm" /> Completing...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-bag-check-fill"></i> Order Picked Up
+                        </>
+                      )}
+                    </Button>
+                  ) : !isPreparing ? (
                     <Button
                       variant="warning"
                       className="kitchen-action-button"

@@ -146,6 +146,7 @@ export const useSubscription = () => {
 export const SubscriptionProvider = ({ children }) => {
     const { currentUser } = useAuth();
     const [subscription, setSubscription] = useState(null);
+    const [serviceMode, setServiceMode] = useState('full_service');
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -162,8 +163,10 @@ export const SubscriptionProvider = ({ children }) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setSubscription(data.subscription || null);
+                    setServiceMode(data.serviceMode || 'full_service');
                 } else {
                     setSubscription(null);
+                    setServiceMode('full_service');
                 }
                 setLoading(false);
             },
@@ -282,6 +285,21 @@ export const SubscriptionProvider = ({ children }) => {
         return ORDER_LIMITS[tier]?.hardCap === true;
     };
 
+    // Service mode helpers
+    const getServiceMode = () => serviceMode;
+
+    const isPayFirst = () => {
+        return serviceMode === 'counter_service' || serviceMode === 'food_truck';
+    };
+
+    const requiresTables = () => {
+        return serviceMode === 'full_service';
+    };
+
+    const hasServerRole = () => {
+        return serviceMode === 'full_service';
+    };
+
     const value = {
         subscription,
         loading,
@@ -303,7 +321,11 @@ export const SubscriptionProvider = ({ children }) => {
         getMenuLimit,
         calculateOverageCharge,
         isOverOrderLimit,
-        isOrderHardCapped
+        isOrderHardCapped,
+        getServiceMode,
+        isPayFirst,
+        requiresTables,
+        hasServerRole
     };
 
     return (

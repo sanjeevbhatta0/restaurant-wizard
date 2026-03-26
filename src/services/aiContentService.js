@@ -92,6 +92,29 @@ const aiContentService = {
       console.error('Error getting content ideas:', error);
       throw error;
     }
+  },
+
+  /**
+   * Generate post with business listings context (enhanced AI)
+   * @param {Object} params - Standard generation params
+   * @param {Object} businessContext - Data from connected business platforms
+   * @returns {Promise<Object>} Generated content enriched with review/listing insights
+   */
+  generatePostWithContext: async (params, businessContext) => {
+    try {
+      const generateContent = httpsCallable(functions, 'generateAIContent');
+      const result = await generateContent({
+        type: params.type,
+        platform: params.platform,
+        tone: params.tone,
+        context: params.context,
+        businessContext
+      });
+      return result.data;
+    } catch (error) {
+      console.error('Error generating AI content with context:', error);
+      throw error;
+    }
   }
 };
 

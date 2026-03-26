@@ -2,15 +2,21 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Spinner, Alert, Button, Badge } from 'react-bootstrap';
 import {
   collection,
-  addDoc
+  addDoc,
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { Elements } from '@stripe/react-stripe-js';
 import lanSyncService from '../services/lanSyncService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useMenu } from '../contexts/MenuContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import TableSelectionModal from './TableSelectionModal';
+import CardPaymentForm from './CardPaymentForm';
 import activityService from '../services/activityService';
+import { getStripe } from '../services/stripeService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import { incrementOrderCount } from '../services/orderUsageService';
 import useFullscreen from '../hooks/useFullscreen';
@@ -31,6 +37,13 @@ const POS = () => {
   const [showWakeLockPrompt, setShowWakeLockPrompt] = useState(true);
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
+  const { isPayFirst, requiresTables, getServiceMode } = useSubscription();
+
+  // Pay-first mode state
+  const [showPaymentStep, setShowPaymentStep] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState(null);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [taxRate, setTaxRate] = useState(8);
 
   // Fullscreen mode
   const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
@@ -53,6 +66,23 @@ const POS = () => {
       cleanupWakeLock();
     };
   }, []);
+
+  // Load tax rate from restaurant settings
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const loadTaxRate = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'restaurants', currentUser.uid));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.taxRate !== undefined) setTaxRate(data.taxRate);
+        }
+      } catch (err) {
+        console.error('Failed to load tax rate:', err);
+      }
+    };
+    loadTaxRate();
+  }, [currentUser]);
 
   // Auto-select first category when categories load
   useEffect(() => {
@@ -130,13 +160,116 @@ const POS = () => {
     return `ORD-${datePart}-${timePart}`;
   };
 
-  // Send order to kitchen
+  // Calculate tax and totals for pay-first mode
+  const calculateSubtotal = () => calculateTotal();
+  const calculateTaxAmount = () => calculateSubtotal() * (taxRate / 100);
+  const calculateTotalWithTax = () => calculateSubtotal() + calculateTaxAmount();
+
+  // Build order data (shared between full-service and pay-first flows)
+  const buildOrderData = (orderNumber, paymentInfo = null) => {
+    const orderLocationId = isMultiLocation && selectedLocation
+      ? selectedLocation
+      : currentUser.uid;
+
+    const tableNumber = selectedTables.length > 0
+      ? (selectedTables.length === 1 ? selectedTables[0] : selectedTables)
+      : null;
+
+    const orderData = {
+      orderNumber,
+      locationId: orderLocationId,
+      items: orderItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        categoryName: item.categoryName,
+        price: calculateItemPrice(item),
+        originalPrice: item.price,
+        quantity: item.quantity,
+        subtotal: calculateItemPrice(item) * item.quantity
+      })),
+      status: 'sent_to_kitchen',
+      orderType: isPayFirst() ? 'counter' : 'dine_in',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    if (tableNumber) {
+      orderData.tableNumber = tableNumber;
+    }
+
+    if (paymentInfo) {
+      orderData.paidAtPOS = true;
+      orderData.total = calculateTotalWithTax();
+      orderData.paymentDetails = {
+        subtotal: calculateSubtotal(),
+        taxRate: taxRate,
+        taxAmount: calculateTaxAmount(),
+        total: calculateTotalWithTax(),
+        paymentMethod: paymentInfo.method,
+        paidAt: new Date().toISOString(),
+        ...(paymentInfo.stripePaymentIntentId && { stripePaymentIntentId: paymentInfo.stripePaymentIntentId })
+      };
+    } else {
+      orderData.total = calculateTotal();
+    }
+
+    return { orderData, orderLocationId };
+  };
+
+  // Submit order to Firestore
+  const submitOrder = async (orderData, orderLocationId, orderNumber) => {
+    const docRef = await addDoc(
+      collection(db, `restaurants/${currentUser.uid}/orders`),
+      orderData
+    );
+
+    lanSyncService.sendOrder({ id: docRef.id, ...orderData });
+
+    try {
+      await incrementOrderCount(currentUser.uid, orderData.total);
+    } catch (usageErr) {
+      console.error('Failed to track order usage:', usageErr);
+    }
+
+    const tableDisplay = selectedTables.length > 0
+      ? (selectedTables.length === 1
+        ? selectedTables[0]
+        : selectedTables.sort((a, b) => {
+          const numA = parseInt(a);
+          const numB = parseInt(b);
+          if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+          return a.localeCompare(b);
+        }).join(' and '))
+      : null;
+
+    await activityService.logOrderActivity(currentUser.uid, 'received', {
+      orderNumber,
+      tableNumber: tableDisplay,
+      status: 'sent_to_kitchen',
+      locationId: orderLocationId,
+      ...(orderData.paidAtPOS && { paymentMethod: orderData.paymentDetails.paymentMethod, paidAtPOS: true })
+    });
+
+    setOrderSuccess({
+      orderNumber,
+      tableNumber: tableDisplay,
+      paidAtPOS: orderData.paidAtPOS || false,
+      total: orderData.total
+    });
+
+    setOrderItems([]);
+    setSelectedTables([]);
+    setShowPaymentStep(false);
+    setPaymentMethod(null);
+  };
+
+  // Send order to kitchen (full-service mode — no payment)
   const sendToKitchen = async () => {
     if (orderItems.length === 0) {
       setError('Please add items to the order');
       return;
     }
-    if (selectedTables.length === 0) {
+    if (requiresTables() && selectedTables.length === 0) {
       setError('Please assign at least one table');
       return;
     }
@@ -146,82 +279,60 @@ const POS = () => {
 
     try {
       const orderNumber = generateOrderNumber();
-
-      // Ensure locationId is set correctly for both single and multi-location
-      // For single-location: use currentUser.uid (matches what Kitchen expects)
-      // For multi-location: use selectedLocation
-      const orderLocationId = isMultiLocation && selectedLocation
-        ? selectedLocation
-        : currentUser.uid;
-
-      const orderData = {
-        orderNumber,
-        tableNumber: selectedTables.length === 1 ? selectedTables[0] : selectedTables,
-        locationId: orderLocationId, // Always set locationId for consistent filtering
-        items: orderItems.map(item => ({
-          id: item.id,
-          name: item.name,
-          categoryName: item.categoryName,
-          price: calculateItemPrice(item),
-          originalPrice: item.price,
-          quantity: item.quantity,
-          subtotal: calculateItemPrice(item) * item.quantity
-        })),
-        total: calculateTotal(),
-        status: 'sent_to_kitchen',
-        orderType: 'dine_in',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      const docRef = await addDoc(
-        collection(db, `restaurants/${currentUser.uid}/orders`),
-        orderData
-      );
-
-      // Broadcast order via LAN relay for offline cross-device sync
-      lanSyncService.sendOrder({ id: docRef.id, ...orderData });
-
-      // Track order usage for tier limits
-      try {
-        await incrementOrderCount(currentUser.uid, calculateTotal());
-      } catch (usageErr) {
-        console.error('Failed to track order usage:', usageErr);
-        // Don't fail the order if usage tracking fails
-      }
-
-      const tableDisplay = selectedTables.length === 1
-        ? selectedTables[0]
-        : selectedTables.sort((a, b) => {
-          const numA = parseInt(a);
-          const numB = parseInt(b);
-          if (!isNaN(numA) && !isNaN(numB)) {
-            return numA - numB;
-          }
-          return a.localeCompare(b);
-        }).join(' and ');
-
-      // Log activity
-      await activityService.logOrderActivity(currentUser.uid, 'received', {
-        orderNumber,
-        tableNumber: tableDisplay,
-        status: 'sent_to_kitchen',
-        locationId: orderLocationId // Include locationId for filtering
-      });
-
-      setOrderSuccess({
-        orderNumber,
-        tableNumber: tableDisplay
-      });
-
-      // Clear the order after successful submission
-      setOrderItems([]);
-      setSelectedTables([]);
+      const { orderData, orderLocationId } = buildOrderData(orderNumber);
+      await submitOrder(orderData, orderLocationId, orderNumber);
     } catch (err) {
       setError('Failed to send order: ' + err.message);
     } finally {
       setSendingOrder(false);
     }
+  };
+
+  // Handle pay-first cash payment
+  const handleCashPayment = async () => {
+    if (orderItems.length === 0) return;
+
+    setSendingOrder(true);
+    setError('');
+
+    try {
+      const orderNumber = generateOrderNumber();
+      const { orderData, orderLocationId } = buildOrderData(orderNumber, { method: 'cash' });
+      await submitOrder(orderData, orderLocationId, orderNumber);
+    } catch (err) {
+      setError('Failed to process order: ' + err.message);
+    } finally {
+      setSendingOrder(false);
+    }
+  };
+
+  // Handle pay-first card payment success
+  const handleCardPaymentSuccess = async (paymentIntentId) => {
+    try {
+      const orderNumber = generateOrderNumber();
+      const { orderData, orderLocationId } = buildOrderData(orderNumber, {
+        method: 'card',
+        stripePaymentIntentId: paymentIntentId
+      });
+      await submitOrder(orderData, orderLocationId, orderNumber);
+    } catch (err) {
+      setError('Payment succeeded but failed to create order: ' + err.message);
+    }
+  };
+
+  // Handle pay-first card payment error
+  const handleCardPaymentError = (errorMessage) => {
+    setError('Card payment failed: ' + errorMessage);
+  };
+
+  // Initiate payment step (pay-first modes)
+  const initiatePayment = () => {
+    if (orderItems.length === 0) {
+      setError('Please add items to the order');
+      return;
+    }
+    setError('');
+    setShowPaymentStep(true);
   };
 
   const handleTableSelect = (tables) => {
@@ -273,8 +384,17 @@ const POS = () => {
           <i className="bi bi-cash-register header-icon"></i>
           <div>
             <h2>Point of Sale</h2>
-            <p>Process orders and manage your restaurant sales</p>
+            <p>{getServiceMode() === 'food_truck'
+              ? 'Take orders and collect payment at the window'
+              : getServiceMode() === 'counter_service'
+                ? 'Take orders and collect payment at the counter'
+                : 'Process orders and manage your restaurant sales'}</p>
           </div>
+          {isPayFirst() && (
+            <Badge bg="light" text="dark" className="ms-3" style={{ fontSize: '0.8rem' }}>
+              <i className="bi bi-cash-coin me-1"></i> Pay First
+            </Badge>
+          )}
         </div>
         {/* Wake Lock status */}
         <div className="notification-status d-flex gap-2 align-items-center">
@@ -425,50 +545,153 @@ const POS = () => {
           </div>
 
           <div className="pos-order-footer">
+            {/* Subtotal (always shown) */}
             <div className="pos-order-total">
-              <span>Total:</span>
+              <span>{isPayFirst() ? 'Subtotal:' : 'Total:'}</span>
               <span>${calculateTotal().toFixed(2)}</span>
             </div>
 
-            <div className="pos-table-selection">
-              <label>Table(s)</label>
+            {/* Tax breakdown for pay-first modes */}
+            {isPayFirst() && orderItems.length > 0 && (
+              <div className="pos-tax-breakdown">
+                <div className="pos-tax-line">
+                  <span>Tax ({taxRate}%):</span>
+                  <span>${calculateTaxAmount().toFixed(2)}</span>
+                </div>
+                <div className="pos-tax-line pos-grand-total">
+                  <span>Total:</span>
+                  <span>${calculateTotalWithTax().toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Table selection — hidden for food_truck, optional for counter_service */}
+            {getServiceMode() !== 'food_truck' && (
+              <div className="pos-table-selection">
+                <label>Table(s) {!requiresTables() && <span className="text-muted">(optional)</span>}</label>
+                <button
+                  className="pos-assign-table-btn"
+                  onClick={() => setShowTableModal(true)}
+                >
+                  <i className="bi bi-grid-3x3-gap"></i>
+                  {selectedTables.length === 0
+                    ? (requiresTables() ? 'Assign Table' : 'No Table')
+                    : selectedTables.length === 1
+                      ? `Table ${selectedTables[0]}`
+                      : `Tables ${selectedTables.sort((a, b) => {
+                        const numA = parseInt(a);
+                        const numB = parseInt(b);
+                        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                        return a.localeCompare(b);
+                      }).join(' and ')}`}
+                </button>
+              </div>
+            )}
+
+            {/* Full-service: Send to Kitchen button */}
+            {!isPayFirst() && (
               <button
-                className="pos-assign-table-btn"
-                onClick={() => setShowTableModal(true)}
+                className="pos-send-button"
+                onClick={sendToKitchen}
+                disabled={orderItems.length === 0 || (requiresTables() && selectedTables.length === 0) || sendingOrder}
               >
-                <i className="bi bi-grid-3x3-gap"></i>
-                {selectedTables.length === 0
-                  ? 'Assign Table'
-                  : selectedTables.length === 1
-                    ? `Table ${selectedTables[0]}`
-                    : `Tables ${selectedTables.sort((a, b) => {
-                      const numA = parseInt(a);
-                      const numB = parseInt(b);
-                      if (!isNaN(numA) && !isNaN(numB)) {
-                        return numA - numB;
-                      }
-                      return a.localeCompare(b);
-                    }).join(' and ')}`}
+                {sendingOrder ? (
+                  <>
+                    <Spinner animation="border" size="sm" /> Sending...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-send"></i> Send to Kitchen
+                  </>
+                )}
               </button>
-            </div>
+            )}
 
-            <button
-              className="pos-send-button"
-              onClick={sendToKitchen}
-              disabled={orderItems.length === 0 || selectedTables.length === 0 || sendingOrder}
-            >
-              {sendingOrder ? (
-                <>
-                  <Spinner animation="border" size="sm" /> Sending...
-                </>
-              ) : (
-                <>
-                  <i className="bi bi-send"></i> Send to Kitchen
-                </>
-              )}
-            </button>
+            {/* Pay-first: Payment step */}
+            {isPayFirst() && !showPaymentStep && (
+              <button
+                className="pos-send-button pos-pay-button"
+                onClick={initiatePayment}
+                disabled={orderItems.length === 0}
+              >
+                <i className="bi bi-cash-coin"></i> Proceed to Payment
+              </button>
+            )}
 
-            {orderItems.length > 0 && (
+            {isPayFirst() && showPaymentStep && (
+              <div className="pos-payment-step">
+                <div className="pos-payment-header">
+                  <strong>Select Payment Method</strong>
+                  <button className="pos-payment-back" onClick={() => { setShowPaymentStep(false); setPaymentMethod(null); }}>
+                    <i className="bi bi-arrow-left"></i> Back
+                  </button>
+                </div>
+
+                {!paymentMethod && (
+                  <div className="pos-payment-methods">
+                    <button
+                      className="pos-payment-method-btn pos-cash-btn"
+                      onClick={() => setPaymentMethod('cash')}
+                    >
+                      <i className="bi bi-cash-stack"></i>
+                      <span>Cash</span>
+                    </button>
+                    <button
+                      className="pos-payment-method-btn pos-card-btn"
+                      onClick={() => setPaymentMethod('card')}
+                    >
+                      <i className="bi bi-credit-card"></i>
+                      <span>Card</span>
+                    </button>
+                  </div>
+                )}
+
+                {paymentMethod === 'cash' && (
+                  <div className="pos-cash-confirm">
+                    <div className="pos-payment-amount">
+                      <span>Amount Due:</span>
+                      <strong>${calculateTotalWithTax().toFixed(2)}</strong>
+                    </div>
+                    <button
+                      className="pos-send-button pos-confirm-cash-btn"
+                      onClick={handleCashPayment}
+                      disabled={sendingOrder}
+                    >
+                      {sendingOrder ? (
+                        <><Spinner animation="border" size="sm" /> Processing...</>
+                      ) : (
+                        <><i className="bi bi-check-circle"></i> Confirm Cash Payment</>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {paymentMethod === 'card' && (
+                  <div className="pos-card-payment">
+                    <Elements stripe={getStripe()}>
+                      <CardPaymentForm
+                        total={calculateTotalWithTax()}
+                        onPaymentSuccess={handleCardPaymentSuccess}
+                        onPaymentError={handleCardPaymentError}
+                        processing={paymentProcessing}
+                        setProcessing={setPaymentProcessing}
+                        orderIds={[]}
+                        tableNumbers={selectedTables}
+                        restaurantId={currentUser.uid}
+                        paymentDetails={{
+                          subtotal: calculateSubtotal(),
+                          taxRate: taxRate,
+                          taxAmount: calculateTaxAmount(),
+                          total: calculateTotalWithTax()
+                        }}
+                      />
+                    </Elements>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {orderItems.length > 0 && !showPaymentStep && (
               <button className="pos-clear-button" onClick={clearOrder}>
                 Clear Order
               </button>
@@ -481,11 +704,28 @@ const POS = () => {
           <div className="pos-order-success">
             <div className="pos-order-success-content">
               <div className="pos-order-success-icon">
-                <i className="bi bi-check-lg"></i>
+                <i className={`bi ${orderSuccess.paidAtPOS ? 'bi-cash-coin' : 'bi-check-lg'}`}></i>
               </div>
-              <h3>Order Sent to Kitchen!</h3>
-              <div className="order-number">{orderSuccess.orderNumber}</div>
-              <div className="table-number">Table #{orderSuccess.tableNumber}</div>
+              {orderSuccess.paidAtPOS ? (
+                <>
+                  <h3>Payment Received!</h3>
+                  <div className="order-number pos-order-number-large">{orderSuccess.orderNumber}</div>
+                  <div className="pos-success-detail">
+                    Order sent to kitchen — ${orderSuccess.total?.toFixed(2)}
+                  </div>
+                  {orderSuccess.tableNumber && (
+                    <div className="table-number">Table #{orderSuccess.tableNumber}</div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3>Order Sent to Kitchen!</h3>
+                  <div className="order-number">{orderSuccess.orderNumber}</div>
+                  {orderSuccess.tableNumber && (
+                    <div className="table-number">Table #{orderSuccess.tableNumber}</div>
+                  )}
+                </>
+              )}
               <button onClick={() => setOrderSuccess(null)}>
                 New Order
               </button>
@@ -494,12 +734,14 @@ const POS = () => {
         )}
 
         {/* Table Selection Modal */}
-        <TableSelectionModal
-          show={showTableModal}
-          onHide={() => setShowTableModal(false)}
-          onSelect={handleTableSelect}
-          selectedTables={selectedTables}
-        />
+        {getServiceMode() !== 'food_truck' && (
+          <TableSelectionModal
+            show={showTableModal}
+            onHide={() => setShowTableModal(false)}
+            onSelect={handleTableSelect}
+            selectedTables={selectedTables}
+          />
+        )}
       </div>
     </div>
   );

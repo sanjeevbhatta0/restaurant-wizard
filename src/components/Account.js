@@ -51,6 +51,9 @@ const Account = () => {
   const [editingLocation, setEditingLocation] = useState(null);
   const [locationForm, setLocationForm] = useState({ name: '', address: '' });
 
+  // Service mode
+  const [serviceMode, setServiceMode] = useState('full_service');
+
   // Sidebar navigation
   const [activeSection, setActiveSection] = useState('account');
 
@@ -77,6 +80,7 @@ const Account = () => {
           setRestaurantName(data.restaurantName || '');
           setAddress(data.address || '');
           setTaxRate(data.taxRate !== undefined ? data.taxRate : 8);
+          setServiceMode(data.serviceMode || 'full_service');
           setHasPin(!!data.reimbursementPin);
         }
 
@@ -142,6 +146,28 @@ const Account = () => {
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to update account details: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveServiceMode = async (mode) => {
+    setError('');
+    setSuccess('');
+    setSaving(true);
+
+    try {
+      const docRef = doc(db, "restaurants", currentUser.uid);
+      await updateDoc(docRef, {
+        serviceMode: mode,
+        updatedAt: new Date().toISOString()
+      });
+
+      setServiceMode(mode);
+      setSuccess('Service mode updated successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      setError('Failed to update service mode: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -616,6 +642,98 @@ const Account = () => {
                 </Table>
               ) : (
                 <p className="text-muted text-center py-3">No locations added yet. Click "Add Location" to get started.</p>
+              )}
+            </Card.Body>
+          </Card>
+        );
+
+      case 'service_mode':
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-shop"></i> Service Mode</h3>
+            </Card.Header>
+            <Card.Body>
+              <Alert variant="info" className="mb-4">
+                <i className="bi bi-info-circle me-2"></i>
+                Service mode determines how your POS, Kitchen, Server, and Payments pages behave. Choose the workflow that matches your restaurant type.
+              </Alert>
+
+              <div className="service-mode-options">
+                <div
+                  className={`service-mode-card ${serviceMode === 'full_service' ? 'active' : ''}`}
+                  onClick={() => !saving && handleSaveServiceMode('full_service')}
+                >
+                  <div className="service-mode-icon">
+                    <i className="bi bi-cup-hot"></i>
+                  </div>
+                  <div className="service-mode-info">
+                    <h5>Full Service</h5>
+                    <p>Traditional dine-in restaurant. Tables required, servers deliver food, payment collected after service.</p>
+                    <div className="service-mode-features">
+                      <Badge bg="secondary" className="me-1">Tables</Badge>
+                      <Badge bg="secondary" className="me-1">Server</Badge>
+                      <Badge bg="secondary" className="me-1">Pay After</Badge>
+                    </div>
+                  </div>
+                  {serviceMode === 'full_service' && (
+                    <div className="service-mode-check">
+                      <i className="bi bi-check-circle-fill"></i>
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  className={`service-mode-card ${serviceMode === 'counter_service' ? 'active' : ''}`}
+                  onClick={() => !saving && handleSaveServiceMode('counter_service')}
+                >
+                  <div className="service-mode-icon">
+                    <i className="bi bi-shop"></i>
+                  </div>
+                  <div className="service-mode-info">
+                    <h5>Counter Service</h5>
+                    <p>Pay-first at counter. Order number called when ready. Tables optional, no server needed.</p>
+                    <div className="service-mode-features">
+                      <Badge bg="secondary" className="me-1">Pay First</Badge>
+                      <Badge bg="secondary" className="me-1">Counter Pickup</Badge>
+                      <Badge bg="secondary" className="me-1">Optional Tables</Badge>
+                    </div>
+                  </div>
+                  {serviceMode === 'counter_service' && (
+                    <div className="service-mode-check">
+                      <i className="bi bi-check-circle-fill"></i>
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  className={`service-mode-card ${serviceMode === 'food_truck' ? 'active' : ''}`}
+                  onClick={() => !saving && handleSaveServiceMode('food_truck')}
+                >
+                  <div className="service-mode-icon">
+                    <i className="bi bi-truck"></i>
+                  </div>
+                  <div className="service-mode-info">
+                    <h5>Food Truck</h5>
+                    <p>Pay-first at window. Simplest workflow — no tables, no servers. Customer picks up when ready.</p>
+                    <div className="service-mode-features">
+                      <Badge bg="secondary" className="me-1">Pay First</Badge>
+                      <Badge bg="secondary" className="me-1">Window Pickup</Badge>
+                      <Badge bg="secondary" className="me-1">No Tables</Badge>
+                    </div>
+                  </div>
+                  {serviceMode === 'food_truck' && (
+                    <div className="service-mode-check">
+                      <i className="bi bi-check-circle-fill"></i>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {saving && (
+                <div className="text-center mt-3">
+                  <Spinner animation="border" size="sm" /> Saving...
+                </div>
               )}
             </Card.Body>
           </Card>
@@ -1489,6 +1607,13 @@ const Account = () => {
             >
               <i className="bi bi-person-circle"></i>
               <span>Account Details</span>
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'service_mode' ? 'active' : ''}`}
+              onClick={() => setActiveSection('service_mode')}
+            >
+              <i className="bi bi-shop"></i>
+              <span>Service Mode</span>
             </button>
             <button
               className={`account-nav-item ${activeSection === 'subscription' ? 'active' : ''}`}

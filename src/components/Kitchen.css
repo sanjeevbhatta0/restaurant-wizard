@@ -393,3 +393,36 @@
     transform: scale(1.05);
   }
 }
+
+/* Pay-first order styles */
+.paid-badge {
+  font-size: 0.7rem !important;
+  letter-spacing: 0.5px;
+}
+
+.order-number-prominent {
+  font-size: 1.2rem !important;
+  font-weight: 800 !important;
+  color: #2c3e50 !important;
+}
+
+.counter-info {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.counter-info i {
+  margin-right: 4px;
+}
+
+.kitchen-order-card.ready-pickup {
+  border-color: #27ae60;
+  box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.2);
+}
+
+.kitchen-pickup-btn {
+  background: linear-gradient(135deg, #27ae60, #2ecc71) !important;
+  border: none !important;
+  font-size: 1rem !important;
+  padding: 10px 20px !important;
+}

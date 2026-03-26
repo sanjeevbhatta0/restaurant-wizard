@@ -38,6 +38,8 @@
     "test:e2e": "FIRESTORE_EMULATOR_HOST=localhost:8080 react-scripts test --watchAll=false --testPathPattern=__tests__/e2e",
     "test:pos": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration|e2e)",
     "test:widget": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration|e2e)/(embedApp|widgetOrderFlow|widgetE2E|websiteServing|websiteOrderFlow|websiteOrderE2E)",
+    "test:listings": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration)/(businessListings|businessListingsFlow)",
+    "test:service-mode": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration)/(serviceMode|counterServiceFlow)",
     "test:ci": "CI=true react-scripts test --watchAll=false --coverage --passWithNoTests",
     "eject": "react-scripts eject",
     "dev": "concurrently \"npm start\" \"firebase emulators:start\"",

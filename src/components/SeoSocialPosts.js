@@ -15,10 +15,15 @@ import { doc, getDoc, collection, addDoc, query, orderBy, limit, getDocs, Timest
 import socialMediaService from '../services/socialMediaService';
 import aiContentService from '../services/aiContentService';
 import { facebookService } from '../services/facebookService';
+import businessListingsService from '../services/businessListingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import { useNavigate } from 'react-router-dom';
+import BusinessConnectionsCard from './business-listings/BusinessConnectionsCard';
+import ReviewsDashboard from './business-listings/ReviewsDashboard';
+import VisibilityTasksPanel from './business-listings/VisibilityTasksPanel';
+import './business-listings/BusinessListings.css';
 import './SeoSocialPosts.css';
 import './PageHeader.css';
 
@@ -78,6 +83,12 @@ const SeoSocialPosts = () => {
   const [copied, setCopied] = useState('');
   const [expandedTasks, setExpandedTasks] = useState({});
 
+  // Business listings state (Elder only)
+  const [businessConnections, setBusinessConnections] = useState({});
+  const [businessReviews, setBusinessReviews] = useState([]);
+  const [visibilityTasks, setVisibilityTasks] = useState([]);
+  const [isLoadingListings, setIsLoadingListings] = useState(false);
+
   // Load initial data
   useEffect(() => {
     if (currentUser) {
@@ -85,6 +96,9 @@ const SeoSocialPosts = () => {
       loadSavedConnections();
       loadMenuItems();
       loadPostHistory();
+      if (hasAIAccess) {
+        loadBusinessListings();
+      }
     }
   }, [currentUser, selectedLocation]);
 
@@ -171,6 +185,89 @@ const SeoSocialPosts = () => {
     }
   };
 
+  // ---- Business Listings Functions (Elder only) ----
+
+  const loadBusinessListings = async () => {
+    try {
+      setIsLoadingListings(true);
+      const connections = await businessListingsService.getConnections(currentUser.uid);
+      setBusinessConnections(connections);
+
+      // Load cached reviews if any platform is connected
+      if (connections?.yelp?.connected || connections?.google?.connected) {
+        const reviews = await businessListingsService.getCachedReviews(currentUser.uid, 'all', 50);
+        setBusinessReviews(reviews);
+      }
+
+      // Load visibility tasks
+      const tasks = await businessListingsService.getVisibilityTasks(currentUser.uid);
+      setVisibilityTasks(tasks);
+    } catch (err) {
+      console.error('Error loading business listings:', err);
+    } finally {
+      setIsLoadingListings(false);
+    }
+  };
+
+  const handleYelpConnect = async (businessId) => {
+    const result = await businessListingsService.connectYelpBusiness(businessId);
+    if (result.success) {
+      await loadBusinessListings();
+      setSuccess('Yelp business connected successfully!');
+    }
+  };
+
+  const handleGoogleAuth = async () => {
+    return await businessListingsService.initiateGoogleAuth();
+  };
+
+  const handleAppleSave = async (info) => {
+    await businessListingsService.saveAppleBusinessInfo(currentUser.uid, info);
+    await loadBusinessListings();
+    setSuccess('Apple Business information saved!');
+  };
+
+  const handleDisconnectPlatform = async (platform) => {
+    await businessListingsService.disconnectPlatform(currentUser.uid, platform);
+    await loadBusinessListings();
+    setSuccess(`${platform.charAt(0).toUpperCase() + platform.slice(1)} disconnected.`);
+  };
+
+  const handleSyncListings = async () => {
+    if (businessConnections?.yelp?.connected && businessConnections.yelp.businessId) {
+      await businessListingsService.fetchYelpReviews(businessConnections.yelp.businessId);
+    }
+    if (businessConnections?.google?.connected) {
+      await businessListingsService.fetchGoogleReviews();
+    }
+    await loadBusinessListings();
+    setSuccess('Business listings synced!');
+  };
+
+  const handleGenerateReviewResponse = async (params) => {
+    return await businessListingsService.generateReviewResponse(params);
+  };
+
+  const handleReplyToGoogle = async (reviewName, replyText) => {
+    const result = await businessListingsService.replyToGoogleReview(reviewName, replyText);
+    if (result.success) {
+      await loadBusinessListings();
+      setSuccess('Reply posted to Google!');
+    }
+  };
+
+  const handleGenerateVisibilityTasks = async (params) => {
+    const result = await businessListingsService.generateVisibilityTasks(params);
+    if (result.success) {
+      await loadBusinessListings();
+    }
+  };
+
+  const handleUpdateTaskStatus = async (taskId, status) => {
+    await businessListingsService.updateTaskStatus(currentUser.uid, taskId, status);
+    setVisibilityTasks(prev => prev.map(t => t.id === taskId ? { ...t, status, completedAt: status === 'completed' ? new Date().toISOString() : null } : t));
+  };
+
   const checkFacebookLoginStatus = useCallback(async () => {
     try {
       await facebookService.initFacebookLogin();
@@ -219,12 +316,24 @@ const SeoSocialPosts = () => {
         }
       }
 
-      const result = await aiContentService.generatePost({
-        type: aiContentType,
-        platform: aiPlatform,
-        tone: aiTone,
-        context
-      });
+      // Build business context from connected platforms if available
+      let businessContext = null;
+      if (businessReviews.length > 0) {
+        const avgRating = (businessReviews.reduce((s, r) => s + (r.rating || 0), 0) / businessReviews.length).toFixed(1);
+        const positiveReviews = businessReviews.filter(r => r.rating >= 4);
+        const topPraises = positiveReviews.slice(0, 3).map(r => r.text?.substring(0, 80)).join('; ');
+        businessContext = {
+          avgRating,
+          totalReviews: businessReviews.length,
+          topPraises: topPraises || undefined,
+          recentKeywords: undefined
+        };
+      }
+
+      const generateFn = businessContext ? aiContentService.generatePostWithContext : aiContentService.generatePost;
+      const result = businessContext
+        ? await generateFn({ type: aiContentType, platform: aiPlatform, tone: aiTone, context }, businessContext)
+        : await generateFn({ type: aiContentType, platform: aiPlatform, tone: aiTone, context });
 
       if (result.success && result.content) {
         setGeneratedContent(result.content);
@@ -519,6 +628,18 @@ const SeoSocialPosts = () => {
             </Nav.Link>
           </Nav.Item>
           <Nav.Item>
+            <Nav.Link eventKey="reviews" disabled={!hasAIAccess}>
+              {hasAIAccess ? <FaStar className="me-2" /> : <FaLock className="me-2" />}
+              Reviews {!hasAIAccess && <Badge bg="secondary" className="ms-1">Elder</Badge>}
+            </Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="visibility" disabled={!hasAIAccess}>
+              {hasAIAccess ? <FaMapMarkerAlt className="me-2" /> : <FaLock className="me-2" />}
+              Visibility {!hasAIAccess && <Badge bg="secondary" className="ms-1">Elder</Badge>}
+            </Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
             <Nav.Link eventKey="history">
               <FaCalendarAlt className="me-2" />Post History
             </Nav.Link>
@@ -800,6 +921,20 @@ const SeoSocialPosts = () => {
                     </small>
                   </Card.Body>
                 </Card>
+
+                {/* Business Listings Connections (Elder only) */}
+                {hasAIAccess && (
+                  <BusinessConnectionsCard
+                    connections={businessConnections}
+                    restaurantData={restaurantData}
+                    onYelpConnect={handleYelpConnect}
+                    onGoogleAuth={handleGoogleAuth}
+                    onAppleSave={handleAppleSave}
+                    onDisconnect={handleDisconnectPlatform}
+                    onSync={handleSyncListings}
+                    isLoading={isLoadingListings}
+                  />
+                )}
 
                 {/* Quick Tips */}
                 <Card className="shadow-sm tips-card">
@@ -1139,6 +1274,60 @@ const SeoSocialPosts = () => {
                 )}
               </Card.Body>
             </Card>
+          </Tab.Pane>
+
+          {/* REVIEWS TAB (Elder only) */}
+          <Tab.Pane eventKey="reviews">
+            {hasAIAccess ? (
+              <ReviewsDashboard
+                reviews={businessReviews}
+                connections={businessConnections}
+                restaurantData={restaurantData}
+                onGenerateResponse={handleGenerateReviewResponse}
+                onReplyToGoogle={handleReplyToGoogle}
+                onSyncReviews={handleSyncListings}
+                isLoading={isLoadingListings}
+              />
+            ) : (
+              <Card className="shadow-sm">
+                <Card.Body className="text-center py-5">
+                  <FaLock size={48} className="text-muted mb-3" />
+                  <h5>Reviews Dashboard</h5>
+                  <p className="text-muted">
+                    Upgrade to the Elder plan to access the unified reviews dashboard<br />
+                    with AI-powered review responses.
+                  </p>
+                  <Badge bg="warning" text="dark">Elder Plan Feature</Badge>
+                </Card.Body>
+              </Card>
+            )}
+          </Tab.Pane>
+
+          {/* VISIBILITY TAB (Elder only) */}
+          <Tab.Pane eventKey="visibility">
+            {hasAIAccess ? (
+              <VisibilityTasksPanel
+                tasks={visibilityTasks}
+                restaurantData={restaurantData}
+                connections={businessConnections}
+                reviews={businessReviews}
+                onGenerateTasks={handleGenerateVisibilityTasks}
+                onUpdateTaskStatus={handleUpdateTaskStatus}
+                isLoading={isLoadingListings}
+              />
+            ) : (
+              <Card className="shadow-sm">
+                <Card.Body className="text-center py-5">
+                  <FaLock size={48} className="text-muted mb-3" />
+                  <h5>Visibility Improvement</h5>
+                  <p className="text-muted">
+                    Upgrade to the Elder plan to get AI-powered visibility tasks<br />
+                    across Yelp, Google, and Apple Business.
+                  </p>
+                  <Badge bg="warning" text="dark">Elder Plan Feature</Badge>
+                </Card.Body>
+              </Card>
+            )}
           </Tab.Pane>
 
           {/* POST HISTORY TAB */}

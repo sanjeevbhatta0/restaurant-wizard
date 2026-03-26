@@ -4,6 +4,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'f
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import activityService from '../services/activityService';
 import lanSyncService from '../services/lanSyncService';
 import { initializeNotifications, notifyServer, unlockAudio } from '../services/notificationService';
@@ -15,6 +16,7 @@ import './Server.css';
 const Server = () => {
   const { currentUser } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
+  const { hasServerRole, getServiceMode } = useSubscription();
   const [orders, setOrders] = useState([]);
   const [claimedOrders, setClaimedOrders] = useState({}); // { orderId: serverId }
   const [loading, setLoading] = useState(true);
@@ -136,9 +138,12 @@ const Server = () => {
         return aTime - bTime; // Oldest first
       });
 
+      // Filter out pay-first orders (those are completed at Kitchen, not Server)
+      const filteredOrders = ordersData.filter(order => !order.paidAtPOS);
+
       setOrders(prevOrders => {
         // Track status changes for notifications
-        ordersData.forEach(order => {
+        filteredOrders.forEach(order => {
           const existingOrder = prevOrders.find(o => o.id === order.id);
           if (existingOrder && existingOrder.status !== order.status) {
             // Status changed - add notification
@@ -161,7 +166,7 @@ const Server = () => {
             }
           }
         });
-        return ordersData;
+        return filteredOrders;
       });
       setLoading(false);
     }, (error) => {
@@ -337,6 +342,8 @@ const Server = () => {
     switch (orderType) {
       case 'dine_in':
         return { label: 'Dine-In', icon: 'bi-cup-hot', variant: 'info' };
+      case 'counter':
+        return { label: 'Counter', icon: 'bi-shop', variant: 'primary' };
       case 'pickup':
         return { label: 'Pickup', icon: 'bi-bag-check', variant: 'success' };
       case 'delivery':
@@ -727,6 +734,14 @@ const Server = () => {
                 })}
               </div>
             </div>
+          )}
+
+          {!hasServerRole() && (
+            <Alert variant="info" className="mt-3">
+              <i className="bi bi-info-circle me-2"></i>
+              Server view is not active in <strong>{getServiceMode() === 'food_truck' ? 'Food Truck' : 'Counter Service'}</strong> mode.
+              Orders are completed at the Kitchen when customers pick up.
+            </Alert>
           )}
 
           {orders.length === 0 && (

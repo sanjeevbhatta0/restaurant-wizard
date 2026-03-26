@@ -520,3 +520,144 @@
     max-height: 300px;
   }
 }
+
+/* Pay-First Mode Styles */
+.pos-tax-breakdown {
+  padding: 8px 0;
+  border-top: 1px dashed #e0e0e0;
+}
+
+.pos-tax-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #666;
+  padding: 2px 0;
+}
+
+.pos-tax-line.pos-grand-total {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #2c3e50;
+  padding-top: 4px;
+  border-top: 1px solid #e0e0e0;
+  margin-top: 4px;
+}
+
+.pos-pay-button {
+  background: linear-gradient(135deg, #27ae60, #2ecc71) !important;
+}
+
+.pos-pay-button:hover {
+  background: linear-gradient(135deg, #219a52, #27ae60) !important;
+}
+
+.pos-payment-step {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.pos-payment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.pos-payment-back {
+  background: none;
+  border: none;
+  color: #667eea;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+}
+
+.pos-payment-back:hover {
+  text-decoration: underline;
+}
+
+.pos-payment-methods {
+  display: flex;
+  gap: 10px;
+}
+
+.pos-payment-method-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.pos-payment-method-btn:hover {
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.pos-payment-method-btn i {
+  font-size: 1.5rem;
+}
+
+.pos-cash-btn:hover {
+  border-color: #27ae60;
+  color: #27ae60;
+}
+
+.pos-card-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.pos-cash-confirm {
+  text-align: center;
+}
+
+.pos-payment-amount {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 1.1rem;
+}
+
+.pos-payment-amount strong {
+  font-size: 1.3rem;
+  color: #27ae60;
+}
+
+.pos-confirm-cash-btn {
+  background: linear-gradient(135deg, #27ae60, #2ecc71) !important;
+  width: 100%;
+}
+
+.pos-card-payment {
+  background: white;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.pos-order-number-large {
+  font-size: 1.8rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 1px;
+}
+
+.pos-success-detail {
+  color: #27ae60;
+  font-size: 1rem;
+  margin-bottom: 5px;
+}

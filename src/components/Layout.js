@@ -36,7 +36,7 @@ const TIER_NAMES = {
 const Layout = ({ children }) => {
   const { currentUser } = useAuth();
   const { isMultiLocation, locations, selectedLocation, setSelectedLocation } = useLocationContext();
-  const { hasFeatureAccess, getMinimumTierForFeature, getCurrentTier } = useSubscription();
+  const { hasFeatureAccess, getMinimumTierForFeature, getCurrentTier, getServiceMode } = useSubscription();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -171,7 +171,12 @@ const Layout = ({ children }) => {
             </button>
           </div>
           <Nav className="flex-column sidebar-nav">
-            {sidebarLinks.map((link, index) => {
+            {sidebarLinks.filter(link => {
+              const mode = getServiceMode();
+              if (link.to === '/server' && mode !== 'full_service') return false;
+              if (link.to === '/table-layout' && mode === 'food_truck') return false;
+              return true;
+            }).map((link, index) => {
               const isActive = location.pathname === link.to;
               const isAccessible = isRouteAccessible(link.to);
               const requiredTier = getRequiredTierForRoute(link.to);

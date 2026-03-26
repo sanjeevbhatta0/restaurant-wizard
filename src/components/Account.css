@@ -313,3 +313,81 @@
 .plan-change-modal .glow-effect {
   animation: glowPulse 4s ease-in-out infinite;
 }
+
+/* Service Mode Cards */
+.service-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.service-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: white;
+}
+
+.service-mode-card:hover {
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.service-mode-card.active {
+  border-color: #667eea;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+  box-shadow: 0 2px 12px rgba(102, 126, 234, 0.2);
+}
+
+.service-mode-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.service-mode-icon i {
+  font-size: 1.5rem;
+  color: white;
+}
+
+.service-mode-info {
+  flex: 1;
+}
+
+.service-mode-info h5 {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.service-mode-info p {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #666;
+  line-height: 1.4;
+}
+
+.service-mode-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.service-mode-check {
+  flex-shrink: 0;
+}
+
+.service-mode-check i {
+  font-size: 1.5rem;
+  color: #667eea;
+}

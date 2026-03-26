@@ -3,8 +3,10 @@ import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, getDoc, 
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { Container, Card, Button, Form, Alert, Spinner, Table, Badge, Modal, Row, Col } from 'react-bootstrap';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import CardPaymentForm from './CardPaymentForm';
 import activityService from '../services/activityService';
 import lanSyncService from '../services/lanSyncService';
 import offlineService from '../services/offlineService';
@@ -14,140 +16,13 @@ import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './Payments.css';
 
-// Stripe Card Element styling
-const CARD_ELEMENT_OPTIONS = {
-  style: {
-    base: {
-      color: '#32325d',
-      fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
-      fontSmoothing: 'antialiased',
-      fontSize: '16px',
-      '::placeholder': {
-        color: '#aab7c4'
-      }
-    },
-    invalid: {
-      color: '#fa755a',
-      iconColor: '#fa755a'
-    }
-  },
-  hidePostalCode: false
-};
-
-// Stripe Card Payment Form Component
-const CardPaymentForm = ({
-  total,
-  onPaymentSuccess,
-  onPaymentError,
-  processing,
-  setProcessing,
-  orderIds,
-  tableNumbers,
-  restaurantId,
-  paymentDetails
-}) => {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [cardError, setCardError] = useState(null);
-  const [cardComplete, setCardComplete] = useState(false);
-
-  const handleCardChange = (event) => {
-    setCardError(event.error ? event.error.message : null);
-    setCardComplete(event.complete);
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-
-    if (!stripe || !elements) {
-      return;
-    }
-
-    setProcessing(true);
-    setCardError(null);
-
-    try {
-      // 1. Create PaymentIntent on the backend
-      const { clientSecret, paymentIntentId } = await createPaymentIntent(
-        total,
-        orderIds,
-        tableNumbers,
-        restaurantId
-      );
-
-      // 2. Confirm the payment with Stripe
-      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: elements.getElement(CardElement),
-        }
-      });
-
-      if (error) {
-        setCardError(error.message);
-        onPaymentError(error.message);
-      } else if (paymentIntent.status === 'succeeded') {
-        // 3. Confirm payment on backend and update orders
-        await confirmPayment(paymentIntentId, orderIds, paymentDetails, restaurantId);
-        onPaymentSuccess(paymentIntentId);
-      } else {
-        setCardError('Payment was not completed. Please try again.');
-        onPaymentError('Payment was not completed');
-      }
-    } catch (error) {
-      console.error('Payment error:', error);
-      setCardError(error.message || 'An error occurred during payment');
-      onPaymentError(error.message);
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  return (
-    <Form onSubmit={handleSubmit}>
-      <div className="stripe-card-element">
-        <Form.Label><strong>Card Details</strong></Form.Label>
-        <div className="card-element-wrapper">
-          <CardElement options={CARD_ELEMENT_OPTIONS} onChange={handleCardChange} />
-        </div>
-        {cardError && (
-          <Alert variant="danger" className="mt-2 mb-0">
-            <i className="bi bi-exclamation-circle"></i> {cardError}
-          </Alert>
-        )}
-      </div>
-
-      <div className="mt-4 d-flex justify-content-between align-items-center">
-        <div className="payment-total-display">
-          <span>Total to charge:</span>
-          <strong className="text-success fs-4">${total.toFixed(2)}</strong>
-        </div>
-        <Button
-          type="submit"
-          variant="success"
-          size="lg"
-          disabled={!stripe || !cardComplete || processing}
-        >
-          {processing ? (
-            <>
-              <Spinner animation="border" size="sm" className="me-2" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <i className="bi bi-credit-card"></i> Pay ${total.toFixed(2)}
-            </>
-          )}
-        </Button>
-      </div>
-    </Form>
-  );
-};
-
 const Payments = () => {
   const { currentUser } = useAuth();
+  const { isPayFirst, getServiceMode } = useSubscription();
   const [selectedTable, setSelectedTable] = useState(null);
   const [tablesWithOrders, setTablesWithOrders] = useState({}); // { tableNumber: [orders] }
   const [onlineOrders, setOnlineOrders] = useState([]); // Online orders (pickup/delivery)
+  const [posTransactions, setPosTransactions] = useState([]); // POS-paid completed orders (counter/food truck)
   const [orders, setOrders] = useState([]);
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -391,6 +266,59 @@ const Payments = () => {
       setOnlineOrders(ordersData);
     }, (error) => {
       console.error('Error loading online orders:', error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, selectedLocation, isMultiLocation]);
+
+  // Load POS-paid transactions (counter service / food truck mode)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+
+    let q;
+    if (isMultiLocation && selectedLocation) {
+      q = query(
+        ordersRef,
+        where('paidAtPOS', '==', true),
+        where('status', '==', 'completed'),
+        where('locationId', '==', selectedLocation)
+      );
+    } else if (isMultiLocation && !selectedLocation) {
+      setPosTransactions([]);
+      return;
+    } else {
+      q = query(
+        ordersRef,
+        where('paidAtPOS', '==', true),
+        where('status', '==', 'completed')
+      );
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersData = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+
+      // Filter to today's orders only and sort newest first
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayOrders = ordersData.filter(order => {
+        const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0);
+        return orderDate >= today;
+      });
+
+      todayOrders.sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
+        const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt);
+        return dateB - dateA;
+      });
+
+      setPosTransactions(todayOrders);
+    }, (error) => {
+      console.error('Error loading POS transactions:', error);
     });
 
     return () => unsubscribe();
@@ -1262,7 +1190,9 @@ const Payments = () => {
           <i className="bi bi-credit-card header-icon"></i>
           <div>
             <h2>Payments</h2>
-            <p>Process customer payments and manage transactions</p>
+            <p>{isPayFirst()
+              ? 'View POS transactions, online orders, and process reimbursements'
+              : 'Process customer payments and manage transactions'}</p>
           </div>
         </div>
         {/* Notification status indicator */}
@@ -1314,6 +1244,47 @@ const Payments = () => {
           <i className="bi bi-arrow-counterclockwise"></i> Reimbursement
         </Button>
       </div>
+
+      {/* POS Transactions Section (Counter Service / Food Truck) */}
+      {posTransactions.length > 0 && (
+        <Card className="mb-4">
+          <Card.Header className="d-flex justify-content-between align-items-center">
+            <h5><i className="bi bi-receipt"></i> POS Transactions Today ({posTransactions.length})</h5>
+            <Badge bg="success">${posTransactions.reduce((sum, o) => sum + (o.total || 0), 0).toFixed(2)}</Badge>
+          </Card.Header>
+          <Card.Body style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <Table striped hover size="sm">
+              <thead>
+                <tr>
+                  <th>Order #</th>
+                  <th>Items</th>
+                  <th>Payment</th>
+                  <th>Total</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {posTransactions.map(order => {
+                  const orderTime = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+                  return (
+                    <tr key={order.id}>
+                      <td><strong>{order.orderNumber || order.id.slice(0, 8)}</strong></td>
+                      <td>{order.items?.map(i => `${i.quantity}x ${i.name}`).join(', ') || '-'}</td>
+                      <td>
+                        <Badge bg={order.paymentDetails?.paymentMethod === 'card' ? 'primary' : 'success'}>
+                          {order.paymentDetails?.paymentMethod === 'card' ? 'Card' : 'Cash'}
+                        </Badge>
+                      </td>
+                      <td>${(order.total || 0).toFixed(2)}</td>
+                      <td>{orderTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </Card.Body>
+        </Card>
+      )}
 
       {/* Online Orders Section */}
       {onlineOrders.length > 0 && (

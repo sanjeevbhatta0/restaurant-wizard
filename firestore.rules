@@ -118,6 +118,26 @@ service cloud.firestore {
       match /rewardsConfig/{configId} {
         allow read, write: if request.auth != null && request.auth.uid == restaurantId;
       }
+
+      // Settings subcollection (business listings, etc.)
+      match /settings/{settingId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
+
+      // Business reviews cache (from Yelp, Google, Apple)
+      match /businessReviews/{reviewId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
+
+      // Visibility tasks (AI-generated improvement tasks)
+      match /visibilityTasks/{taskId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
+
+      // Social posts
+      match /socialPosts/{postId} {
+        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      }
     }
     
     // Social media posts - users can only access their own

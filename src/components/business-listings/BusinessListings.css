@@ -1,0 +1,169 @@
+/* ===================================
+   Business Listings Components Styles
+   =================================== */
+
+/* Business Connections Card */
+.business-connections-card .card-body {
+  padding: 8px;
+}
+
+.listing-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  transition: all 0.2s ease;
+  background: #f8f9fa;
+}
+
+.listing-item:hover {
+  background: #e9ecef;
+}
+
+.listing-item.connected {
+  background: #f0fff4;
+  border-left: 3px solid #28a745;
+}
+
+.listing-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  background: white;
+  border: 1px solid #e9ecef;
+  flex-shrink: 0;
+}
+
+.listing-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.listing-name {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+.listing-info small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.listing-actions {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+/* Yelp Search Modal */
+.yelp-result-card {
+  transition: all 0.2s ease;
+  border: 1px solid #e9ecef;
+}
+
+.yelp-result-card:hover {
+  border-color: #d32323;
+  box-shadow: 0 2px 8px rgba(211, 35, 35, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Review Cards */
+.review-card {
+  border-radius: 12px;
+  border: 1px solid #e9ecef;
+  transition: all 0.2s ease;
+}
+
+.review-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.review-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #333;
+}
+
+.owner-response {
+  background: #f0f7ff;
+  border-left: 3px solid #4285F4;
+  padding: 8px 12px;
+  border-radius: 0 8px 8px 0;
+}
+
+.ai-response-section {
+  background: #faf5ff;
+  border: 1px solid #e8daff;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+/* Summary Cards */
+.summary-card {
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.summary-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #333;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+/* Visibility Tasks */
+.task-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+/* Reviews Dashboard Filter Bar */
+.reviews-list .review-card + .review-card {
+  margin-top: 12px;
+}
+
+/* Platform Colors */
+.platform-yelp { color: #d32323; }
+.platform-google { color: #4285F4; }
+.platform-apple { color: #000; }
+
+/* Star Rating Display */
+.star-rating {
+  display: inline-flex;
+  gap: 1px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .listing-item {
+    padding: 8px;
+  }
+
+  .summary-value {
+    font-size: 24px;
+  }
+
+  .filter-bar .form-select {
+    width: 100% !important;
+    margin-bottom: 8px;
+  }
+}
