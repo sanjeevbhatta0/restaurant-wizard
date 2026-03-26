@@ -8,6 +8,124 @@ const cors = require('cors')({ origin: true });
 
 admin.initializeApp();
 
+// ============================================
+// PROMOTIONS HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Generate a unique per-customer promo code (e.g., KC-A3X9B2)
+ */
+function generateUniquePromoCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = 'KC-';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+/**
+ * Parse a promotion's discount string + type into numeric values
+ * @param {Object} promo - promotion with .discount (string) and .type fields
+ * @returns {{ discountValue: number, discountUnit: 'percentage'|'amount' }}
+ */
+function parsePromoDiscount(promo) {
+  if (!promo || !promo.discount) return { discountValue: 0, discountUnit: 'percentage' };
+
+  const discountStr = String(promo.discount);
+
+  if (promo.type === 'percentage' || promo.type === 'flashSale' || promo.type === 'storeLaunch') {
+    if (discountStr.includes('%')) {
+      return { discountValue: parseFloat(discountStr.replace('%', '')) || 0, discountUnit: 'percentage' };
+    }
+    if (discountStr.startsWith('$')) {
+      return { discountValue: parseFloat(discountStr.replace('$', '')) || 0, discountUnit: 'amount' };
+    }
+    // Try parsing as number (assume percentage for these types)
+    const val = parseFloat(discountStr);
+    if (!isNaN(val)) return { discountValue: val, discountUnit: 'percentage' };
+  }
+
+  if (promo.type === 'bogo') {
+    return { discountValue: 0, discountUnit: 'percentage' }; // BOGO handled specially
+  }
+
+  if (promo.type === 'freeItem') {
+    return { discountValue: 0, discountUnit: 'amount' }; // Free item handled specially
+  }
+
+  // Fallback: try to detect from string
+  if (discountStr.includes('%')) {
+    return { discountValue: parseFloat(discountStr.replace('%', '')) || 0, discountUnit: 'percentage' };
+  }
+  if (discountStr.startsWith('$')) {
+    return { discountValue: parseFloat(discountStr.replace('$', '')) || 0, discountUnit: 'amount' };
+  }
+
+  return { discountValue: 0, discountUnit: 'percentage' };
+}
+
+/**
+ * Validate a promo code against promotionClaims and promotions collections.
+ * Shared logic used by both validatePromoCode and submitOrder.
+ * @returns {{ valid: boolean, reason?: string, ...promoDetails }}
+ */
+async function validatePromoInternal(db, restaurantId, promoCode, subtotal) {
+  if (!promoCode || !restaurantId) {
+    return { valid: false, reason: 'Missing promo code or restaurant ID' };
+  }
+
+  // 1. Search promotionClaims by uniqueCode first
+  let claimSnapshot = await db
+    .collection(`restaurants/${restaurantId}/promotionClaims`)
+    .where('uniqueCode', '==', promoCode)
+    .where('used', '==', false)
+    .limit(1)
+    .get();
+
+  // 2. If not found, search by shared promoCode
+  if (claimSnapshot.empty) {
+    claimSnapshot = await db
+      .collection(`restaurants/${restaurantId}/promotionClaims`)
+      .where('promoCode', '==', promoCode)
+      .where('used', '==', false)
+      .limit(1)
+      .get();
+  }
+
+  if (claimSnapshot.empty) {
+    return { valid: false, reason: 'Invalid or already used promo code' };
+  }
+
+  const claimDoc = claimSnapshot.docs[0];
+  const claim = claimDoc.data();
+
+  // Check expiry
+  const now = new Date();
+  const validUntil = claim.validUntil?.toDate ? claim.validUntil.toDate() : new Date(claim.validUntil);
+  if (validUntil < now) {
+    return { valid: false, reason: 'This promotion has expired' };
+  }
+
+  // Check min order amount
+  if (claim.minOrderAmount && subtotal < claim.minOrderAmount) {
+    return { valid: false, reason: `Minimum order of $${claim.minOrderAmount} required` };
+  }
+
+  return {
+    valid: true,
+    claimId: claimDoc.id,
+    promotionId: claim.promotionId,
+    promoCode: claim.promoCode,
+    uniqueCode: claim.uniqueCode,
+    discountValue: claim.discountValue || 0,
+    discountUnit: claim.discountUnit || 'percentage',
+    type: claim.type,
+    title: claim.promotionTitle,
+    minOrderAmount: claim.minOrderAmount || 0
+  };
+}
+
 // Initialize Stripe with your secret key
 // For production, use Firebase Functions config or environment secrets
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51SkXC0KckjWrEVo26MbeTN0GKkdb14sF3deZsHZt1CrCMFK0PR0su3CKJoa1rMUC4n0fo2nQcXNYJfdpwzOoRKMx00jKjdD6yZ');
@@ -624,6 +742,7 @@ function renderTemplate(template, data) {
     '{{instagram}}': data.instagram || '',
     '{{twitter}}': data.twitter || '',
     '{{taxRate}}': data.taxRate !== undefined ? data.taxRate : 8.5,
+    '{{promoId}}': data.promoId || '',
     '{{year}}': new Date().getFullYear().toString(),
     '{{apiBaseUrl}}': data.apiBaseUrl || 'https://restaurant-portal-6b147.web.app',
     '{{stripePublishableKey}}': data.stripePublishableKey || '',
@@ -856,6 +975,9 @@ exports.serveWebsite = onRequest(async (req, res) => {
 
       console.log('Effective locationId for orders:', effectiveLocationId);
 
+      // Check for promo query parameter (for store launch QR codes)
+      const promoId = req.query.promo || '';
+
       // Check if this is a preview request (allows viewing unpublished sites)
       const isPreview = req.query.preview === 'true';
 
@@ -928,8 +1050,276 @@ exports.serveWebsite = onRequest(async (req, res) => {
           ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
           : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
         stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
-        taxRate: finalTaxRate
+        taxRate: finalTaxRate,
+        promoId: promoId
       };
+
+      // === EMBED MODE ===
+      // Serves a complete standalone app (menu + cart + checkout + portal) for the widget iframe
+      const isEmbed = req.query.embed === 'true';
+      if (isEmbed) {
+        const fs = require('fs');
+        const path = require('path');
+
+        // Load all assets
+        let portalCss = '', portalJs = '', embedAppJs = '';
+        try {
+          const base = path.join(__dirname, 'templates', 'customer-portal');
+          if (fs.existsSync(path.join(base, 'portal.css'))) portalCss = fs.readFileSync(path.join(base, 'portal.css'), 'utf-8');
+          if (fs.existsSync(path.join(base, 'portal.js'))) portalJs = fs.readFileSync(path.join(base, 'portal.js'), 'utf-8');
+          if (fs.existsSync(path.join(base, 'embed-app.js'))) embedAppJs = fs.readFileSync(path.join(base, 'embed-app.js'), 'utf-8');
+        } catch (err) {
+          console.error('Error loading embed assets:', err);
+        }
+
+        // Pre-fetch menu data server-side to eliminate client-side API call
+        let preloadedMenu = [];
+        try {
+          const isMultiLoc = restaurantData.isMultiLocation === true;
+          const catSnap = await db.collection(`restaurants/${restaurantId}/menuCategories`).orderBy('name').get();
+          for (const catDoc of catSnap.docs) {
+            const cat = { id: catDoc.id, ...catDoc.data(), items: [] };
+            const itemSnap = await db.collection(`restaurants/${restaurantId}/menuCategories/${catDoc.id}/items`).orderBy('name').get();
+            itemSnap.forEach(itemDoc => {
+              const d = itemDoc.data();
+              if (isMultiLoc && effectiveLocationId && d.locations && d.locations.length > 0 && !d.locations.includes(effectiveLocationId)) return;
+              cat.items.push({ id: itemDoc.id, ...d, price: typeof d.price === 'number' ? d.price : parseFloat(d.price) || 0, discount: typeof d.discount === 'number' ? d.discount : parseFloat(d.discount) || 0, discountType: d.discountType || 'amount' });
+            });
+            if (cat.items.length > 0) preloadedMenu.push(cat);
+          }
+        } catch (menuErr) {
+          console.error('Error pre-loading menu:', menuErr);
+        }
+
+        const initialTab = req.query.tab || 'menu';
+        const firebaseConfig = JSON.stringify({
+          apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyACOWtwR1QMedvnzMxzlh4JZU2buNl-vO0',
+          authDomain: 'restaurant-portal-6b147.firebaseapp.com',
+          projectId: 'restaurant-portal-6b147',
+          storageBucket: 'restaurant-portal-6b147.appspot.com'
+        });
+
+        const embedHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>${templateData.restaurantName}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=${templateData.fontFamily}:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>${portalCss}</style>
+  <style>
+    :root {
+      --ea-primary: ${templateData.primaryColor};
+      --ea-secondary: ${templateData.secondaryColor};
+      --ea-accent: ${templateData.accentColor};
+      --ea-font: '${templateData.fontFamily}', system-ui, sans-serif;
+      --ea-radius: 10px;
+      --ea-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      /* portal overrides */
+      --primary-color: ${templateData.primaryColor};
+      --secondary-color: ${templateData.secondaryColor};
+      --accent-color: ${templateData.accentColor};
+      --font-family: '${templateData.fontFamily}', sans-serif;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--ea-font); background: #f8f9fa; color: #333; overflow-x: hidden; }
+
+    /* ---- App Shell ---- */
+    .ea-app { min-height: 100vh; display: flex; flex-direction: column; }
+    .ea-view { display: none; flex: 1; }
+    .ea-view.ea-active { display: block; }
+    .ea-hidden { display: none !important; }
+
+    /* ---- Loading ---- */
+    .ea-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; }
+    .ea-spinner { width: 36px; height: 36px; border: 3px solid #e0e0e0; border-top-color: var(--ea-primary); border-radius: 50%; animation: ea-spin 0.8s linear infinite; margin-bottom: 12px; }
+    @keyframes ea-spin { to { transform: rotate(360deg); } }
+    .ea-error { color: #dc3545; padding: 20px; text-align: center; }
+    .ea-empty { color: #999; text-align: center; padding: 40px 20px; }
+
+    /* ---- Categories ---- */
+    .ea-categories { display: flex; gap: 8px; padding: 16px 16px 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 10; }
+    .ea-categories::-webkit-scrollbar { display: none; }
+    .ea-cat-btn { flex-shrink: 0; padding: 8px 18px; border: 2px solid var(--ea-primary); background: transparent; color: var(--ea-primary); border-radius: 25px; cursor: pointer; font-weight: 600; font-size: 0.88rem; transition: all 0.2s; font-family: var(--ea-font); white-space: nowrap; }
+    .ea-cat-btn:hover, .ea-cat-btn.active { background: var(--ea-primary); color: #fff; }
+    .ea-cat-count { font-size: 0.72rem; opacity: 0.7; margin-left: 4px; }
+
+    /* ---- Items Grid ---- */
+    .ea-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; padding: 16px; }
+    .ea-item-card { background: #fff; border-radius: var(--ea-radius); overflow: hidden; box-shadow: var(--ea-shadow); transition: transform 0.2s, box-shadow 0.2s; }
+    .ea-item-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.12); }
+    .ea-item-img { width: 100%; height: 170px; object-fit: cover; display: block; }
+    .ea-item-img-placeholder { width: 100%; height: 120px; background: linear-gradient(135deg, #f0f0f0, #e8e8e8); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: #ccc; }
+    .ea-item-body { padding: 14px; }
+    .ea-item-name { font-weight: 600; font-size: 1rem; margin-bottom: 4px; color: #222; }
+    .ea-item-desc { color: #777; font-size: 0.82rem; margin-bottom: 10px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ea-item-footer { display: flex; justify-content: space-between; align-items: center; }
+    .ea-item-price { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ea-price-original { text-decoration: line-through; color: #aaa; font-size: 0.85rem; }
+    .ea-price-final { font-weight: 700; color: var(--ea-primary); font-size: 1.1rem; }
+    .ea-price-badge { background: #e74c3c; color: #fff; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .ea-add-btn { padding: 8px 16px; background: var(--ea-primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.85rem; font-family: var(--ea-font); transition: opacity 0.2s; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .ea-add-btn:hover { opacity: 0.85; }
+    .ea-add-btn:active { transform: scale(0.96); }
+
+    /* ---- Cart Bar ---- */
+    .ea-cart-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--ea-primary); color: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-weight: 600; z-index: 100; box-shadow: 0 -2px 16px rgba(0,0,0,0.2); }
+    .ea-cart-bar-left { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; }
+    .ea-cart-count { background: #fff; color: var(--ea-primary); width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; }
+    .ea-cart-bar-right { display: flex; align-items: center; gap: 12px; }
+    .ea-cart-bar-btn { background: rgba(255,255,255,0.2); padding: 6px 16px; border-radius: 20px; font-size: 0.88rem; }
+
+    /* ---- Cart Overlay + Panel ---- */
+    .ea-cart-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 200; }
+    .ea-cart-panel { position: fixed; bottom: 0; left: 0; right: 0; max-height: 70vh; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 30px rgba(0,0,0,0.2); z-index: 201; display: flex; flex-direction: column; overflow: hidden; animation: ea-slide-up 0.3s ease; }
+    @keyframes ea-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .ea-cart-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
+    .ea-cart-header h3 { font-size: 1.1rem; }
+    .ea-cart-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666; padding: 0 4px; }
+    .ea-cart-items { flex: 1; overflow-y: auto; padding: 12px 20px; }
+    .ea-cart-empty { text-align: center; color: #999; padding: 30px; }
+    .ea-cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+    .ea-cart-item-info { flex: 1; }
+    .ea-cart-item-name { font-weight: 600; font-size: 0.92rem; }
+    .ea-cart-item-price { color: #666; font-size: 0.85rem; margin-top: 2px; }
+    .ea-cart-item-controls { display: flex; align-items: center; gap: 8px; }
+    .ea-qty-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #ddd; background: #f8f8f8; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .ea-qty-btn:hover { background: var(--ea-primary); color: #fff; border-color: var(--ea-primary); }
+    .ea-qty { font-weight: 600; min-width: 20px; text-align: center; }
+    .ea-remove-btn { background: none; border: none; color: #dc3545; cursor: pointer; padding: 4px; font-size: 0.9rem; }
+    .ea-cart-summary { padding: 16px 20px; border-top: 1px solid #eee; background: #fafafa; }
+    .ea-summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9rem; color: #555; }
+    .ea-summary-total { font-weight: 700; font-size: 1.05rem; color: #222; padding-top: 8px; border-top: 1px solid #ddd; margin-top: 4px; }
+    .ea-checkout-btn { width: 100%; padding: 14px; background: var(--ea-primary); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 12px; font-family: var(--ea-font); transition: opacity 0.2s; }
+    .ea-checkout-btn:hover { opacity: 0.9; }
+    .ea-clear-btn { width: 100%; padding: 10px; background: transparent; color: #999; border: 1px solid #ddd; border-radius: 10px; font-size: 0.85rem; cursor: pointer; margin-top: 8px; font-family: var(--ea-font); }
+
+    /* ---- Checkout ---- */
+    .ea-checkout { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff; z-index: 300; overflow-y: auto; }
+    .ea-checkout-inner { max-width: 800px; margin: 0 auto; padding: 20px; }
+    .ea-checkout-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+    .ea-back-btn { background: none; border: 1px solid #ddd; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: #555; font-family: var(--ea-font); display: flex; align-items: center; gap: 6px; }
+    .ea-back-btn:hover { background: #f0f0f0; }
+    .ea-checkout-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; }
+    .ea-checkout-form-section h3, .ea-checkout-summary-section h3 { font-size: 1.1rem; margin-bottom: 16px; color: #222; }
+    .ea-field { margin-bottom: 14px; }
+    .ea-field label { display: block; font-size: 0.85rem; font-weight: 600; color: #555; margin-bottom: 4px; }
+    .ea-field input, .ea-field select, .ea-field textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; font-family: var(--ea-font); transition: border-color 0.2s; }
+    .ea-field input:focus, .ea-field select:focus, .ea-field textarea:focus { outline: none; border-color: var(--ea-primary); box-shadow: 0 0 0 3px rgba(0,0,0,0.05); }
+    .ea-place-order-btn { width: 100%; padding: 14px; background: var(--ea-primary); color: #fff; border: none; border-radius: 10px; font-size: 1.05rem; font-weight: 700; cursor: pointer; font-family: var(--ea-font); margin-top: 8px; transition: opacity 0.2s; }
+    .ea-place-order-btn:hover { opacity: 0.9; }
+    .ea-place-order-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .ea-order-items { border: 1px solid #eee; border-radius: 10px; overflow: hidden; background: #fafafa; }
+    .ea-order-item { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 0.88rem; }
+    .ea-order-item:last-child { border-bottom: none; }
+    .ea-order-totals { margin-top: 12px; }
+
+    /* ---- Payment Options ---- */
+    .ea-payment-options { display: flex; flex-direction: column; gap: 8px; }
+    .ea-payment-option { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 2px solid #e0e0e0; border-radius: 10px; cursor: pointer; transition: all 0.2s; background: #fff; }
+    .ea-payment-option:hover { border-color: var(--ea-primary); }
+    .ea-payment-option.active { border-color: var(--ea-primary); background: rgba(0,0,0,0.02); }
+    .ea-payment-option input[type="radio"] { display: none; }
+    .ea-payment-option i { font-size: 1.4rem; color: var(--ea-primary); flex-shrink: 0; }
+    .ea-payment-option div { flex: 1; }
+    .ea-payment-option strong { display: block; font-size: 0.92rem; color: #222; }
+    .ea-payment-option span { font-size: 0.8rem; color: #888; }
+    #ea-card-element { padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; background: #fff; min-height: 44px; transition: border-color 0.2s; }
+    #ea-card-element:focus-within { border-color: var(--ea-primary); }
+    #ea-card-element iframe { height: 100% !important; }
+    .ea-card-errors { color: #dc3545; font-size: 0.82rem; margin-top: 4px; min-height: 18px; }
+    #ea-card-container { margin-top: 4px; }
+
+    /* ---- Confirmation ---- */
+    .ea-confirmation { text-align: center; padding: 60px 20px; max-width: 500px; margin: 0 auto; }
+    .ea-conf-icon { font-size: 4rem; color: #28a745; margin-bottom: 16px; }
+    .ea-confirmation h2 { font-size: 1.8rem; margin-bottom: 8px; }
+    .ea-conf-id { font-size: 1.1rem; color: var(--ea-primary); font-weight: 600; margin-bottom: 16px; }
+    .ea-conf-time { font-size: 1rem; color: #555; margin: 8px 0; }
+    .ea-conf-detail { font-size: 0.9rem; color: #777; margin-bottom: 24px; }
+
+    /* ---- Toast ---- */
+    .ea-toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #28a745; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 0.88rem; font-weight: 500; z-index: 999; box-shadow: 0 4px 16px rgba(0,0,0,0.2); animation: ea-toast-in 0.3s ease; display: flex; align-items: center; gap: 8px; }
+    .ea-toast-error { background: #dc3545; }
+    @keyframes ea-toast-in { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+    /* ---- Portal embed overrides ---- */
+    .cp-embed-mode .cp-overlay { display: none !important; }
+    .cp-embed-mode .cp-modal { position: relative !important; top: 0 !important; left: 0 !important; transform: none !important; width: 100% !important; max-width: 100% !important; height: auto !important; max-height: none !important; border-radius: 0 !important; box-shadow: none !important; animation: none !important; opacity: 1 !important; visibility: visible !important; }
+    .cp-embed-mode .cp-modal-close { display: none !important; }
+    .cp-embed-mode .cp-sidebar { display: none !important; }
+    .cp-embed-mode .cp-dashboard { display: block !important; width: 100% !important; height: auto !important; max-height: none !important; }
+    .cp-embed-mode .cp-content { width: 100% !important; max-width: 100% !important; padding: 16px !important; border-radius: 0 !important; }
+    .cp-embed-mode .cp-auth-container { width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; }
+    .cp-embed-mode .cp-wheel-wrapper { width: 100% !important; max-width: 280px !important; margin: 0 auto !important; }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 640px) {
+      .ea-items-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; padding: 10px; }
+      .ea-item-img { height: 120px; }
+      .ea-item-img-placeholder { height: 80px; font-size: 1.5rem; }
+      .ea-item-body { padding: 10px; }
+      .ea-item-name { font-size: 0.9rem; }
+      .ea-item-desc { font-size: 0.75rem; -webkit-line-clamp: 1; }
+      .ea-item-footer { flex-direction: column; align-items: flex-start; gap: 8px; }
+      .ea-add-btn { width: 100%; justify-content: center; padding: 8px 12px; }
+      .ea-cat-btn { padding: 6px 14px; font-size: 0.82rem; }
+      .ea-categories { padding: 12px 10px 10px; gap: 6px; }
+      .ea-checkout-grid { grid-template-columns: 1fr; }
+      .ea-checkout-summary-section { order: -1; }
+      .ea-cart-panel { max-height: 85vh; }
+      .ea-checkout-inner { padding: 14px; }
+    }
+    @media (max-width: 380px) {
+      .ea-items-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"><\/script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"><\/script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"><\/script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-functions-compat.js"><\/script>
+  <script src="https://js.stripe.com/v3/"><\/script>
+  <script>firebase.initializeApp(${firebaseConfig});<\/script>
+</head>
+<body>
+  <div id="embed-root"></div>
+  <script>
+    var EMBED_CONFIG = {
+      restaurantId: '${restaurantId}',
+      locationId: '${effectiveLocationId}',
+      restaurantName: ${JSON.stringify(templateData.restaurantName)},
+      apiBaseUrl: '${templateData.apiBaseUrl}',
+      taxRate: ${templateData.taxRate},
+      promoId: '${promoId}',
+      initialTab: '${initialTab}',
+      primaryColor: '${templateData.primaryColor}',
+      secondaryColor: '${templateData.secondaryColor}',
+      accentColor: '${templateData.accentColor}',
+      fontFamily: '${templateData.fontFamily}',
+      stripeKey: '${templateData.stripePublishableKey}'
+    };
+    var PRELOADED_MENU = ${JSON.stringify(preloadedMenu)};
+  <\/script>
+  <script>${portalJs}<\/script>
+  <script>${embedAppJs}<\/script>
+  <script>
+    var embedApp = new EmbedApp(EMBED_CONFIG);
+  <\/script>
+</body>
+</html>`;
+
+        res.set({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'ALLOWALL'
+        });
+
+        return res.send(embedHtml);
+      }
 
       // ALWAYS load from local files first (they're included in the functions package and always up-to-date)
       // Only fall back to Storage if local files don't exist
@@ -1277,8 +1667,97 @@ exports.submitOrder = onRequest((request, response) => {
       // Generate order number (timestamp + random digits)
       const orderNumber = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-      // Calculate loyalty points earned (1 point per dollar spent)
-      const loyaltyPointsEarned = Math.floor(orderData.total || 0);
+      const db = admin.firestore();
+      const subtotal = orderData.subtotal || 0;
+      const taxRate = orderData.taxRate || 0;
+
+      // Validate and apply promo code if provided
+      let promoDiscount = 0;
+      let promoValidation = null;
+      if (orderData.promoCode) {
+        promoValidation = await validatePromoInternal(db, orderData.restaurantId, orderData.promoCode, subtotal);
+        if (promoValidation.valid) {
+          if (promoValidation.discountUnit === 'percentage') {
+            promoDiscount = subtotal * (promoValidation.discountValue / 100);
+          } else {
+            promoDiscount = promoValidation.discountValue;
+          }
+          promoDiscount = Math.min(promoDiscount, subtotal); // Cap at subtotal
+          promoDiscount = Math.round(promoDiscount * 100) / 100; // Round to 2 decimals
+        }
+      }
+
+      // Handle loyalty points redemption
+      let pointsDiscount = 0;
+      let pointsRedeemed = 0;
+      if (orderData.pointsToRedeem && orderData.customerId) {
+        try {
+          // Load rewards config for redemption rate
+          const configDoc = await db.doc(`restaurants/${orderData.restaurantId}/rewardsConfig/settings`).get();
+          const rc = configDoc.exists ? configDoc.data() : { loyalty: { redemptionRate: 100, minRedeemPoints: 100 } };
+          const redemptionRate = rc.loyalty?.redemptionRate || 100;
+          const minRedeem = rc.loyalty?.minRedeemPoints || 100;
+
+          // Verify customer has enough points
+          const customerRef = db.doc(`restaurants/${orderData.restaurantId}/customers/${orderData.customerId}`);
+          const customerSnap = await customerRef.get();
+          const availablePoints = customerSnap.exists ? (customerSnap.data().rewardPoints || 0) : 0;
+
+          const requestedPoints = Math.min(parseInt(orderData.pointsToRedeem) || 0, availablePoints);
+          if (requestedPoints >= minRedeem) {
+            pointsRedeemed = requestedPoints;
+            pointsDiscount = Math.round((pointsRedeemed / redemptionRate) * 100) / 100;
+            pointsDiscount = Math.min(pointsDiscount, subtotal - promoDiscount); // Don't exceed remaining
+          }
+        } catch (ptsErr) {
+          console.error('Error processing points redemption:', ptsErr);
+        }
+      }
+
+      // Handle spin reward redemption
+      let rewardDiscount = 0;
+      let redeemedRewardId = null;
+      if (orderData.rewardId && orderData.customerId) {
+        try {
+          const rewardDoc = await db.doc(`restaurants/${orderData.restaurantId}/customerRewards/${orderData.rewardId}`).get();
+          if (rewardDoc.exists) {
+            const reward = rewardDoc.data();
+            if (reward.userId === orderData.customerId && !reward.used) {
+              const expiresAt = reward.expiresAt?.toDate ? reward.expiresAt.toDate() : new Date(reward.expiresAt);
+              if (expiresAt > new Date()) {
+                redeemedRewardId = orderData.rewardId;
+                if (reward.prizeType === 'discount') {
+                  rewardDiscount = subtotal * (reward.prizeValue / 100);
+                } else if (reward.prizeType === 'flatDiscount') {
+                  rewardDiscount = reward.prizeValue;
+                }
+                rewardDiscount = Math.min(rewardDiscount, subtotal - promoDiscount - pointsDiscount);
+                rewardDiscount = Math.round(rewardDiscount * 100) / 100;
+              }
+            }
+          }
+        } catch (rwErr) {
+          console.error('Error processing reward redemption:', rwErr);
+        }
+      }
+
+      // Server-side total calculation (prevents client tampering)
+      const totalDiscount = promoDiscount + pointsDiscount + rewardDiscount;
+      const discountedSubtotal = subtotal - totalDiscount;
+      const serverTax = Math.round(discountedSubtotal * (taxRate / 100) * 100) / 100;
+      const serverTotal = Math.round((discountedSubtotal + serverTax) * 100) / 100;
+
+      // Load rewards config for points calculation
+      let pointsPerDollar = 1;
+      try {
+        const configDoc = await db.doc(`restaurants/${orderData.restaurantId}/rewardsConfig/settings`).get();
+        if (configDoc.exists && configDoc.data().loyalty?.pointsPerDollar) {
+          pointsPerDollar = configDoc.data().loyalty.pointsPerDollar;
+        }
+      } catch (e) { /* use default */ }
+
+      // Calculate loyalty points earned
+      const loyaltyPointsEarned = Math.floor(serverTotal * pointsPerDollar);
 
       // Create the order document
       // For website orders, locationId defaults to restaurantId (single location setup)
@@ -1290,10 +1769,18 @@ exports.submitOrder = onRequest((request, response) => {
         customerId: orderData.customerId || null, // Track authenticated customer
         customer: orderData.customer,
         items: orderData.items,
-        subtotal: orderData.subtotal || 0,
-        tax: orderData.tax || 0,
-        taxRate: orderData.taxRate || 0, // Store tax rate used
-        total: orderData.total,
+        subtotal: subtotal,
+        tax: serverTax,
+        taxRate: taxRate, // Store tax rate used
+        total: serverTotal,
+        promoCode: promoValidation?.valid ? orderData.promoCode : null,
+        promotionId: promoValidation?.valid ? promoValidation.promotionId : null,
+        promoDiscount: promoDiscount,
+        promoType: promoValidation?.valid ? promoValidation.type : null,
+        pointsRedeemed: pointsRedeemed || 0,
+        pointsDiscount: pointsDiscount || 0,
+        rewardId: redeemedRewardId || null,
+        rewardDiscount: rewardDiscount || 0,
         loyaltyPointsEarned, // Track points earned for this order
         pickupTime: orderData.pickupTime,
         orderType: orderData.orderType || 'pickup', // Default to pickup for website orders
@@ -1305,16 +1792,53 @@ exports.submitOrder = onRequest((request, response) => {
       };
 
       // Save order to Firestore
-      await admin.firestore()
-        .collection('orders')
-        .doc(orderNumber)
-        .set(orderDoc);
+      await db.collection('orders').doc(orderNumber).set(orderDoc);
 
       // Also save a reference in the restaurant's orders collection
-      await admin.firestore()
+      await db
         .collection(`restaurants/${orderData.restaurantId}/orders`)
         .doc(orderNumber)
         .set(orderDoc);
+
+      // Mark promo claim as used
+      if (promoValidation?.valid && promoValidation.claimId) {
+        try {
+          await db.doc(`restaurants/${orderData.restaurantId}/promotionClaims/${promoValidation.claimId}`).update({
+            used: true,
+            usedAt: FieldValue.serverTimestamp(),
+            usedInOrder: orderNumber
+          });
+          console.log(`Marked promo claim ${promoValidation.claimId} as used in order ${orderNumber}`);
+        } catch (promoErr) {
+          console.error('Error marking promo claim as used:', promoErr);
+        }
+      }
+
+      // Deduct redeemed points from customer
+      if (pointsRedeemed > 0 && orderData.customerId) {
+        try {
+          await db.doc(`restaurants/${orderData.restaurantId}/customers/${orderData.customerId}`).update({
+            rewardPoints: FieldValue.increment(-pointsRedeemed)
+          });
+          console.log(`Deducted ${pointsRedeemed} points from customer ${orderData.customerId}`);
+        } catch (ptsErr) {
+          console.error('Error deducting points:', ptsErr);
+        }
+      }
+
+      // Mark spin reward as used
+      if (redeemedRewardId) {
+        try {
+          await db.doc(`restaurants/${orderData.restaurantId}/customerRewards/${redeemedRewardId}`).update({
+            used: true,
+            usedAt: FieldValue.serverTimestamp(),
+            usedInOrder: orderNumber
+          });
+          console.log(`Marked reward ${redeemedRewardId} as used in order ${orderNumber}`);
+        } catch (rwErr) {
+          console.error('Error marking reward as used:', rwErr);
+        }
+      }
 
       // Update customer loyalty points if authenticated
       if (orderData.customerId) {
@@ -1546,7 +2070,7 @@ function generateDefaultSteps(actionText) {
 /**
  * Generate AI-powered social media content
  */
-exports.generateAIContent = onCall(async (request) => {
+exports.generateAIContent = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -1984,7 +2508,7 @@ Return as JSON array:
  * Parse a menu image/PDF using Gemini Vision API
  * Extracts categories and items with prices
  */
-exports.parseMenuImage = onCall(async (request) => {
+exports.parseMenuImage = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -2126,7 +2650,7 @@ Return ONLY the JSON, no other text.`
  * Get AI-powered analytics insights
  * Supports 3 tiers: essential, differentiation, premium
  */
-exports.getAIAnalytics = onCall(async (request) => {
+exports.getAIAnalytics = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -2513,8 +3037,12 @@ exports.getPromotions = onRequest(async (req, res) => {
           // Check if there are claims remaining
           const remainingClaims = (promo.maxClaims || 0) - (promo.claimCount || 0);
           if (promo.maxClaims === 0 || promo.maxClaims === null || remainingClaims > 0) {
+            const { discountValue, discountUnit } = parsePromoDiscount(promo);
             promotions.push({
               ...promo,
+              discountValue,
+              discountUnit,
+              autoClaimOnSignup: promo.autoClaimOnSignup || false,
               remainingClaims: promo.maxClaims ? remainingClaims : null,
               validUntil: validUntil.toISOString(),
               validFrom: validFrom.toISOString()
@@ -2586,14 +3114,23 @@ exports.claimPromotion = onCall(async (request) => {
         throw new HttpsError('resource-exhausted', 'This promotion has reached its claim limit');
       }
 
+      // Parse discount values for the claim record
+      const { discountValue, discountUnit } = parsePromoDiscount(promo);
+      const uniqueCode = generateUniquePromoCode();
+
       // Record the claim
       transaction.set(claimRef, {
         userId,
         promotionId,
         promotionTitle: promo.title,
         promoCode: promo.code,
+        uniqueCode,
         discount: promo.discount,
+        discountValue,
+        discountUnit,
         type: promo.type,
+        validUntil: promo.validUntil,
+        minOrderAmount: promo.minOrderAmount || 0,
         claimedAt: FieldValue.serverTimestamp(),
         used: false
       });
@@ -2605,7 +3142,10 @@ exports.claimPromotion = onCall(async (request) => {
 
       return {
         promoCode: promo.code,
+        uniqueCode,
         discount: promo.discount,
+        discountValue,
+        discountUnit,
         type: promo.type,
         title: promo.title
       };
@@ -2621,6 +3161,31 @@ exports.claimPromotion = onCall(async (request) => {
     if (error instanceof HttpsError) {
       throw error;
     }
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Validate a promo code for use at checkout or POS
+ */
+exports.validatePromoCode = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { restaurantId, promoCode, subtotal } = request.data;
+
+    if (!restaurantId || !promoCode) {
+      throw new HttpsError('invalid-argument', 'Restaurant ID and promo code are required');
+    }
+
+    const db = admin.firestore();
+    const result = await validatePromoInternal(db, restaurantId, promoCode, subtotal || 0);
+    return result;
+  } catch (error) {
+    console.error('Error validating promo code:', error);
+    if (error instanceof HttpsError) throw error;
     throw new HttpsError('internal', error.message);
   }
 });
@@ -2766,11 +3331,12 @@ exports.getCustomerRewards = onCall(async (request) => {
       }
     });
 
-    // Get claimed promotions
+    // Get ALL claimed promotions (both used and unused)
+    // Used promos must still appear so the portal can show "Used" badge
+    // and prevent re-claiming
     const claimsSnapshot = await db
       .collection(`restaurants/${restaurantId}/promotionClaims`)
       .where('userId', '==', userId)
-      .where('used', '==', false)
       .get();
 
     const claimedPromotions = [];
@@ -2782,11 +3348,37 @@ exports.getCustomerRewards = onCall(async (request) => {
     const spinDoc = await db.doc(`restaurants/${restaurantId}/customerSpins/${userId}`).get();
     const spinInfo = spinDoc.exists ? spinDoc.data() : { streak: 0, lastSpinDate: null };
 
+    // Get rewards config (loyalty settings, spin prizes)
+    let rewardsConfig = null;
+    try {
+      const configDoc = await db.doc(`restaurants/${restaurantId}/rewardsConfig/settings`).get();
+      if (configDoc.exists) {
+        rewardsConfig = configDoc.data();
+        // Remove server-only fields
+        delete rewardsConfig.updatedAt;
+      }
+    } catch (configErr) {
+      console.log('Could not load rewards config:', configErr.message);
+    }
+
+    // Get customer doc for points balance
+    let customerPoints = 0;
+    try {
+      const customerDoc = await db.doc(`restaurants/${restaurantId}/customers/${userId}`).get();
+      if (customerDoc.exists) {
+        customerPoints = customerDoc.data().rewardPoints || 0;
+      }
+    } catch (cpErr) {
+      console.log('Could not load customer points:', cpErr.message);
+    }
+
     return {
       success: true,
       rewards,
       claimedPromotions,
-      spinInfo
+      spinInfo,
+      rewardsConfig,
+      customerPoints
     };
   } catch (error) {
     console.error('Error getting customer rewards:', error);

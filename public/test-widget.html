@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Golden Fork - Fine Dining (Widget Test Page)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Open Sans', sans-serif; color: #333; line-height: 1.7; }
+
+        /* ===== NAVBAR ===== */
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 40px;
+            background: #1a1a2e;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .navbar .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #e2b04a;
+            text-decoration: none;
+        }
+        .navbar nav a {
+            color: #ccc;
+            text-decoration: none;
+            margin-left: 28px;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+        .navbar nav a:hover, .navbar nav a.active { color: #e2b04a; }
+
+        /* ===== HERO ===== */
+        .hero {
+            background: linear-gradient(rgba(26,26,46,0.7), rgba(26,26,46,0.85)),
+                        url('https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1600&q=80') center/cover;
+            color: white;
+            text-align: center;
+            padding: 120px 20px 100px;
+        }
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 3.2rem;
+            margin-bottom: 16px;
+            color: #e2b04a;
+        }
+        .hero p { font-size: 1.15rem; max-width: 600px; margin: 0 auto 30px; opacity: 0.9; }
+        .hero-btn {
+            display: inline-block;
+            padding: 14px 36px;
+            background: #e2b04a;
+            color: #1a1a2e;
+            text-decoration: none;
+            font-weight: 600;
+            border-radius: 50px;
+            font-size: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .hero-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(226,176,74,0.4); }
+
+        /* ===== ABOUT SECTION ===== */
+        .about {
+            display: flex;
+            align-items: center;
+            gap: 50px;
+            max-width: 1100px;
+            margin: 80px auto;
+            padding: 0 30px;
+        }
+        .about img {
+            width: 400px;
+            height: 300px;
+            object-fit: cover;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+        }
+        .about h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            margin-bottom: 16px;
+            color: #1a1a2e;
+        }
+        .about p { color: #555; }
+
+        /* ===== SECTION HEADER ===== */
+        .section-header {
+            text-align: center;
+            padding: 60px 20px 30px;
+        }
+        .section-header h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.2rem;
+            color: #1a1a2e;
+            margin-bottom: 10px;
+        }
+        .section-header p { color: #777; font-size: 1.05rem; }
+        .section-header .divider {
+            width: 60px; height: 3px; background: #e2b04a; margin: 16px auto 0; border-radius: 2px;
+        }
+
+        /* ===== WIDGET CONTAINER ===== */
+        #koda-menu {
+            max-width: 1200px;
+            margin: 0 auto 80px;
+            padding: 0 20px;
+            min-height: 400px;
+        }
+
+        /* ===== CONTACT SECTION ===== */
+        .contact {
+            background: #f8f6f0;
+            padding: 60px 20px;
+            text-align: center;
+        }
+        .contact h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            margin-bottom: 20px;
+            color: #1a1a2e;
+        }
+        .contact-grid {
+            display: flex;
+            justify-content: center;
+            gap: 50px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+        .contact-item { text-align: center; }
+        .contact-item h4 { color: #e2b04a; margin-bottom: 6px; }
+        .contact-item p { color: #555; }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            background: #1a1a2e;
+            color: #999;
+            text-align: center;
+            padding: 30px 20px;
+            font-size: 0.85rem;
+        }
+
+        /* ===== TEST CONTROLS ===== */
+        .test-controls {
+            position: fixed;
+            bottom: 80px;
+            left: 20px;
+            background: #fff;
+            border: 2px solid #e2b04a;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 99997;
+            max-width: 280px;
+        }
+        .test-controls h4 {
+            font-size: 0.85rem;
+            color: #1a1a2e;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        .test-controls button {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            text-align: left;
+            transition: all 0.2s;
+        }
+        .test-controls button:hover { background: #e2b04a; color: #1a1a2e; border-color: #e2b04a; }
+        .test-controls button.active { background: #1a1a2e; color: #e2b04a; border-color: #1a1a2e; }
+        .test-controls .status {
+            font-size: 0.75rem;
+            color: #28a745;
+            margin-top: 8px;
+            padding: 6px;
+            background: #d4edda;
+            border-radius: 4px;
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .about { flex-direction: column; text-align: center; }
+            .about img { width: 100%; max-width: 400px; }
+            .hero h1 { font-size: 2.2rem; }
+            .navbar { padding: 14px 20px; }
+            .navbar nav a { margin-left: 16px; font-size: 0.85rem; }
+            .test-controls { bottom: auto; top: 70px; left: 10px; right: 10px; max-width: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <div class="navbar">
+        <a href="#" class="logo">The Golden Fork</a>
+        <nav>
+            <a href="#home" class="active">Home</a>
+            <a href="#about">About</a>
+            <a href="#menu">Menu & Order</a>
+            <a href="#contact">Contact</a>
+        </nav>
+    </div>
+
+    <!-- HERO -->
+    <section class="hero" id="home">
+        <h1>The Golden Fork</h1>
+        <p>Experience culinary excellence with our carefully crafted dishes, made from the finest locally-sourced ingredients.</p>
+        <a href="#menu" class="hero-btn">View Menu & Order Online</a>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="about" id="about">
+        <img src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80" alt="Restaurant interior">
+        <div>
+            <h2>Our Story</h2>
+            <p>Since 2015, The Golden Fork has been serving the community with passion and dedication. Our chef brings over 20 years of culinary experience from kitchens around the world.</p>
+            <p style="margin-top: 12px;">Every dish tells a story — from our hand-rolled pasta to our signature desserts, we pour love into everything we create.</p>
+        </div>
+    </section>
+
+    <!-- MENU & ORDERING SECTION -->
+    <section id="menu">
+        <div class="section-header">
+            <h2>Menu & Online Ordering</h2>
+            <p>Browse our menu and order directly — no need to leave our website!</p>
+            <div class="divider"></div>
+        </div>
+
+        <!-- This is where the Koda Carte widget gets embedded -->
+        <div id="koda-menu"></div>
+    </section>
+
+    <!-- CONTACT -->
+    <section class="contact" id="contact">
+        <h2>Visit Us</h2>
+        <div class="contact-grid">
+            <div class="contact-item">
+                <h4>Address</h4>
+                <p>123 Gourmet Avenue<br>San Francisco, CA 94102</p>
+            </div>
+            <div class="contact-item">
+                <h4>Hours</h4>
+                <p>Mon-Thu: 11am - 10pm<br>Fri-Sat: 11am - 11pm<br>Sun: 12pm - 9pm</p>
+            </div>
+            <div class="contact-item">
+                <h4>Contact</h4>
+                <p>(415) 555-FORK<br>hello@thegoldenfork.com</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <div class="footer">
+        &copy; 2026 The Golden Fork. All rights reserved. Powered by Koda Carte.
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TEST CONTROLS (for testing different modes) -->
+    <!-- ========================================== -->
+    <div class="test-controls" id="test-controls">
+        <h4>Widget Test Controls</h4>
+        <button class="active" onclick="switchMode('inline')">Inline Embed (current)</button>
+        <button onclick="switchMode('float')">Floating Button</button>
+        <button onclick="switchMode('page')">Full Page Section</button>
+        <div class="status" id="test-status"></div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- KODA CARTE WIDGET INTEGRATION              -->
+    <!-- This is the actual code a client would add -->
+    <!-- ========================================== -->
+    <script src="widget.js"></script>
+    <script>
+        // Default: initialize in inline mode
+        var currentMode = 'inline';
+
+        // Use the restaurant ID from test-order.html for consistency
+        var RESTAURANT_ID = 'gurkha-kitchen-express';
+
+        KodaCarte.init({
+            restaurantId: RESTAURANT_ID,
+            mode: 'inline',
+            target: '#koda-menu',
+            primaryColor: '#1a1a2e',
+            onReady: function() {
+                showStatus('Widget loaded successfully!');
+            },
+            onOrderPlaced: function(data) {
+                showStatus('Order placed! ' + JSON.stringify(data));
+            },
+            onCartUpdate: function(data) {
+                showStatus('Cart updated: ' + (data.count || 0) + ' items');
+            },
+            onAuthChange: function(data) {
+                showStatus('Auth: ' + (data.authenticated ? 'Signed in' : 'Signed out'));
+            }
+        });
+
+        // Test control functions
+        function switchMode(mode) {
+            if (mode === currentMode) return;
+            currentMode = mode;
+
+            // Update button states
+            var btns = document.querySelectorAll('.test-controls button');
+            btns.forEach(function(b) { b.classList.remove('active'); });
+            event.target.classList.add('active');
+
+            // Remove existing widget elements
+            var existing = document.querySelectorAll('.kc-widget, .kc-float-btn, .kc-drawer, .kc-drawer-overlay');
+            existing.forEach(function(el) { el.remove(); });
+
+            // Clear inline container
+            var inlineTarget = document.getElementById('koda-menu');
+            if (inlineTarget) inlineTarget.innerHTML = '';
+
+            // Re-initialize with new mode
+            var config = {
+                restaurantId: RESTAURANT_ID,
+                mode: mode,
+                primaryColor: '#1a1a2e',
+                onReady: function() { showStatus('Widget loaded in ' + mode + ' mode!'); },
+                onOrderPlaced: function(data) { showStatus('Order placed!'); },
+                onCartUpdate: function(data) { showStatus('Cart: ' + (data.count || 0) + ' items'); },
+                onAuthChange: function(data) { showStatus('Auth: ' + (data.authenticated ? 'In' : 'Out')); }
+            };
+
+            if (mode === 'inline') {
+                config.target = '#koda-menu';
+            } else if (mode === 'page') {
+                config.target = '#koda-menu';
+            } else if (mode === 'float') {
+                config.buttonText = 'Order Online';
+            }
+
+            KodaCarte.init(config);
+            showStatus('Switched to ' + mode + ' mode');
+        }
+
+        function showStatus(msg) {
+            var el = document.getElementById('test-status');
+            el.textContent = msg;
+            el.style.display = 'block';
+            clearTimeout(el._timer);
+            el._timer = setTimeout(function() { el.style.display = 'none'; }, 4000);
+        }
+    </script>
+</body>
+</html>

@@ -1,11 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, query, orderBy, serverTimestamp } from 'firebase/firestore';
 import './PromotionsRewards.css';
 
+/**
+ * Parse discount string into numeric value and unit (client-side mirror of server helper)
+ */
+function parsePromoDiscountClient(type, discountStr) {
+    if (!discountStr) return { discountValue: 0, discountUnit: 'percentage' };
+    const s = String(discountStr);
+    if (type === 'percentage' || type === 'flashSale' || type === 'storeLaunch') {
+        if (s.includes('%')) return { discountValue: parseFloat(s.replace('%', '')) || 0, discountUnit: 'percentage' };
+        if (s.startsWith('$')) return { discountValue: parseFloat(s.replace('$', '')) || 0, discountUnit: 'amount' };
+        const val = parseFloat(s);
+        if (!isNaN(val)) return { discountValue: val, discountUnit: 'percentage' };
+    }
+    if (s.includes('%')) return { discountValue: parseFloat(s.replace('%', '')) || 0, discountUnit: 'percentage' };
+    if (s.startsWith('$')) return { discountValue: parseFloat(s.replace('$', '')) || 0, discountUnit: 'amount' };
+    return { discountValue: 0, discountUnit: 'percentage' };
+}
+
 const PromotionsRewards = () => {
-    const { user } = useAuth();
+    const { currentUser: user } = useAuth();
     const [activeTab, setActiveTab] = useState('promotions');
     const [promotions, setPromotions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -24,14 +41,82 @@ const PromotionsRewards = () => {
         minOrderAmount: '',
         bogoItems: [],
         bogoQuantityLimit: '',
-        freeItemName: ''
+        freeItemName: '',
+        autoClaimOnSignup: false
     });
+    const [showFlyer, setShowFlyer] = useState(null);
+    const [restaurantSlug, setRestaurantSlug] = useState('');
+    const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
+    const toastTimerRef = useRef(null);
+    const showToast = (message, type = 'success') => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToast({ message, type });
+        toastTimerRef.current = setTimeout(() => setToast(null), type === 'error' ? 6000 : 4000);
+    };
+    const [rewardsConfig, setRewardsConfig] = useState({
+        loyalty: {
+            pointsPerDollar: 1,
+            redemptionRate: 100,
+            minRedeemPoints: 100,
+            tiers: [
+                { name: 'Bronze', icon: '🥉', minPoints: 0 },
+                { name: 'Silver', icon: '🥈', minPoints: 500 },
+                { name: 'Gold', icon: '🥇', minPoints: 1000 },
+                { name: 'Platinum', icon: '💎', minPoints: 2000 }
+            ]
+        },
+        spinWheel: {
+            enabled: true,
+            cooldownHours: 24,
+            prizes: [
+                { id: 'try_again', name: 'Try Again', type: 'none', value: 0, weight: 40, icon: '😅', color: '#6c757d', message: 'Better luck next time!' },
+                { id: 'discount_10', name: '10% Off', type: 'discount', value: 10, weight: 20, icon: '🎉', color: '#3498db', message: 'You won 10% off your next order!' },
+                { id: 'bonus_50', name: '50 Bonus Points', type: 'points', value: 50, weight: 15, icon: '⭐', color: '#27ae60', message: '50 bonus points added!' },
+                { id: 'double_points', name: 'Double Points', type: 'multiplier', value: 2, weight: 10, icon: '✨', color: '#9b59b6', message: 'Next order earns DOUBLE points!' },
+                { id: 'free_drink', name: 'Free Drink', type: 'freeItem', value: 'drink', weight: 10, icon: '🥤', color: '#e67e22', message: 'Enjoy a FREE drink!' },
+                { id: 'free_dessert', name: 'Free Dessert', type: 'freeItem', value: 'dessert', weight: 5, icon: '🍰', color: '#f1c40f', message: 'You won a FREE dessert!' }
+            ]
+        }
+    });
+    const [rewardsSaving, setRewardsSaving] = useState(false);
 
     useEffect(() => {
         if (user) {
             loadPromotions();
+            loadRewardsConfig();
+            // Load restaurant slug for flyer URL generation
+            getDoc(doc(db, 'restaurants', user.uid)).then(snap => {
+                if (snap.exists()) setRestaurantSlug(snap.data().slug || user.uid);
+            }).catch(() => {});
         }
     }, [user]);
+
+    const loadRewardsConfig = async () => {
+        try {
+            const configDoc = await getDoc(doc(db, `restaurants/${user.uid}/rewardsConfig/settings`));
+            if (configDoc.exists()) {
+                setRewardsConfig(configDoc.data());
+            }
+        } catch (err) {
+            console.error('Error loading rewards config:', err);
+        }
+    };
+
+    const saveRewardsConfig = async () => {
+        try {
+            setRewardsSaving(true);
+            await setDoc(doc(db, `restaurants/${user.uid}/rewardsConfig/settings`), {
+                ...rewardsConfig,
+                updatedAt: serverTimestamp()
+            });
+            showToast('Rewards configuration saved successfully!');
+        } catch (err) {
+            console.error('Error saving rewards config:', err);
+            showToast('Failed to save rewards config: ' + (err.message || 'Unknown error'), 'error');
+        } finally {
+            setRewardsSaving(false);
+        }
+    };
 
     const loadPromotions = async () => {
         try {
@@ -75,6 +160,11 @@ const PromotionsRewards = () => {
                 updatedAt: serverTimestamp()
             };
 
+            // Add parsed discount values for programmatic use
+            const { discountValue, discountUnit } = parsePromoDiscountClient(formData.type, formData.discount);
+            promoData.discountValue = discountValue;
+            promoData.discountUnit = discountUnit;
+
             // Add type-specific fields
             if (formData.type === 'bogo') {
                 promoData.bogoItems = formData.bogoItems;
@@ -82,6 +172,9 @@ const PromotionsRewards = () => {
             }
             if (formData.type === 'freeItem') {
                 promoData.freeItemName = formData.freeItemName;
+            }
+            if (formData.type === 'storeLaunch') {
+                promoData.autoClaimOnSignup = formData.autoClaimOnSignup;
             }
 
             if (editingPromo) {
@@ -97,7 +190,7 @@ const PromotionsRewards = () => {
             loadPromotions();
         } catch (err) {
             console.error('Error saving promotion:', err);
-            alert('Failed to save promotion');
+            showToast('Failed to save promotion: ' + (err.message || err.code || 'Unknown error'), 'error');
         }
     };
 
@@ -107,6 +200,7 @@ const PromotionsRewards = () => {
             bogo: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&h=250&fit=crop',
             freeItem: 'https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=400&h=250&fit=crop',
             flashSale: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=250&fit=crop',
+            storeLaunch: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400&h=250&fit=crop',
             festive: 'https://images.unsplash.com/photo-1482049016gy-a5cdbc892d5d?w=400&h=250&fit=crop'
         };
         return images[type] || images.percentage;
@@ -126,7 +220,8 @@ const PromotionsRewards = () => {
             minOrderAmount: '',
             bogoItems: [],
             bogoQuantityLimit: '',
-            freeItemName: ''
+            freeItemName: '',
+            autoClaimOnSignup: false
         });
     };
 
@@ -144,7 +239,8 @@ const PromotionsRewards = () => {
             minOrderAmount: promo.minOrderAmount?.toString() || '',
             bogoItems: promo.bogoItems || [],
             bogoQuantityLimit: promo.bogoQuantityLimit?.toString() || '',
-            freeItemName: promo.freeItemName || ''
+            freeItemName: promo.freeItemName || '',
+            autoClaimOnSignup: promo.autoClaimOnSignup || false
         });
         setEditingPromo(promo);
         setShowForm(true);
@@ -158,7 +254,7 @@ const PromotionsRewards = () => {
             loadPromotions();
         } catch (err) {
             console.error('Error deleting promotion:', err);
-            alert('Failed to delete promotion');
+            showToast('Failed to delete promotion', 'error');
         }
     };
 
@@ -171,7 +267,7 @@ const PromotionsRewards = () => {
             loadPromotions();
         } catch (err) {
             console.error('Error toggling publish:', err);
-            alert('Failed to update promotion');
+            showToast('Failed to update promotion', 'error');
         }
     };
 
@@ -219,6 +315,12 @@ const PromotionsRewards = () => {
             name: '⚡ Flash Sale',
             description: 'Limited-time discount with urgency',
             defaults: { type: 'percentage', discount: '30%', title: 'Flash Sale - Today Only!' }
+        },
+        {
+            id: 'storeLaunch',
+            name: '🚀 Store Launch',
+            description: 'Grand opening promo with QR code flyer',
+            defaults: { type: 'storeLaunch', discount: '15%', title: 'Grand Opening Special!', autoClaimOnSignup: true }
         }
     ];
 
@@ -234,6 +336,12 @@ const PromotionsRewards = () => {
 
     return (
         <div className="promotions-rewards">
+            {toast && (
+                <div className={`pr-toast pr-toast-${toast.type}`} onClick={() => setToast(null)}>
+                    <span>{toast.type === 'error' ? '⚠' : '✓'} {toast.message}</span>
+                    <button className="pr-toast-close" onClick={() => setToast(null)}>×</button>
+                </div>
+            )}
             <div className="page-header">
                 <div>
                     <h1>🎁 Promotions & Rewards</h1>
@@ -312,6 +420,7 @@ const PromotionsRewards = () => {
                                             <option value="bogo">Buy 1 Get 1 Free</option>
                                             <option value="freeItem">Free Item</option>
                                             <option value="flashSale">Flash Sale</option>
+                                            <option value="storeLaunch">Store Launch</option>
                                         </select>
                                     </div>
                                 </div>
@@ -364,6 +473,19 @@ const PromotionsRewards = () => {
                                             onChange={(e) => setFormData({ ...formData, freeItemName: e.target.value })}
                                             placeholder="e.g., Free Chocolate Cake"
                                         />
+                                    </div>
+                                )}
+
+                                {formData.type === 'storeLaunch' && (
+                                    <div className="form-group">
+                                        <label className="checkbox-label">
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.autoClaimOnSignup}
+                                                onChange={(e) => setFormData({ ...formData, autoClaimOnSignup: e.target.checked })}
+                                            />
+                                            <span>Auto-claim when customer signs up via QR code link</span>
+                                        </label>
                                     </div>
                                 )}
 
@@ -468,6 +590,9 @@ const PromotionsRewards = () => {
                                             >
                                                 {promo.isPublished ? 'Unpublish' : 'Publish'}
                                             </button>
+                                            <button className="btn-flyer" onClick={() => setShowFlyer(promo)} title="Generate Flyer with QR Code">
+                                                <i className="bi bi-qr-code"></i> Flyer
+                                            </button>
                                             <button className="btn-ghost" onClick={() => handleEdit(promo)}>
                                                 <i className="bi bi-pencil"></i>
                                             </button>
@@ -504,45 +629,293 @@ const PromotionsRewards = () => {
                 </div>
             )}
 
+            {showFlyer && (
+                <StoreLaunchFlyer
+                    promo={showFlyer}
+                    restaurantSlug={restaurantSlug}
+                    onClose={() => setShowFlyer(null)}
+                />
+            )}
+
             {activeTab === 'rewards' && (
                 <div className="rewards-config">
-                    <h3>Rewards Configuration</h3>
+                    <div className="rewards-config-header">
+                        <h3>Rewards Configuration</h3>
+                        <button className="btn-primary" onClick={saveRewardsConfig} disabled={rewardsSaving}>
+                            {rewardsSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                    </div>
+
                     <div className="config-section">
                         <h4>Loyalty Points System</h4>
-                        <p>Customers earn <strong>1 point per $1</strong> spent on orders.</p>
-                        <div className="tier-grid">
-                            <div className="tier-card bronze">
-                                <h5>🥉 Bronze</h5>
-                                <p>0 - 499 points</p>
+                        <div className="config-row">
+                            <div className="config-field">
+                                <label>Points earned per $1 spent</label>
+                                <input type="number" min="0" step="0.5" value={rewardsConfig.loyalty.pointsPerDollar}
+                                    onChange={e => setRewardsConfig(prev => ({
+                                        ...prev,
+                                        loyalty: { ...prev.loyalty, pointsPerDollar: parseFloat(e.target.value) || 0 }
+                                    }))} />
                             </div>
-                            <div className="tier-card silver">
-                                <h5>🥈 Silver</h5>
-                                <p>500 - 999 points</p>
+                            <div className="config-field">
+                                <label>Points needed for $1 discount</label>
+                                <input type="number" min="1" value={rewardsConfig.loyalty.redemptionRate}
+                                    onChange={e => setRewardsConfig(prev => ({
+                                        ...prev,
+                                        loyalty: { ...prev.loyalty, redemptionRate: parseInt(e.target.value) || 100 }
+                                    }))} />
                             </div>
-                            <div className="tier-card gold">
-                                <h5>🥇 Gold</h5>
-                                <p>1000 - 1999 points</p>
-                            </div>
-                            <div className="tier-card platinum">
-                                <h5>💎 Platinum</h5>
-                                <p>2000+ points</p>
+                            <div className="config-field">
+                                <label>Minimum points to redeem</label>
+                                <input type="number" min="0" value={rewardsConfig.loyalty.minRedeemPoints}
+                                    onChange={e => setRewardsConfig(prev => ({
+                                        ...prev,
+                                        loyalty: { ...prev.loyalty, minRedeemPoints: parseInt(e.target.value) || 0 }
+                                    }))} />
                             </div>
                         </div>
+
+                        <h5 style={{ marginTop: '1.5rem', marginBottom: '0.75rem' }}>Loyalty Tiers</h5>
+                        <div className="tier-grid">
+                            {rewardsConfig.loyalty.tiers.map((tier, idx) => (
+                                <div className={`tier-card ${tier.name.toLowerCase()}`} key={idx}>
+                                    <div className="tier-card-edit">
+                                        <input type="text" value={tier.icon} className="tier-icon-input"
+                                            onChange={e => {
+                                                const tiers = [...rewardsConfig.loyalty.tiers];
+                                                tiers[idx] = { ...tiers[idx], icon: e.target.value };
+                                                setRewardsConfig(prev => ({ ...prev, loyalty: { ...prev.loyalty, tiers } }));
+                                            }} />
+                                        <input type="text" value={tier.name} className="tier-name-input"
+                                            onChange={e => {
+                                                const tiers = [...rewardsConfig.loyalty.tiers];
+                                                tiers[idx] = { ...tiers[idx], name: e.target.value };
+                                                setRewardsConfig(prev => ({ ...prev, loyalty: { ...prev.loyalty, tiers } }));
+                                            }} />
+                                    </div>
+                                    <div className="tier-points-input">
+                                        <label>Min Points</label>
+                                        <input type="number" min="0" value={tier.minPoints}
+                                            onChange={e => {
+                                                const tiers = [...rewardsConfig.loyalty.tiers];
+                                                tiers[idx] = { ...tiers[idx], minPoints: parseInt(e.target.value) || 0 };
+                                                setRewardsConfig(prev => ({ ...prev, loyalty: { ...prev.loyalty, tiers } }));
+                                            }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="config-hint">
+                            Example: With {rewardsConfig.loyalty.pointsPerDollar} point(s) per $1 and {rewardsConfig.loyalty.redemptionRate} points = $1 discount, a customer spending $50 earns {Math.floor(50 * rewardsConfig.loyalty.pointsPerDollar)} points.
+                            Redeeming {rewardsConfig.loyalty.redemptionRate} points saves $1.
+                        </p>
                     </div>
+
                     <div className="config-section">
-                        <h4>Daily Spin Wheel</h4>
-                        <p>Customers can spin once every 24 hours for a chance to win rewards:</p>
-                        <ul className="spin-prizes">
-                            <li>😅 Try Again (40% chance)</li>
-                            <li>🎉 10% Off (20% chance)</li>
-                            <li>⭐ 50 Bonus Points (15% chance)</li>
-                            <li>✨ Double Points on Next Order (10% chance)</li>
-                            <li>🥤 Free Drink (10% chance)</li>
-                            <li>🍰 Free Dessert (5% chance)</li>
-                        </ul>
+                        <div className="config-section-header">
+                            <h4>Daily Spin Wheel</h4>
+                            <label className="toggle-label">
+                                <input type="checkbox" checked={rewardsConfig.spinWheel.enabled}
+                                    onChange={e => setRewardsConfig(prev => ({
+                                        ...prev,
+                                        spinWheel: { ...prev.spinWheel, enabled: e.target.checked }
+                                    }))} />
+                                <span>{rewardsConfig.spinWheel.enabled ? 'Enabled' : 'Disabled'}</span>
+                            </label>
+                        </div>
+
+                        <div className="config-row" style={{ marginBottom: '1rem' }}>
+                            <div className="config-field">
+                                <label>Cooldown (hours between spins)</label>
+                                <input type="number" min="1" max="168" value={rewardsConfig.spinWheel.cooldownHours}
+                                    onChange={e => setRewardsConfig(prev => ({
+                                        ...prev,
+                                        spinWheel: { ...prev.spinWheel, cooldownHours: parseInt(e.target.value) || 24 }
+                                    }))} />
+                            </div>
+                        </div>
+
+                        <div className="spin-prizes-table">
+                            <div className="spin-prizes-header">
+                                <span>Icon</span>
+                                <span>Prize Name</span>
+                                <span>Type</span>
+                                <span>Value</span>
+                                <span>Weight %</span>
+                                <span>Color</span>
+                                <span></span>
+                            </div>
+                            {rewardsConfig.spinWheel.prizes.map((prize, idx) => (
+                                <div className="spin-prize-row" key={prize.id || idx}>
+                                    <input type="text" value={prize.icon} className="prize-icon-input"
+                                        onChange={e => {
+                                            const prizes = [...rewardsConfig.spinWheel.prizes];
+                                            prizes[idx] = { ...prizes[idx], icon: e.target.value };
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }} />
+                                    <input type="text" value={prize.name}
+                                        onChange={e => {
+                                            const prizes = [...rewardsConfig.spinWheel.prizes];
+                                            prizes[idx] = { ...prizes[idx], name: e.target.value };
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }} />
+                                    <select value={prize.type}
+                                        onChange={e => {
+                                            const prizes = [...rewardsConfig.spinWheel.prizes];
+                                            prizes[idx] = { ...prizes[idx], type: e.target.value };
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }}>
+                                        <option value="none">No Prize</option>
+                                        <option value="discount">% Discount</option>
+                                        <option value="points">Bonus Points</option>
+                                        <option value="multiplier">Point Multiplier</option>
+                                        <option value="freeItem">Free Item</option>
+                                        <option value="flatDiscount">$ Off</option>
+                                    </select>
+                                    <input type="text" value={prize.value}
+                                        onChange={e => {
+                                            const prizes = [...rewardsConfig.spinWheel.prizes];
+                                            const val = prize.type === 'freeItem' ? e.target.value : (parseFloat(e.target.value) || 0);
+                                            prizes[idx] = { ...prizes[idx], value: val };
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }} />
+                                    <input type="number" min="0" max="100" value={prize.weight}
+                                        onChange={e => {
+                                            const prizes = [...rewardsConfig.spinWheel.prizes];
+                                            prizes[idx] = { ...prizes[idx], weight: parseInt(e.target.value) || 0 };
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }} />
+                                    <input type="color" value={prize.color}
+                                        onChange={e => {
+                                            const prizes = [...rewardsConfig.spinWheel.prizes];
+                                            prizes[idx] = { ...prizes[idx], color: e.target.value };
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }} />
+                                    <button className="btn-ghost danger" title="Remove"
+                                        onClick={() => {
+                                            const prizes = rewardsConfig.spinWheel.prizes.filter((_, i) => i !== idx);
+                                            setRewardsConfig(prev => ({ ...prev, spinWheel: { ...prev.spinWheel, prizes } }));
+                                        }}>
+                                        <i className="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <button className="btn-ghost" style={{ marginTop: '0.75rem' }}
+                            onClick={() => {
+                                const newPrize = {
+                                    id: `prize_${Date.now()}`,
+                                    name: 'New Prize',
+                                    type: 'none',
+                                    value: 0,
+                                    weight: 10,
+                                    icon: '🎁',
+                                    color: '#95a5a6',
+                                    message: 'You won a prize!'
+                                };
+                                setRewardsConfig(prev => ({
+                                    ...prev,
+                                    spinWheel: { ...prev.spinWheel, prizes: [...prev.spinWheel.prizes, newPrize] }
+                                }));
+                            }}>
+                            <i className="bi bi-plus-circle"></i> Add Prize
+                        </button>
+                        <p className="config-hint" style={{ marginTop: '0.75rem' }}>
+                            Total weight: {rewardsConfig.spinWheel.prizes.reduce((sum, p) => sum + p.weight, 0)}%
+                            {rewardsConfig.spinWheel.prizes.reduce((sum, p) => sum + p.weight, 0) !== 100 &&
+                                <span className="config-warning"> (should equal 100%)</span>
+                            }
+                        </p>
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+const StoreLaunchFlyer = ({ promo, restaurantSlug, onClose }) => {
+    const flyerRef = useRef(null);
+    const websiteBaseUrl = 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite';
+    const flyerUrl = `${websiteBaseUrl}?restaurant=${restaurantSlug}&promo=${promo.id}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(flyerUrl)}`;
+    const qrDownloadUrl = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(flyerUrl)}&format=png`;
+
+    const isStoreLaunch = promo.type === 'storeLaunch';
+    const headerTitle = isStoreLaunch ? "You're Invited!" : "Special Offer!";
+    const headerSubtitle = isStoreLaunch ? "We're excited to welcome you" : "Don't miss this exclusive deal";
+    const scanText = isStoreLaunch
+        ? "Scan to register & claim your offer!"
+        : "Scan to claim your discount!";
+
+    const handlePrint = () => {
+        const printContent = flyerRef.current;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html><head><title>Promotion Flyer</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; padding: 20px; }
+                .flyer { width: 600px; border: 3px solid #333; border-radius: 16px; overflow: hidden; text-align: center; }
+                .flyer-header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 40px 30px 30px; }
+                .flyer-header h1 { font-size: 32px; margin-bottom: 8px; }
+                .flyer-header p { font-size: 16px; opacity: 0.9; }
+                .flyer-body { padding: 30px; }
+                .flyer-discount { font-size: 64px; font-weight: 800; color: #667eea; margin: 10px 0; }
+                .flyer-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+                .flyer-desc { font-size: 16px; color: #555; margin-bottom: 20px; }
+                .flyer-qr { margin: 20px auto; }
+                .flyer-qr img { border: 4px solid #eee; border-radius: 12px; }
+                .flyer-scan { font-size: 18px; font-weight: 600; color: #333; margin: 12px 0 4px; }
+                .flyer-code { font-size: 14px; color: #888; margin-bottom: 8px; }
+                .flyer-footer { background: #f8f9fa; padding: 16px; font-size: 13px; color: #888; }
+                @media print { body { padding: 0; } .flyer { border: none; } }
+            </style></head><body>
+            ${printContent.innerHTML}
+            </body></html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
+    };
+
+    return (
+        <div className="flyer-modal-overlay" onClick={onClose}>
+            <div className="flyer-modal" onClick={e => e.stopPropagation()}>
+                <div className="flyer-modal-header">
+                    <h3>Promotion Flyer</h3>
+                    <button className="btn-ghost" onClick={onClose}><i className="bi bi-x-lg"></i></button>
+                </div>
+                <div ref={flyerRef}>
+                    <div className="flyer">
+                        <div className="flyer-header">
+                            <h1>{headerTitle}</h1>
+                            <p>{headerSubtitle}</p>
+                        </div>
+                        <div className="flyer-body">
+                            <div className="flyer-discount">{promo.discount}</div>
+                            <div className="flyer-title">{promo.title}</div>
+                            <div className="flyer-desc">{promo.description}</div>
+                            <div className="flyer-qr">
+                                <img src={qrCodeUrl} alt="Scan to claim offer" width="200" height="200" />
+                            </div>
+                            <div className="flyer-scan">{scanText}</div>
+                            <div className="flyer-code">
+                                Valid until: {promo.validUntil ? new Date(promo.validUntil).toLocaleDateString() : 'N/A'}
+                            </div>
+                        </div>
+                        <div className="flyer-footer">
+                            Powered by Koda Carte
+                        </div>
+                    </div>
+                </div>
+                <div className="flyer-modal-actions">
+                    <button className="btn-primary" onClick={handlePrint}>
+                        <i className="bi bi-printer"></i> Print Flyer
+                    </button>
+                    <a href={qrDownloadUrl} download={`promo-qr-${promo.code}.png`} className="btn-ghost">
+                        <i className="bi bi-download"></i> Download QR Code
+                    </a>
+                </div>
+            </div>
         </div>
     );
 };

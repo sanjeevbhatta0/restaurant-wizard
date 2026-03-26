@@ -122,6 +122,73 @@
     padding: 2.5rem;
 }
 
+.cp-promo-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: linear-gradient(135deg, #667eea15, #764ba215);
+    border: 1px solid #667eea40;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 1.5rem;
+}
+
+.cp-promo-banner-icon {
+    font-size: 1.6rem;
+    color: #667eea;
+    flex-shrink: 0;
+}
+
+.cp-promo-banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cp-promo-banner-text strong {
+    font-size: 0.95rem;
+    color: #333;
+}
+
+.cp-promo-banner-text span {
+    font-size: 0.82rem;
+    color: #666;
+}
+
+/* Inline toast notifications (replaces browser alerts) */
+.cp-toast {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin: 12px 16px;
+    font-size: 0.92rem;
+    font-weight: 500;
+    animation: cpToastSlide 0.3s ease;
+    z-index: 9999;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+}
+.cp-toast-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+.cp-toast-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+.cp-toast-info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+@keyframes cpToastSlide {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .cp-auth-header {
     text-align: center;
     margin-bottom: 2rem;
@@ -269,6 +336,32 @@
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Full-page loading state */
+.cp-loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    min-height: 200px;
+}
+
+.cp-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #e0e0e0;
+    border-top-color: var(--cp-primary, #3498db);
+    border-radius: 50%;
+    animation: cp-spin 0.8s linear infinite;
+    margin-bottom: 16px;
+}
+
+.cp-loading-text {
+    color: #666;
+    font-size: 0.95rem;
+    font-weight: 500;
 }
 
 .cp-alert {
@@ -624,6 +717,23 @@
     z-index: 1;
 }
 
+/* Used promo styling */
+.cp-promo-used {
+    opacity: 0.65;
+    filter: grayscale(30%);
+}
+
+.cp-promo-used .cp-promo-image::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.cp-badge-used {
+    background: #95a5a6 !important;
+}
+
 .cp-promo-remaining {
     display: block;
     font-size: 0.75rem;
@@ -726,6 +836,81 @@
 
 .cp-order-reorder:hover {
     background: var(--cp-sidebar-bg-light);
+}
+
+/* Order card (used in embed combined orders view) */
+.cp-order-card {
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+}
+
+.cp-order-card.cp-order-active {
+    border-left: 4px solid var(--cp-success);
+}
+
+.cp-order-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--cp-border);
+}
+
+.cp-order-card-body {
+    padding: 0.75rem 1rem;
+}
+
+.cp-order-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--cp-border);
+    background: rgba(0,0,0,0.02);
+}
+
+.cp-order-status-badge,
+.cp-status-active {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: rgba(39, 174, 96, 0.1);
+    color: var(--cp-success);
+    white-space: nowrap;
+}
+
+/* Embed mode footer with sign-out */
+.cp-embed-footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--cp-border);
+    text-align: center;
+}
+
+.cp-embed-logout-btn {
+    padding: 0.6rem 1.5rem;
+    background: transparent;
+    border: 1px solid var(--cp-border);
+    color: var(--cp-text-light);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--cp-transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cp-embed-logout-btn:hover {
+    background: var(--cp-error);
+    color: white;
+    border-color: var(--cp-error);
 }
 
 /* Nav Badge for Active Orders Count */
@@ -887,11 +1072,134 @@
    8. DAILY KITCHEN SPIN (Wheel of Fortune)
    ========================================= */
 
+/* Points Summary */
+.cp-points-summary {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    background: linear-gradient(135deg, var(--cp-sidebar-bg), #1a1a2e);
+    color: white;
+    border-radius: var(--cp-radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.cp-points-balance {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 100px;
+}
+
+.cp-points-number {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.cp-points-label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 0.25rem;
+}
+
+.cp-points-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.cp-points-redeemable {
+    font-size: 1rem;
+    color: #4ade80;
+}
+
+.cp-points-needed {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.cp-points-rate {
+    font-size: 0.78rem;
+    opacity: 0.6;
+}
+
+/* My Rewards */
+.cp-my-rewards {
+    background: white;
+    border-radius: var(--cp-radius);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--cp-shadow);
+}
+
+.cp-my-rewards h4 {
+    font-size: 1rem;
+    color: var(--cp-sidebar-bg);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cp-rewards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.cp-reward-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid var(--cp-accent, #e74c3c);
+}
+
+.cp-reward-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cp-reward-info strong {
+    font-size: 0.9rem;
+}
+
+.cp-reward-info span {
+    font-size: 0.78rem;
+    color: var(--cp-text-light);
+}
+
+.cp-reward-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.3rem 0.6rem;
+    background: #d4edda;
+    color: #155724;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.cp-rewards-hint {
+    font-size: 0.78rem;
+    color: var(--cp-text-light);
+    margin-top: 0.75rem;
+    margin-bottom: 0;
+}
+
 .cp-spin-container {
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 1rem;
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
 }
 
 .cp-spin-header {
@@ -936,20 +1244,7 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: conic-gradient(from 0deg,
-            #6c757d 0deg 144deg,
-            /* Try Again (40%) */
-            #3498db 144deg 216deg,
-            /* 10% Off (20%) */
-            #27ae60 216deg 270deg,
-            /* 50 Bonus Points (15%) */
-            #9b59b6 270deg 306deg,
-            /* Double Points (10%) */
-            #e67e22 306deg 342deg,
-            /* Free Drink (10%) */
-            #f1c40f 342deg 360deg
-            /* Free Dessert (5%) */
-        );
+    /* Background set dynamically via inline style */
     box-shadow:
         0 0 0 8px var(--cp-sidebar-bg),
         0 0 0 12px white,

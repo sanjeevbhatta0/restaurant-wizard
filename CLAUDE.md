@@ -1,6 +1,6 @@
 # CLAUDE.md — Koda Carte (Restaurant Wizard) Project Guide
 
-> **Last Updated:** March 22, 2026
+> **Last Updated:** March 26, 2026
 
 ---
 
@@ -375,6 +375,7 @@ restaurant-wizard/
   1. **POS payments** — Card swipe/tap at restaurant (createPaymentIntent → confirmStripePayment)
   2. **Signup payments** — One-time tier payment during registration (createTierPayment)
   3. **Refunds** — Full/partial refunds (processStripeRefund)
+  4. **Website/Widget online payments** — Customer "Pay Now" at checkout (stripe.createPaymentMethod → paymentMethodId stored on order)
 - **TODO:** Replace one-time payments with Stripe Subscriptions for recurring billing
 
 ---
@@ -444,6 +445,65 @@ firebase deploy --only firestore:rules
 
 ---
 
+## 🔄 Portal Parity — Website Builder ↔ Widget Embed
+
+**CRITICAL DEVELOPMENT RULE:** The customer-facing portal exists in **two rendering modes** — the Website Builder customer portal and the Widget embed portal. **Any change to one MUST be applied to the other.** These share the same `portal.js` but have different host environments.
+
+### Architecture
+
+| File | Role |
+|------|------|
+| `functions/templates/customer-portal/portal.js` | Shared customer portal logic (auth, orders, promotions, rewards, spin wheel) |
+| `functions/templates/customer-portal/portal.css` | Shared portal styles |
+| `functions/templates/customer-portal/embed-app.js` | Widget-specific wrapper (menu, cart, checkout, tab switching) |
+| `functions/index.js` (serveWebsite) | Serves both modes; injects `.cp-embed-mode` CSS overrides for widget |
+
+### How Embed Mode Works
+
+- `serveWebsite` detects `?embed=true` query param → serves `embed-app.js` + `portal.js`
+- Embed mode sets `.cp-embed-mode` class on portal root → CSS overrides flatten modals, hide sidebar/overlay
+- `embed-app.js` exposes `window.customerPortal = this.portal` so portal.js onclick handlers work
+- Portal methods that assume website builder DOM (e.g., `renderFullPageDashboard()`, `hideFullPageDashboard()`) must check `this.config.embedMode` and use embed-compatible alternatives
+
+### Development Checklist (MUST follow for any portal change)
+
+1. **portal.js changes**: If adding/modifying any method, verify it works in both modes:
+   - Website Builder mode: full-page dashboard with sidebar, overlay, modal positioning
+   - Widget embed mode: inline content, no sidebar/overlay, `embedApp.*` for cart/navigation
+2. **DOM assumptions**: Never assume `main-content`, `account-page-container`, or other website builder DOM elements exist. Always check `this.config.embedMode` first.
+3. **Global references**: Portal onclick handlers use `customerPortal.*` — this works because embed-app.js sets `window.customerPortal = this.portal`. Any new global handler must follow this pattern.
+4. **CSS overrides**: If adding new fixed-width/fixed-position styles to portal.css, add corresponding `.cp-embed-mode` overrides in the `serveWebsite` function's embed CSS block (`functions/index.js`, search for "Portal embed overrides").
+5. **Data loading**: Embed mode loads data (orders, promotions, customerData) in `switchView()` and `handleLogin()`/`handleSignup()`. New data sources must be added to these loading paths.
+6. **Navigation**: Use `embedApp.switchView('menu')` in embed mode instead of manipulating DOM directly. The `hideFullPageDashboard()` method already handles this.
+7. **Cart operations**: In embed mode, use `embedApp.addToCart()` / `embedApp.updateCartBar()` instead of `window.cart` or direct DOM manipulation.
+8. **Tests**: Run `npm run test:widget` to verify widget/website tests pass after any portal change. Both unit tests (`embedApp.test.js`, `websiteServing.test.js`) and integration tests (`widgetOrderFlow.test.js`, `websiteOrderFlow.test.js`) must pass.
+
+### Known Embed Mode Adaptations (Reference)
+
+These methods in `portal.js` have embed-mode branches — use them as a pattern for future changes:
+- `renderDashboardContent()` — 'orders' view shows `renderAllOrders()` (combined active+past) instead of `renderOrderHistory()` (past only)
+- `renderDashboard()` — appends a visible Sign Out button in the content area (since sidebar is hidden)
+- `hideFullPageDashboard()` — calls `embedApp.switchView('menu')` in embed mode
+- `reorder()` — uses `embedApp.addToCart()` in embed mode
+- `claimPromo()` — calls `this.showDashboard()` instead of `this.renderFullPageDashboard()` in embed mode
+- `handleLogin()` / `handleSignup()` — show `showLoadingState()` spinner, load all data, and set `embedApp.portalDataLoaded = true`
+- `handleLogout()` — clears cached data arrays and resets `embedApp.portalDataLoaded`
+- `getSpinPrizes()` — has default fallback prizes for when no rewardsConfig loaded
+
+### Widget Tab ↔ Portal View Mapping
+
+The `widget.js` header tabs map to portal views via `embed-app.js switchView()`. **Any new portal view MUST have a corresponding widget tab.**
+
+| Widget Tab (`widget.js`) | embed-app.js tab | Portal `currentView` | Renders |
+|--------------------------|-----------------|---------------------|---------|
+| Menu | `menu` | N/A (shows menu) | EmbedApp menu |
+| My Account | `account` | `account` | Account Overview + Sign Out |
+| Orders | `orders` | `orders` | `renderAllOrders()` (active + past combined) |
+| Promos | `promotions` | `promotions` | Promotions list |
+| Rewards | `rewards` | `rewards` | Spin wheel + points + rewards |
+
+---
+
 ## ⚠️ Known Issues & TODOs
 
 ### Critical for Production Launch
@@ -486,15 +546,18 @@ REACT_APP_AUTH_EMULATOR_PORT=9099
 
 ### `functions/.env`
 ```
-GEMINI_API_KEY=AIzaSyCc3XmZesCox7aodXN23zv3HDrhCwJFZ0A
+# Gemini API Key is stored securely via Firebase Secrets
+# To update: firebase functions:secrets:set GEMINI_API_KEY
 ```
 
 ---
 
 ## 🧪 Testing
 
+**REQUIREMENT: All new development MUST include unit, integration, and E2E tests.** Any new feature, bug fix, or enhancement must have corresponding tests before it is considered complete. Tests protect critical customer-facing flows from regression.
+
 **Test Framework:** Jest + React Testing Library (via Create React App)
-**Total Tests:** 138 passing across 8 test suites + 12 E2E tests (with emulator)
+**Total Tests:** ~342 passing across 17 test suites (includes ~18 E2E tests with emulator)
 **Build Gate:** `npm run build` runs all tests first — build fails if any test fails.
 
 ### Test Scripts
@@ -505,6 +568,7 @@ npm run test:unit           # Run unit tests only
 npm run test:integration    # Run integration tests only
 npm run test:e2e            # Run E2E tests (requires emulators running)
 npm run test:pos            # Run all POS tests (unit + integration + e2e)
+npm run test:widget         # Run widget/website tests (unit + integration + e2e)
 npm run test:ci             # CI mode: all tests with coverage, no watch
 npm run build               # Tests MUST pass before build proceeds
 npm run build:only          # Skip tests, build only
@@ -517,13 +581,19 @@ src/__tests__/
 ├── unit/
 │   ├── pos.logic.test.js       # 52 tests — Price calc, discounts, item mgmt, totals, status workflow
 │   ├── orderUsage.test.js      # 17 tests — Tier limits, overage calc, hard caps, billing periods
-│   └── stripeService.test.js   # 14 tests — Tier pricing, billing multipliers, multi-location
+│   ├── stripeService.test.js   # 14 tests — Tier pricing, billing multipliers, multi-location
+│   ├── embedApp.test.js        # ~53 tests — Widget cart, pricing, tax, order construction, Stripe payment, menu caching, data staleness
+│   └── websiteServing.test.js  # 30 tests — Slug resolution, template data, menu filtering, order validation
 ├── integration/
 │   ├── posOrderFlow.test.js    # 14 tests — Full order lifecycle with mocked Firestore
 │   ├── kitchenServerPayment.test.js # 27 tests — Kitchen, Server, Payment component logic
-│   └── onlineOrderFlow.test.js # 8 tests — Website orders, prepaid vs pay-at-store
+│   ├── onlineOrderFlow.test.js # 8 tests — Website orders, prepaid vs pay-at-store
+│   ├── widgetOrderFlow.test.js # ~30 tests — Widget config, menu→cart→checkout, postMessage, Stripe payment
+│   └── websiteOrderFlow.test.js # 21 tests — Template rendering, customer orders, multi-location, POS integration
 ├── e2e/
-│   └── posFullFlow.test.js     # 14 tests — Real Firestore emulator E2E (12 emulator + 2 mock)
+│   ├── posFullFlow.test.js     # 14 tests — Real Firestore emulator E2E (12 emulator + 2 mock)
+│   ├── widgetE2E.test.js       # 10 tests — Widget menu/order/lifecycle via emulator (8 emulator + 2 mock)
+│   └── websiteOrderE2E.test.js # 8 tests — Website order lifecycle via emulator (6 emulator + 2 mock)
 └── helpers/                    # Not a test suite
 ```
 

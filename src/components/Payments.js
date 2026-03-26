@@ -201,6 +201,12 @@ const Payments = () => {
   const [completedOrders, setCompletedOrders] = useState({}); // { tableNumber: [orders] }
   const [restaurantData, setRestaurantData] = useState(null);
 
+  // Promo code
+  const [promoCode, setPromoCode] = useState('');
+  const [promoValidation, setPromoValidation] = useState(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState('');
+
   // Payment method selection
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash' or 'card'
   const [stripePromise, setStripePromise] = useState(null);
@@ -596,6 +602,49 @@ const Payments = () => {
     setTotal(Math.max(0, finalTotal));
   };
 
+  const validateAndApplyPromo = async () => {
+    if (!promoCode.trim()) return;
+    setPromoLoading(true);
+    setPromoError('');
+    try {
+      const { getFunctions, httpsCallable } = await import('firebase/functions');
+      const { app } = await import('../firebase');
+      const functions = getFunctions(app);
+      const validatePromoCodeFn = httpsCallable(functions, 'validatePromoCode');
+      const result = await validatePromoCodeFn({
+        restaurantId: currentUser.uid,
+        promoCode: promoCode.trim(),
+        subtotal
+      });
+      if (result.data.valid) {
+        setPromoValidation(result.data);
+        if (result.data.discountUnit === 'percentage') {
+          setDiscountAmount(result.data.discountValue);
+          setDiscountType('percentage');
+        } else {
+          setDiscountAmount(result.data.discountValue);
+          setDiscountType('amount');
+        }
+      } else {
+        setPromoError(result.data.reason);
+        setPromoValidation(null);
+      }
+    } catch (err) {
+      setPromoError(err.message || 'Failed to validate promo code');
+      setPromoValidation(null);
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
+  const clearPromo = () => {
+    setPromoCode('');
+    setPromoValidation(null);
+    setPromoError('');
+    setDiscountAmount(0);
+    setDiscountType('amount');
+  };
+
   const handleProcessPayment = async () => {
     if (selectedOrders.length === 0) {
       setError('Please select at least one order to pay');
@@ -640,6 +689,9 @@ const Payments = () => {
             tipType,
             total,
             paymentMethod: 'cash',
+            promoCode: promoValidation?.promoCode || null,
+            promotionId: promoValidation?.promotionId || null,
+            promoDiscount: promoValidation ? (discountType === 'percentage' ? subtotal * (discountAmount / 100) : discountAmount) : 0,
             paidAt: new Date().toISOString()
           },
           updatedAt: new Date()
@@ -647,6 +699,16 @@ const Payments = () => {
       });
 
       await Promise.all(updatePromises);
+
+      // Mark promo claim as used after successful payment
+      if (promoValidation?.claimId) {
+        try {
+          const claimRef = doc(db, `restaurants/${currentUser.uid}/promotionClaims/${promoValidation.claimId}`);
+          await updateDoc(claimRef, { used: true, usedAt: new Date(), usedInOrder: selectedOrders[0] });
+        } catch (promoErr) {
+          console.error('Error marking promo as used:', promoErr);
+        }
+      }
 
       // Broadcast batch status update via LAN relay
       lanSyncService.sendBatchUpdate(selectedOrders, { status: 'completed', updatedAt: new Date() });
@@ -704,6 +766,16 @@ const Payments = () => {
         const order = orders.find(o => o.id === orderId);
         return order?.orderNumber || orderId;
       });
+
+      // Mark promo claim as used after successful card payment
+      if (promoValidation?.claimId) {
+        try {
+          const claimRef = doc(db, `restaurants/${currentUser.uid}/promotionClaims/${promoValidation.claimId}`);
+          await updateDoc(claimRef, { used: true, usedAt: new Date(), usedInOrder: selectedOrders[0] });
+        } catch (promoErr) {
+          console.error('Error marking promo as used:', promoErr);
+        }
+      }
 
       // Log payment activity
       await activityService.logPaymentActivity(currentUser.uid, {
@@ -779,6 +851,9 @@ const Payments = () => {
     setTipAmount(0);
     setTaxRate(8.5);
     setPaymentMethod('cash');
+    setPromoCode('');
+    setPromoValidation(null);
+    setPromoError('');
   };
 
   // Handle online order selection for viewing details
@@ -1481,6 +1556,36 @@ const Payments = () => {
                         </Col>
                       </Row>
                       <Form.Text className="text-muted">Tax Amount: ${taxAmount.toFixed(2)}</Form.Text>
+                    </Form.Group>
+
+                    <h6 className="mb-3 mt-4">Promo Code</h6>
+                    <Form.Group className="mb-3">
+                      <Row>
+                        <Col>
+                          <Form.Control
+                            type="text"
+                            value={promoCode}
+                            onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                            placeholder="Enter customer promo code"
+                            disabled={!!promoValidation}
+                          />
+                        </Col>
+                        <Col xs="auto">
+                          {promoValidation ? (
+                            <Button variant="outline-danger" onClick={clearPromo}>Remove</Button>
+                          ) : (
+                            <Button variant="outline-primary" onClick={validateAndApplyPromo} disabled={promoLoading || !promoCode.trim()}>
+                              {promoLoading ? 'Checking...' : 'Apply'}
+                            </Button>
+                          )}
+                        </Col>
+                      </Row>
+                      {promoValidation && (
+                        <Form.Text className="text-success d-block mt-1">
+                          Applied: {promoValidation.title} ({promoValidation.discountValue}{promoValidation.discountUnit === 'percentage' ? '%' : '$'} off)
+                        </Form.Text>
+                      )}
+                      {promoError && <Form.Text className="text-danger d-block mt-1">{promoError}</Form.Text>}
                     </Form.Group>
 
                     <h6 className="mb-3 mt-4">Discount</h6>

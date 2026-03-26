@@ -2,6 +2,44 @@
     padding: 2rem;
     max-width: 1400px;
     margin: 0 auto;
+    position: relative;
+}
+
+/* Inline toast notifications */
+.pr-toast {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    animation: prToastSlide 0.3s ease;
+    cursor: pointer;
+}
+.pr-toast-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+.pr-toast-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+.pr-toast-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: inherit;
+    padding: 0 0 0 12px;
+    line-height: 1;
+}
+@keyframes prToastSlide {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .promotions-rewards .page-header {
@@ -57,6 +95,26 @@
     background: #fee;
     border-color: #f88;
     color: #c00;
+}
+
+.promotions-rewards .btn-flyer {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.promotions-rewards .btn-flyer:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
 }
 
 /* Tabs */
@@ -429,6 +487,17 @@
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
+.promotions-rewards .rewards-config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.promotions-rewards .rewards-config-header h3 {
+    margin: 0;
+}
+
 .promotions-rewards .config-section {
     margin-bottom: 2rem;
     padding-bottom: 1.5rem;
@@ -446,9 +515,70 @@
     color: #333;
 }
 
+.promotions-rewards .config-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.promotions-rewards .config-section-header h4 {
+    margin: 0;
+}
+
+.promotions-rewards .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.promotions-rewards .toggle-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
 .promotions-rewards .config-section p {
     color: #666;
     margin: 0 0 1rem;
+}
+
+.promotions-rewards .config-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.promotions-rewards .config-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.promotions-rewards .config-field label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #555;
+}
+
+.promotions-rewards .config-field input {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.promotions-rewards .config-hint {
+    font-size: 0.82rem;
+    color: #888;
+    margin-top: 0.5rem;
+}
+
+.promotions-rewards .config-warning {
+    color: #e74c3c;
+    font-weight: 600;
 }
 
 .promotions-rewards .tier-grid {
@@ -461,6 +591,60 @@
     padding: 1rem;
     border-radius: 10px;
     text-align: center;
+}
+
+.promotions-rewards .tier-card-edit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+
+.promotions-rewards .tier-icon-input {
+    width: 36px;
+    text-align: center;
+    background: rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.5) !important;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    padding: 0.25rem !important;
+    color: inherit;
+}
+
+.promotions-rewards .tier-name-input {
+    width: 80px;
+    text-align: center;
+    background: rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.5) !important;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.25rem !important;
+    color: inherit;
+}
+
+.promotions-rewards .tier-points-input {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.promotions-rewards .tier-points-input label {
+    font-size: 0.7rem;
+    opacity: 0.8;
+}
+
+.promotions-rewards .tier-points-input input {
+    width: 70px;
+    text-align: center;
+    background: rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.5) !important;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    padding: 0.25rem !important;
+    color: inherit;
 }
 
 .promotions-rewards .tier-card h5 {
@@ -493,20 +677,57 @@
     color: white;
 }
 
-.promotions-rewards .spin-prizes {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
+/* Spin Prizes Table */
+.promotions-rewards .spin-prizes-table {
+    border: 1px solid #eee;
+    border-radius: 8px;
+    overflow: hidden;
 }
 
-.promotions-rewards .spin-prizes li {
-    padding: 0.5rem 1rem;
+.promotions-rewards .spin-prizes-header {
+    display: grid;
+    grid-template-columns: 50px 1fr 120px 80px 70px 50px 40px;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
     background: #f8f9fa;
-    border-radius: 8px;
-    font-size: 0.9rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.promotions-rewards .spin-prize-row {
+    display: grid;
+    grid-template-columns: 50px 1fr 120px 80px 70px 50px 40px;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid #f0f0f0;
+    align-items: center;
+}
+
+.promotions-rewards .spin-prize-row input,
+.promotions-rewards .spin-prize-row select {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    width: 100%;
+}
+
+.promotions-rewards .prize-icon-input {
+    text-align: center;
+    font-size: 1.1rem !important;
+}
+
+.promotions-rewards .spin-prize-row input[type="color"] {
+    padding: 2px;
+    height: 30px;
+    cursor: pointer;
+}
+
+.promotions-rewards .spin-prize-row .btn-ghost {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
 }
 
 /* Responsive */
@@ -540,4 +761,153 @@
     .promotions-rewards .spin-prizes {
         grid-template-columns: 1fr;
     }
+}
+
+/* Checkbox label */
+.promotions-rewards .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+
+.promotions-rewards .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #667eea;
+}
+
+/* Flyer modal */
+.flyer-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.flyer-modal {
+    background: white;
+    border-radius: 16px;
+    max-width: 680px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.flyer-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #eee;
+}
+
+.flyer-modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.flyer {
+    width: 100%;
+    text-align: center;
+}
+
+.flyer .flyer-header {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 40px 30px 30px;
+}
+
+.flyer .flyer-header h1 {
+    font-size: 28px;
+    margin-bottom: 6px;
+}
+
+.flyer .flyer-header p {
+    font-size: 15px;
+    opacity: 0.9;
+}
+
+.flyer .flyer-body {
+    padding: 24px;
+}
+
+.flyer .flyer-discount {
+    font-size: 56px;
+    font-weight: 800;
+    color: #667eea;
+    margin: 8px 0;
+}
+
+.flyer .flyer-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.flyer .flyer-desc {
+    font-size: 15px;
+    color: #555;
+    margin-bottom: 16px;
+}
+
+.flyer .flyer-qr {
+    margin: 16px auto;
+}
+
+.flyer .flyer-qr img {
+    border: 3px solid #eee;
+    border-radius: 12px;
+}
+
+.flyer .flyer-scan {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin: 10px 0 4px;
+}
+
+.flyer .flyer-code {
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 6px;
+}
+
+.flyer .flyer-footer {
+    background: #f8f9fa;
+    padding: 14px;
+    font-size: 12px;
+    color: #aaa;
+}
+
+.flyer-modal-actions {
+    display: flex;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid #eee;
+    justify-content: center;
+}
+
+.flyer-modal-actions a.btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: #667eea;
+    padding: 0.5rem 1rem;
+    border: 1px solid #667eea;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.flyer-modal-actions a.btn-ghost:hover {
+    background: #f0f0ff;
 }

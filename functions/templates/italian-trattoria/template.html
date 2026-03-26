@@ -1307,7 +1307,8 @@
                 restaurantName: '{{restaurantName}}',
                 apiBaseUrl: '{{apiBaseUrl}}',
                 stripePublishableKey: '{{stripePublishableKey}}',
-                taxRate: {{taxRate}} / 100
+                taxRate: {{taxRate}} / 100,
+                promoId: '{{promoId}}'
         };
 
             const hours = {{hoursJson}};
@@ -1450,7 +1451,101 @@
             function saveCart() { localStorage.setItem(`cart_${CONFIG.restaurantId}`, JSON.stringify(cart)); }
             function loadCart() { const saved = localStorage.getItem(`cart_${CONFIG.restaurantId}`); if (saved) { cart = JSON.parse(saved); updateCartUI(); } }
             function clearCart() { cart = []; saveCart(); updateCartUI(); }
-            function getCartTotals() { const subtotal = cart.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0); const tax = subtotal * CONFIG.taxRate; return { subtotal, tax, total: subtotal + tax }; }
+            let appliedPromo = null;
+            let redeemingPoints = 0;
+            let selectedRewardId = null;
+
+            function getRewardsConfig() {
+                return window.customerPortal?.rewardsConfig?.loyalty || { redemptionRate: 100, minRedeemPoints: 100 };
+            }
+
+            function getAvailablePoints() {
+                return window.customerPortal?.user?.rewardPoints || window.customerPortal?.customerPoints || 0;
+            }
+
+            function getAvailableRewards() {
+                return (window.customerPortal?.customerRewards || []).filter(r => !r.used && r.prizeType !== 'none' && r.prizeType !== 'points' && r.prizeType !== 'multiplier');
+            }
+
+            function getCartTotals() {
+                const subtotal = cart.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0);
+                let discount = 0;
+                if (appliedPromo) {
+                    if (appliedPromo.discountUnit === 'percentage') {
+                        discount = subtotal * (appliedPromo.discountValue / 100);
+                    } else {
+                        discount = appliedPromo.discountValue;
+                    }
+                    discount = Math.min(discount, subtotal);
+                    discount = Math.round(discount * 100) / 100;
+                }
+
+                // Points discount
+                let ptsDiscount = 0;
+                if (redeemingPoints > 0) {
+                    const rc = getRewardsConfig();
+                    ptsDiscount = Math.round((redeemingPoints / (rc.redemptionRate || 100)) * 100) / 100;
+                    ptsDiscount = Math.min(ptsDiscount, subtotal - discount);
+                }
+
+                // Reward discount
+                let rwDiscount = 0;
+                if (selectedRewardId) {
+                    const reward = (window.customerPortal?.customerRewards || []).find(r => r.id === selectedRewardId);
+                    if (reward) {
+                        if (reward.prizeType === 'discount') {
+                            rwDiscount = subtotal * (reward.prizeValue / 100);
+                        } else if (reward.prizeType === 'flatDiscount') {
+                            rwDiscount = reward.prizeValue;
+                        }
+                        rwDiscount = Math.min(rwDiscount, subtotal - discount - ptsDiscount);
+                        rwDiscount = Math.round(rwDiscount * 100) / 100;
+                    }
+                }
+
+                const totalDiscount = discount + ptsDiscount + rwDiscount;
+                const taxable = subtotal - totalDiscount;
+                const tax = Math.round(taxable * CONFIG.taxRate * 100) / 100;
+                const total = Math.round((taxable + tax) * 100) / 100;
+                return { subtotal, discount, ptsDiscount, rwDiscount, tax, total };
+            }
+
+            function getAutoPromoCode() {
+                if (window.customerPortal?.claimedPromotions?.length > 0) {
+                    const firstUnused = window.customerPortal.claimedPromotions.find(c => !c.used);
+                    return firstUnused?.uniqueCode || firstUnused?.promoCode || '';
+                }
+                return '';
+            }
+
+            async function applyPromoCode() {
+                if (appliedPromo) {
+                    appliedPromo = null;
+                    renderCheckoutForm();
+                    return;
+                }
+                const code = document.getElementById('promoCodeInput')?.value?.trim();
+                if (!code) return;
+                const feedback = document.getElementById('promoFeedback');
+                if (feedback) feedback.textContent = 'Validating...';
+                try {
+                    const validatePromoCode = firebase.functions().httpsCallable('validatePromoCode');
+                    const result = await validatePromoCode({
+                        restaurantId: CONFIG.restaurantId,
+                        promoCode: code,
+                        subtotal: getCartTotals().subtotal
+                    });
+                    if (result.data.valid) {
+                        appliedPromo = result.data;
+                        if (feedback) feedback.innerHTML = '<span style="color:#27ae60">&#10003; ' + result.data.title + ' applied!</span>';
+                        renderCheckoutForm();
+                    } else {
+                        if (feedback) feedback.innerHTML = '<span style="color:#e74c3c">' + result.data.reason + '</span>';
+                    }
+                } catch (err) {
+                    if (feedback) feedback.innerHTML = '<span style="color:#e74c3c">Failed to validate code</span>';
+                }
+            }
 
             function updateCartUI() {
                 const cartItems = document.getElementById('cartItems');
@@ -1538,7 +1633,76 @@
                     </div>
                 </div>
                 <div id="cardElementContainer" style="display:none;"><div class="form-group"><label>Card Details</label><div id="card-element"></div><div id="card-errors"></div></div></div>
-                <div class="order-summary"><h4>Order Summary</h4>${cart.map(item => `<div class="summary-item"><span>${item.quantity}x ${item.name}</span><span>$${(item.finalPrice * item.quantity).toFixed(2)}</span></div>`).join('')}<div class="summary-item"><span>Subtotal</span><span>$${totals.subtotal.toFixed(2)}</span></div><div class="summary-item"><span>Tax</span><span>$${totals.tax.toFixed(2)}</span></div><div class="summary-item summary-total"><span>Total</span><span>$${totals.total.toFixed(2)}</span></div></div>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label>Promo Code</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="promoCodeInput" placeholder="Enter promo code" value="${appliedPromo?.promoCode || getAutoPromoCode() || ''}" style="flex:1;" ${appliedPromo ? 'disabled' : ''}>
+                        <button type="button" onclick="applyPromoCode()" class="btn" style="padding:0.5rem 1rem; background:${appliedPromo ? '#e74c3c' : 'var(--primary-color)'}; color:white; border:none; border-radius:8px; cursor:pointer;">
+                            ${appliedPromo ? 'Remove' : 'Apply'}
+                        </button>
+                    </div>
+                    <div id="promoFeedback" style="font-size:0.85rem; margin-top:4px;">${appliedPromo ? '<span style="color:#27ae60">&#10003; ' + (appliedPromo.title || 'Promo') + ' applied!</span>' : ''}</div>
+                </div>
+                ${window.customerPortal?.isAuthenticated ? (() => {
+                    const pts = getAvailablePoints();
+                    const rc = getRewardsConfig();
+                    const canRedeem = pts >= (rc.minRedeemPoints || 100);
+                    const rewards = getAvailableRewards();
+                    const maxDiscount = Math.floor(pts / (rc.redemptionRate || 100) * 100) / 100;
+
+                    return `
+                    <div style="background:#f8f9fa; border-radius:10px; padding:1rem; margin-top:1rem;">
+                        <div style="font-weight:600; margin-bottom:0.75rem;"><i class="bi bi-star-fill" style="color:#ffc107"></i> Loyalty Points: ${pts}</div>
+                        ${canRedeem ? `
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <label style="font-size:0.85rem; white-space:nowrap;">Redeem points:</label>
+                                <input type="range" id="pointsSlider" min="0" max="${pts}" step="${rc.redemptionRate || 100}" value="${redeemingPoints}"
+                                    oninput="redeemingPoints=parseInt(this.value);document.getElementById('ptsVal').textContent=this.value+' pts = $'+(this.value/(${rc.redemptionRate || 100})).toFixed(2);renderCheckoutForm();"
+                                    style="flex:1;">
+                                <span id="ptsVal" style="font-size:0.82rem; min-width:100px;">${redeemingPoints} pts = $${(redeemingPoints / (rc.redemptionRate || 100)).toFixed(2)}</span>
+                            </div>
+                            <div style="font-size:0.75rem; color:#888; margin-top:4px;">Max: ${pts} pts = $${maxDiscount.toFixed(2)} off</div>
+                        ` : `
+                            <div style="font-size:0.82rem; color:#888;">Need ${(rc.minRedeemPoints || 100) - pts} more points to start redeeming (min: ${rc.minRedeemPoints || 100})</div>
+                        `}
+
+                        ${rewards.length > 0 ? `
+                            <div style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid #e0e0e0;">
+                                <div style="font-weight:600; font-size:0.9rem; margin-bottom:0.5rem;"><i class="bi bi-trophy" style="color:#e67e22"></i> My Rewards</div>
+                                ${rewards.map(r => `
+                                    <label style="display:flex; align-items:center; gap:8px; padding:0.4rem 0; cursor:pointer; font-size:0.85rem;">
+                                        <input type="radio" name="rewardSelect" value="${r.id}" ${selectedRewardId === r.id ? 'checked' : ''}
+                                            onchange="selectedRewardId=this.value;renderCheckoutForm();">
+                                        ${r.prizeName} ${r.prizeType === 'discount' ? `(${r.prizeValue}% off)` : r.prizeType === 'flatDiscount' ? `($${r.prizeValue} off)` : `(${r.prizeName})`}
+                                    </label>
+                                `).join('')}
+                                ${selectedRewardId ? `
+                                    <button type="button" onclick="selectedRewardId=null;renderCheckoutForm();" style="font-size:0.78rem; color:#e74c3c; background:none; border:none; cursor:pointer; margin-top:4px;">Clear reward</button>
+                                ` : ''}
+                            </div>
+                        ` : ''}
+                    </div>`;
+                })() : ''}
+                <div class="order-summary"><h4>Order Summary</h4>${cart.map(item => `<div class="summary-item"><span>${item.quantity}x ${item.name}</span><span>$${(item.finalPrice * item.quantity).toFixed(2)}</span></div>`).join('')}<div class="summary-item"><span>Subtotal</span><span>$${totals.subtotal.toFixed(2)}</span></div>
+                    ${totals.discount > 0 ? `
+                    <div class="summary-item" style="color:#27ae60;">
+                        <span>Discount (${appliedPromo?.title || 'Promo'})</span>
+                        <span>-$${totals.discount.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
+                    ${totals.ptsDiscount > 0 ? `
+                    <div class="summary-item" style="color:#27ae60;">
+                        <span>Points Redeemed (${redeemingPoints} pts)</span>
+                        <span>-$${totals.ptsDiscount.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
+                    ${totals.rwDiscount > 0 ? `
+                    <div class="summary-item" style="color:#27ae60;">
+                        <span>Reward Applied</span>
+                        <span>-$${totals.rwDiscount.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
+                    <div class="summary-item"><span>Tax</span><span>$${totals.tax.toFixed(2)}</span></div><div class="summary-item summary-total"><span>Total</span><span>$${totals.total.toFixed(2)}</span></div></div>
                 <button class="place-order-btn" id="placeOrderBtn" onclick="placeOrder()">Place Order - $${totals.total.toFixed(2)}</button>
             `;
             }
@@ -1637,6 +1801,10 @@
                         orderType: 'pickup',
                         paymentMethod: paymentMethod === 'payNow' ? 'card' : 'payAtRestaurant',
                         paymentDetails,
+                        promoCode: appliedPromo?.promoCode || appliedPromo?.uniqueCode || null,
+                        promotionId: appliedPromo?.promotionId || null,
+                        pointsToRedeem: redeemingPoints || 0,
+                        rewardId: selectedRewardId || null,
                         source: 'website'
                     };
 
@@ -1710,6 +1878,7 @@
         <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-functions-compat.js"></script>
         <script>
             // Initialize Firebase for customer-facing website
             firebase.initializeApp({{firebaseConfigJson}});
@@ -1726,6 +1895,7 @@
     <script>
         window.customerPortal = new CustomerPortal({
             restaurantId: '{{restaurantId}}',
+            promoId: CONFIG.promoId,
             themeConfig: {
                 primaryColor: '{{primaryColor}}',
                 secondaryColor: '{{econdaryColor}}',
