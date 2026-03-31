@@ -8,7 +8,7 @@ import './PageHeader.css';
 import './TableLayout.css';
 
 const TableLayout = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
   const [layout, setLayout] = useState(null);
   const [tables, setTables] = useState([]);
@@ -39,7 +39,7 @@ const TableLayout = () => {
     
     // Subscribe to orders to update table statuses in real-time
     // Include 'served' since table is still occupied until payment is completed
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
     let activeOrdersQuery;
     
     if (isMultiLocation && selectedLocation) {
@@ -70,8 +70,8 @@ const TableLayout = () => {
       
       // For multi-location, use location-specific layout path
       const layoutPath = isMultiLocation && selectedLocation
-        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
-        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+        ? `restaurants/${restaurantUid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${restaurantUid}/layout/floorPlan`;
       
       console.log('Loading layout from path:', layoutPath);
       
@@ -110,7 +110,7 @@ const TableLayout = () => {
       if (tablesToCheck.length === 0) return;
 
       // Get active orders - include 'served' since payment is still pending
-      const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+      const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
       let activeOrdersQuery;
       
       if (isMultiLocation && selectedLocation) {
@@ -330,7 +330,7 @@ const TableLayout = () => {
 
       // For multi-location, ensure the location document exists first
       if (isMultiLocation && selectedLocation) {
-        const locationRef = doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`);
+        const locationRef = doc(db, `restaurants/${restaurantUid}/locations/${selectedLocation}`);
         const locationSnap = await getDoc(locationRef);
         
         if (!locationSnap.exists()) {
@@ -344,8 +344,8 @@ const TableLayout = () => {
 
       // For multi-location, use location-specific layout path
       const layoutPath = isMultiLocation && selectedLocation
-        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
-        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+        ? `restaurants/${restaurantUid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${restaurantUid}/layout/floorPlan`;
       
       console.log('Saving layout to path:', layoutPath);
       

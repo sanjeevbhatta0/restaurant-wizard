@@ -7,7 +7,7 @@ import { Modal, Button, Alert } from 'react-bootstrap';
 import './TableSelectionModal.css';
 
 const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allowOccupied = false }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const [layout, setLayout] = useState(null);
   const [tables, setTables] = useState([]);
   const [tableStatuses, setTableStatuses] = useState({});
@@ -40,8 +40,8 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
 
       // Load layout - use location-specific path for multi-location
       const layoutPath = isMultiLocation && selectedLocation
-        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
-        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+        ? `restaurants/${restaurantUid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${restaurantUid}/layout/floorPlan`;
       
       const layoutRef = doc(db, layoutPath);
       const layoutSnap = await getDoc(layoutRef);
@@ -59,7 +59,7 @@ const TableSelectionModal = ({ show, onHide, onSelect, selectedTables = [], allo
 
       // Load active orders to determine table statuses
       // Tables remain occupied until order is 'completed' (payment received)
-      const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+      const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
       
       // Build query with proper status filtering - include 'served' since payment is still pending!
       let activeOrdersQuery;

@@ -5,6 +5,8 @@ const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const axios = require('axios');
 const cors = require('cors')({ origin: true });
+const { generateSecret, generateURI, verifySync } = require('otplib');
+const QRCode = require('qrcode');
 
 admin.initializeApp();
 
@@ -201,40 +203,55 @@ exports.createPaymentIntent = onCall(async (request) => {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { amount, currency = 'usd', orderIds, tableNumbers, restaurantId, metadata = {} } = request.data;
+    const { amount, currency = 'usd', orderIds, tableNumbers, restaurantId, metadata = {}, source } = request.data;
 
     // Validate amount
     if (!amount || amount <= 0) {
       throw new HttpsError('invalid-argument', 'Invalid payment amount');
     }
 
-    // Validate restaurant ownership
-    if (restaurantId !== request.auth.uid) {
+    // Validate restaurant ownership (support staff users)
+    const resolvedRestaurantId = resolveRestaurantId(request);
+    if (restaurantId !== resolvedRestaurantId) {
       throw new HttpsError('permission-denied', 'Not authorized for this restaurant');
     }
+
+    // Check for connected Stripe account
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
 
     // Convert amount to cents (Stripe uses smallest currency unit)
     const amountInCents = Math.round(amount * 100);
 
-    // Create a PaymentIntent with the order details
-    const paymentIntent = await stripe.paymentIntents.create({
+    // Build intent params
+    let intentParams = {
       amount: amountInCents,
       currency: currency,
-      automatic_payment_methods: {
-        enabled: true,
-      },
       metadata: {
         restaurantId: restaurantId,
         orderIds: JSON.stringify(orderIds),
         tableNumbers: JSON.stringify(tableNumbers),
         ...metadata
       }
-    });
+    };
+
+    if (source === 'terminal') {
+      // Terminal payments: use card_present payment method for Tap to Pay
+      intentParams.payment_method_types = ['card_present'];
+      intentParams.capture_method = 'automatic';
+    } else {
+      // Web payments: keep current behavior
+      intentParams.automatic_payment_methods = { enabled: true };
+    }
+
+    // Create PaymentIntent — on connected account if available, else platform
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+    const paymentIntent = await stripe.paymentIntents.create(intentParams, stripeOptions);
 
     // Return the client secret for the frontend
     return {
       clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id
+      paymentIntentId: paymentIntent.id,
+      connectedAccountId: connectedAccountId || null
     };
   } catch (error) {
     console.error('Error creating payment intent:', error);
@@ -257,13 +274,18 @@ exports.confirmStripePayment = onCall(async (request) => {
 
     const { paymentIntentId, orderIds, paymentDetails, restaurantId } = request.data;
 
-    // Verify restaurant ownership
-    if (restaurantId !== request.auth.uid) {
+    // Verify restaurant ownership (support staff users)
+    const resolvedRestaurantId = resolveRestaurantId(request);
+    if (restaurantId !== resolvedRestaurantId) {
       throw new HttpsError('permission-denied', 'Not authorized for this restaurant');
     }
 
+    // Check for connected Stripe account
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
     // Retrieve the payment intent to verify it's actually paid
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, stripeOptions);
 
     if (paymentIntent.status !== 'succeeded') {
       throw new HttpsError('failed-precondition', `Payment not completed. Status: ${paymentIntent.status}`);
@@ -320,8 +342,9 @@ exports.processStripeRefund = onCall(async (request) => {
       reason = 'requested_by_customer'
     } = request.data;
 
-    // Verify restaurant ownership
-    if (restaurantId !== request.auth.uid) {
+    // Verify restaurant ownership (support staff users)
+    const resolvedRestaurantId = resolveRestaurantId(request);
+    if (restaurantId !== resolvedRestaurantId) {
       throw new HttpsError('permission-denied', 'Not authorized for this restaurant');
     }
 
@@ -361,7 +384,11 @@ exports.processStripeRefund = onCall(async (request) => {
     // Convert refund amount to cents
     const refundAmountCents = Math.round(refundAmount * 100);
 
-    // Create Stripe refund
+    // Check for connected Stripe account
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    // Create Stripe refund (on connected account if applicable)
     const refund = await stripe.refunds.create({
       payment_intent: paymentIntentId,
       amount: refundAmountCents,
@@ -371,7 +398,7 @@ exports.processStripeRefund = onCall(async (request) => {
         restaurantId: restaurantId,
         refundType: refundType
       }
-    });
+    }, stripeOptions);
 
     // Update order with refund details
     await orderRef.update({
@@ -433,8 +460,13 @@ exports.getStripeConfig = onCall(async (request) => {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
 
+    // Resolve restaurant ID (supports staff users)
+    const restaurantId = resolveRestaurantId(request);
+    const connectedAccountId = restaurantId ? await getStripeConnectAccountId(restaurantId) : null;
+
     return {
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_YOUR_STRIPE_PUBLISHABLE_KEY'
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_YOUR_STRIPE_PUBLISHABLE_KEY',
+      connectedAccountId: connectedAccountId || null
     };
   } catch (error) {
     console.error('Error getting Stripe config:', error);
@@ -527,10 +559,9 @@ exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', 
   const db = admin.firestore();
 
   try {
-    // Get user's social media tokens
+    // Get user's social media tokens from restaurants/{uid}/settings/socialMedia
     const userConnections = await db
-      .collection('socialMediaConnections')
-      .doc(postData.userId)
+      .doc(`restaurants/${postData.userId}/settings/socialMedia`)
       .get();
 
     if (!userConnections.exists) {
@@ -541,16 +572,16 @@ exports.processSocialMediaPost = onDocumentCreated('socialMediaPosts/{postId}', 
     const updates = [];
 
     // Post to each selected platform
-    if (postData.platforms.facebook && connections.facebook.connected) {
+    if (postData.platforms.facebook && connections.facebook?.connected) {
       updates.push(postToFacebook(postData, connections.facebook.token));
     }
 
-    if (postData.platforms.instagram && connections.instagram.connected) {
+    if (postData.platforms.instagram && connections.instagram?.connected) {
       updates.push(postToInstagram(postData, connections.instagram.token));
     }
 
-    if (postData.platforms.twitter && connections.twitter.connected) {
-      updates.push(postToTwitter(postData, connections.twitter.token));
+    if (postData.platforms.twitter && connections.twitter?.connected) {
+      updates.push(postToTwitter(postData, connections.twitter.accessToken));
     }
 
     // Wait for all posts to complete
@@ -638,15 +669,132 @@ async function postToFacebook(postData, token) {
 }
 
 async function postToInstagram(postData, token) {
-  // TODO: Implement actual Instagram API call
-  console.log('Posting to Instagram:', postData);
-  return Promise.resolve();
+  try {
+    // Instagram requires an image — skip if no image provided
+    if (!postData.imageUrl) {
+      throw new Error('Instagram requires an image to post');
+    }
+
+    // Get the user's Facebook pages to find linked Instagram business account
+    const pagesResponse = await axios.get(
+      `https://graph.facebook.com/v18.0/me/accounts?access_token=${token}`
+    );
+
+    if (!pagesResponse.data.data || pagesResponse.data.data.length === 0) {
+      throw new Error('No Facebook pages found — Instagram Business accounts are linked through Facebook pages');
+    }
+
+    // Find the first page with a linked Instagram business account
+    let instagramAccountId = null;
+    let pageAccessToken = null;
+
+    for (const page of pagesResponse.data.data) {
+      const igResponse = await axios.get(
+        `https://graph.facebook.com/v18.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`
+      );
+      if (igResponse.data.instagram_business_account) {
+        instagramAccountId = igResponse.data.instagram_business_account.id;
+        pageAccessToken = page.access_token;
+        break;
+      }
+    }
+
+    if (!instagramAccountId) {
+      throw new Error('No Instagram Business account found linked to your Facebook pages');
+    }
+
+    // Step 1: Create a media container
+    const createMediaResponse = await axios.post(
+      `https://graph.facebook.com/v18.0/${instagramAccountId}/media`,
+      null,
+      {
+        params: {
+          image_url: postData.imageUrl,
+          caption: postData.content,
+          access_token: pageAccessToken
+        }
+      }
+    );
+
+    if (!createMediaResponse.data.id) {
+      throw new Error('Failed to create Instagram media container');
+    }
+
+    // Step 2: Publish the media container
+    const publishResponse = await axios.post(
+      `https://graph.facebook.com/v18.0/${instagramAccountId}/media_publish`,
+      null,
+      {
+        params: {
+          creation_id: createMediaResponse.data.id,
+          access_token: pageAccessToken
+        }
+      }
+    );
+
+    return publishResponse.data;
+  } catch (error) {
+    console.error('Error posting to Instagram:', error.response?.data || error.message);
+    throw new Error(`Instagram posting failed: ${error.response?.data?.error?.message || error.message}`);
+  }
 }
 
 async function postToTwitter(postData, token) {
-  // TODO: Implement actual Twitter API call
-  console.log('Posting to Twitter:', postData);
-  return Promise.resolve();
+  try {
+    let mediaId = null;
+
+    // If there's an image, upload it first via Twitter media upload API (v1.1)
+    if (postData.imageUrl) {
+      try {
+        // Download the image
+        const imageResponse = await axios.get(postData.imageUrl, { responseType: 'arraybuffer' });
+        const imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+
+        // Upload to Twitter media endpoint
+        const mediaUploadResponse = await axios.post(
+          'https://upload.twitter.com/1.1/media/upload.json',
+          `media_data=${encodeURIComponent(imageBase64)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          }
+        );
+        mediaId = mediaUploadResponse.data.media_id_string;
+      } catch (mediaError) {
+        console.warn('Twitter media upload failed, posting text only:', mediaError.message);
+      }
+    }
+
+    // Truncate content to 280 characters for Twitter
+    let tweetText = postData.content;
+    if (tweetText.length > 280) {
+      tweetText = tweetText.substring(0, 277) + '...';
+    }
+
+    // Post tweet via Twitter API v2
+    const tweetPayload = { text: tweetText };
+    if (mediaId) {
+      tweetPayload.media = { media_ids: [mediaId] };
+    }
+
+    const tweetResponse = await axios.post(
+      'https://api.twitter.com/2/tweets',
+      tweetPayload,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return tweetResponse.data;
+  } catch (error) {
+    console.error('Error posting to Twitter:', error.response?.data || error.message);
+    throw new Error(`Twitter posting failed: ${error.response?.data?.detail || error.response?.data?.title || error.message}`);
+  }
 }
 
 // Helper function to get restaurant by slug
@@ -746,6 +894,7 @@ function renderTemplate(template, data) {
     '{{year}}': new Date().getFullYear().toString(),
     '{{apiBaseUrl}}': data.apiBaseUrl || 'https://restaurant-portal-6b147.web.app',
     '{{stripePublishableKey}}': data.stripePublishableKey || '',
+    '{{stripeConnectedAccountId}}': data.stripeConnectedAccountId || '',
     '{{hoursJson}}': JSON.stringify(data.hours || {
       monday: { open: '11:00', close: '22:00' },
       tuesday: { open: '11:00', close: '22:00' },
@@ -1050,6 +1199,7 @@ exports.serveWebsite = onRequest(async (req, res) => {
           ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
           : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
         stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
+        stripeConnectedAccountId: await getStripeConnectAccountId(restaurantId) || '',
         taxRate: finalTaxRate,
         promoId: promoId
       };
@@ -1299,7 +1449,8 @@ exports.serveWebsite = onRequest(async (req, res) => {
       secondaryColor: '${templateData.secondaryColor}',
       accentColor: '${templateData.accentColor}',
       fontFamily: '${templateData.fontFamily}',
-      stripeKey: '${templateData.stripePublishableKey}'
+      stripeKey: '${templateData.stripePublishableKey}',
+      stripeConnectedAccountId: '${templateData.stripeConnectedAccountId || ''}'
     };
     var PRELOADED_MENU = ${JSON.stringify(preloadedMenu)};
   <\/script>
@@ -1953,6 +2104,10 @@ const yelpApiKeySecret = defineSecret('YELP_API_KEY');
 const googleBusinessClientId = defineSecret('GOOGLE_BUSINESS_CLIENT_ID');
 const googleBusinessClientSecret = defineSecret('GOOGLE_BUSINESS_CLIENT_SECRET');
 
+// Twitter/X API keys (OAuth 2.0 with PKCE)
+const twitterClientId = defineSecret('TWITTER_CLIENT_ID');
+const twitterClientSecret = defineSecret('TWITTER_CLIENT_SECRET');
+
 // Helper to get Gemini API key (from secret or env)
 function getGeminiApiKey() {
   return geminiApiKeySecret.value() || process.env.GEMINI_API_KEY || '';
@@ -2207,7 +2362,7 @@ IMPORTANT: Return your response as valid JSON with this exact structure:
 /**
  * Improve existing content
  */
-exports.improveAIContent = onCall(async (request) => {
+exports.improveAIContent = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -2245,7 +2400,7 @@ Return ONLY the improved post text, nothing else.`;
 /**
  * Generate hashtag suggestions
  */
-exports.generateHashtags = onCall(async (request) => {
+exports.generateHashtags = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -2298,7 +2453,7 @@ Return ONLY a JSON array of hashtags (without the # symbol), like this:
 /**
  * Get SEO recommendations for the restaurant
  */
-exports.getSeoRecommendations = onCall(async (request) => {
+exports.getSeoRecommendations = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -2446,7 +2601,7 @@ Return as JSON:
 /**
  * Get content ideas based on trending topics and restaurant data
  */
-exports.getContentIdeas = onCall(async (request) => {
+exports.getContentIdeas = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -2662,9 +2817,154 @@ Return ONLY the JSON, no other text.`
 // AI ANALYTICS
 // ============================================
 
+const SYSTEM_CONTEXT = `You are an expert restaurant business analyst. Analyze the provided data and give actionable insights. Be specific with numbers and percentages. Use a friendly, professional tone suitable for restaurant owners.`;
+
+function buildOrderSummary(orderData) {
+  if (!orderData) return 'No order data available.';
+  let summary = `
+Restaurant Order Data Summary:
+- Data Period: ${orderData.dateRange?.label || 'All Time'} (${orderData.dateRange?.start || 'N/A'} to ${orderData.dateRange?.end || 'N/A'})
+- Total Orders: ${orderData.totalOrders || 0}
+- Total Revenue: $${(orderData.totalRevenue || 0).toFixed(2)}
+- Average Order Value: $${(orderData.avgOrderValue || 0).toFixed(2)}
+- Top Selling Items by Revenue: ${(orderData.topItems || []).slice(0, 10).map(i => `${i.name} ($${(i.revenue||0).toFixed(2)}, qty: ${i.quantity||0})`).join(', ')}`;
+
+  if (orderData.bottomItems) {
+    summary += `\n- Bottom Performers: ${orderData.bottomItems.slice(0, 5).map(i => `${i.name} (qty: ${i.quantity||0})`).join(', ')}`;
+  }
+  if (orderData.paymentMethods) {
+    const pm = orderData.paymentMethods;
+    summary += `\n- Revenue by Payment: Cash $${(pm.cash||0).toFixed(2)}, Card $${(pm.card||0).toFixed(2)}, Online $${(pm.online||0).toFixed(2)}`;
+  }
+  if (orderData.sourceBreakdown) {
+    const sb = orderData.sourceBreakdown;
+    summary += `\n- Orders by Source: POS ${sb.pos||0}, Website ${sb.website||0}`;
+  }
+  if (orderData.orderTypes) {
+    const ot = orderData.orderTypes;
+    summary += `\n- Order Types: Dine-in ${ot.dine_in||0}, Counter ${ot.counter||0}, Pickup ${ot.pickup||0}, Delivery ${ot.delivery||0}`;
+  }
+  if (orderData.totalTips != null) {
+    summary += `\n- Total Tips: $${(orderData.totalTips||0).toFixed(2)}, Avg Tip per Order: $${(orderData.avgTip||0).toFixed(2)}`;
+  }
+  if (orderData.avgOrderTime) {
+    summary += `\n- Avg Order Completion Time: ${(orderData.avgOrderTime||0).toFixed(1)} minutes`;
+  }
+  if (orderData.kitchenTime) {
+    summary += `\n- Avg Kitchen Time: ${(orderData.kitchenTime||0).toFixed(1)} minutes`;
+  }
+  if (orderData.customerInsights) {
+    const ci = orderData.customerInsights;
+    summary += `\n- Unique Customers: ${ci.uniqueCustomers||0}, Returning: ${ci.returning||0}, New: ${ci.newCustomers||0}`;
+    summary += `\n- Avg Orders/Customer: ${(ci.avgOrdersPerCustomer||0).toFixed(1)}, Avg Lifetime Value: $${(ci.avgLifetimeValue||0).toFixed(2)}`;
+  }
+  if (orderData.categoryPerformance) {
+    summary += `\n- Category Performance: ${orderData.categoryPerformance.slice(0, 8).map(c => `${c.name} ($${(c.revenue||0).toFixed(2)})`).join(', ')}`;
+  }
+  if (orderData.itemCombos) {
+    summary += `\n- Popular Combos: ${orderData.itemCombos.slice(0, 5).map(c => `${c.combo} (${c.count}x)`).join(', ')}`;
+  }
+  if (orderData.revenueBreakdown) {
+    const rb = orderData.revenueBreakdown;
+    summary += `\n- Revenue Breakdown: Subtotal $${(rb.subtotal||0).toFixed(2)}, Tax $${(rb.tax||0).toFixed(2)}, Tips $${(rb.tips||0).toFixed(2)}, Discounts $${(rb.discounts||0).toFixed(2)}`;
+  }
+  if (orderData.ordersByDay) {
+    summary += `\n- Orders by Day: ${JSON.stringify(orderData.ordersByDay)}`;
+  }
+  if (orderData.ordersByHour) {
+    const hours = orderData.ordersByHour;
+    if (Array.isArray(hours)) {
+      const top3 = [...hours].sort((a,b) => b.count - a.count).slice(0, 3);
+      summary += `\n- Busiest Hours: ${top3.map(h => `${h.label} (${h.count} orders)`).join(', ')}`;
+    } else {
+      summary += `\n- Orders by Hour: ${JSON.stringify(hours)}`;
+    }
+  }
+  return summary;
+}
+
+function buildMenuSummary(menuData) {
+  if (!menuData) return 'No menu data available.';
+  return `
+Menu Data:
+- Total Categories: ${menuData.categoryCount || 0}
+- Total Items: ${menuData.itemCount || 0}
+- Price Range: $${menuData.minPrice || 0} - $${menuData.maxPrice || 0}
+- Average Item Price: $${(menuData.avgPrice || 0).toFixed(2)}
+- Items with Discounts: ${menuData.discountedItems || 0}`;
+}
+
+function buildPromptForType(analysisType, orderSummary, menuSummary, question) {
+  switch (analysisType) {
+    // Tier 1: Essential
+    case 'businessSummary':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n${menuSummary}\n\nProvide a brief business performance summary in this JSON format:\n{"headline":"One impactful headline (max 10 words)","summary":"2-3 sentence executive summary","keyMetrics":[{"label":"metric name","value":"value with unit","trend":"up/down/stable","insight":"brief context"}],"topInsight":"The single most important insight the owner should know"}\n\nReturn ONLY valid JSON.`;
+
+    case 'salesPrediction':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n\nBased on the historical order patterns, predict sales for the next 7 days.\nReturn in JSON: {"prediction":{"nextWeekRevenue":1500.00,"dailyBreakdown":[{"day":"Monday","predicted":200,"confidence":"high/medium/low"}],"peakDay":"Saturday","slowestDay":"Tuesday"},"methodology":"Brief explanation","recommendations":["tip1","tip2"]}\n\nReturn ONLY valid JSON.`;
+
+    case 'anomalyAlerts':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n${menuSummary}\n\nAnalyze for unusual patterns, anomalies, or concerning trends.\nReturn in JSON: {"alerts":[{"severity":"high/medium/low","title":"Brief title","description":"What you noticed","recommendation":"What to do"}],"healthScore":85,"healthDescription":"Overall assessment"}\n\nReturn ONLY valid JSON.`;
+
+    // Tier 2: Differentiation
+    case 'menuOptimization':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n${menuSummary}\n\nAnalyze menu performance and suggest optimizations.\nReturn in JSON: {"recommendations":[{"type":"remove/promote/reprice/bundle","item":"name","reason":"why","expectedImpact":"improvement","priority":"high/medium/low"}],"menuHealthScore":75,"quickWins":["easy change"],"underperformers":["item"],"stars":["best items"]}\n\nReturn ONLY valid JSON.`;
+
+    case 'staffInsights':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n\nAnalyze order timing patterns for staff scheduling insights.\nReturn in JSON: {"peakHours":[{"hour":"6 PM - 7 PM","orderVolume":"high","recommendation":"full staff"}],"slowPeriods":[{"hour":"2 PM - 4 PM","recommendation":"reduced staff"}],"optimalSchedule":{"weekday":"Brief weekday rec","weekend":"Brief weekend rec"},"efficiencyTips":["tip"],"averageOrderTime":"estimated minutes"}\n\nReturn ONLY valid JSON.`;
+
+    case 'orderCombos':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n\nAnalyze order patterns to find popular item combinations.\nReturn in JSON: {"popularCombos":[{"items":["item1","item2"],"frequency":"how often","suggestion":"combo deal idea"}],"bundleOpportunities":[{"name":"bundle name","items":["item1","item2"],"suggestedPrice":19.99,"expectedUplift":"percentage"}],"crossSellOpportunities":["suggestion"]}\n\nReturn ONLY valid JSON.`;
+
+    // Tier 3: Premium
+    case 'marketPosition':
+      return `${SYSTEM_CONTEXT}\n${menuSummary}\n\nProvide competitive positioning insights.\nReturn in JSON: {"pricePosition":"budget/mid-range/premium","insights":[{"category":"name","assessment":"how pricing compares","recommendation":"suggestion"}],"opportunities":["opportunity"],"competitiveAdvantages":["advantage"],"pricingStrategy":"overall recommendation"}\n\nReturn ONLY valid JSON.`;
+
+    case 'aiChat':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n${menuSummary}\n\nThe restaurant owner asks: "${question || 'How is my business doing?'}"\n\nProvide a helpful, conversational response. Be specific with data. Keep under 200 words.\nReturn in JSON: {"response":"Your answer","followUpQuestions":["related question"]}\n\nReturn ONLY valid JSON.`;
+
+    case 'weeklyReport':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n${menuSummary}\n\nGenerate a comprehensive weekly business report.\nReturn in JSON: {"reportTitle":"Weekly Performance Report","period":"report period","executiveSummary":"3-4 sentence summary","sections":[{"title":"Revenue Performance","content":"analysis","highlight":"key number"}],"actionItems":[{"priority":"high/medium/low","task":"action","expectedImpact":"why"}],"nextWeekFocus":"one priority"}\n\nReturn ONLY valid JSON.`;
+
+    // NEW: Revenue Intelligence (combined prediction + pricing + growth)
+    case 'revenueIntelligence':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n${menuSummary}\n\nProvide comprehensive revenue intelligence combining sales prediction, pricing strategy, and revenue growth opportunities.\nReturn in JSON: {"prediction":{"nextWeekRevenue":1500.00,"dailyBreakdown":[{"day":"Monday","predicted":200,"confidence":"high/medium/low"}],"peakDay":"Saturday","slowestDay":"Tuesday"},"pricingRecommendations":[{"item":"item name","currentApproach":"current strategy","suggestion":"what to change","estimatedImpact":"expected $ or % change"}],"revenueGrowthIdeas":[{"idea":"specific actionable idea","effort":"low/medium/high","potentialImpact":"estimated $ or % increase","timeframe":"when to expect results"}],"summaryInsight":"One key takeaway for revenue growth"}\n\nReturn ONLY valid JSON.`;
+
+    // NEW: Customer Intelligence
+    case 'customerIntelligence':
+      return `${SYSTEM_CONTEXT}\n${orderSummary}\n\nAnalyze customer behavior, segmentation, and retention opportunities.\nReturn in JSON: {"segments":[{"name":"High-Value Regulars/Occasional Visitors/New Customers/At-Risk","count":"estimated count or %","avgSpend":"average spend","behavior":"description","strategy":"how to engage"}],"retentionInsights":{"returningRate":"percentage","avgVisitFrequency":"description","churnRisk":"assessment"},"behaviorPatterns":[{"pattern":"what you noticed","implication":"what it means","action":"what to do"}],"personalizationIdeas":["specific personalization suggestion"],"summaryInsight":"One key takeaway about customers"}\n\nReturn ONLY valid JSON.`;
+
+    default:
+      return null;
+  }
+}
+
+async function callGeminiAPI(apiKey, prompt, maxTokens = 2048) {
+  const response = await axios.post(
+    `${GEMINI_API_URL}?key=${apiKey}`,
+    {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: maxTokens }
+    },
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  if (!response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+    throw new Error('Invalid response from Gemini API');
+  }
+  const resultText = response.data.candidates[0].content.parts[0].text;
+  let jsonStr = resultText;
+  const jsonMatch = resultText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1];
+  try {
+    return JSON.parse(jsonStr.trim());
+  } catch {
+    return { rawResponse: resultText };
+  }
+}
+
 /**
  * Get AI-powered analytics insights
- * Supports 3 tiers: essential, differentiation, premium
+ * Supports 3 tiers + batch mode for the premium AI dashboard
  */
 exports.getAIAnalytics = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
   try {
@@ -2672,36 +2972,43 @@ exports.getAIAnalytics = onCall({ secrets: [geminiApiKeySecret] }, async (reques
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { tier, analysisType, orderData, menuData, question } = request.data;
+    const { tier, analysisType, orderData, menuData, question, batchTypes } = request.data;
 
     const apiKey = getGeminiApiKey();
     if (!apiKey) {
       throw new HttpsError('failed-precondition', 'Gemini API key not configured');
     }
 
+    const orderSummary = buildOrderSummary(orderData);
+    const menuSummary = buildMenuSummary(menuData);
+
+    // ---- BATCH MODE: fire multiple analyses in parallel ----
+    if (batchTypes && Array.isArray(batchTypes) && batchTypes.length > 0) {
+      const promises = batchTypes.map(type => {
+        const prompt = buildPromptForType(type, orderSummary, menuSummary, question);
+        if (!prompt) return Promise.resolve({ type, data: null, error: 'Unknown analysis type' });
+        return callGeminiAPI(apiKey, prompt, 3072)
+          .then(data => ({ type, data }))
+          .catch(err => ({ type, data: null, error: err.message }));
+      });
+
+      const results = await Promise.allSettled(promises);
+      const batchResult = {};
+      results.forEach((r) => {
+        const val = r.status === 'fulfilled' ? r.value : { type: 'unknown', data: null, error: r.reason?.message };
+        if (val.error) {
+          batchResult[val.type] = { success: false, error: val.error };
+        } else {
+          batchResult[val.type] = { success: true, data: val.data };
+        }
+      });
+
+      return { success: true, batch: true, data: batchResult };
+    }
+
+    // ---- SINGLE MODE: backward-compatible ----
     let prompt = '';
-    let systemContext = `You are an expert restaurant business analyst. Analyze the provided data and give actionable insights. Be specific with numbers and percentages. Use a friendly, professional tone suitable for restaurant owners.`;
-
-    // Build context from order data
-    const orderSummary = orderData ? `
-Restaurant Order Data Summary:
-- Total Orders: ${orderData.totalOrders || 0}
-- Total Revenue: $${(orderData.totalRevenue || 0).toFixed(2)}
-- Average Order Value: $${(orderData.avgOrderValue || 0).toFixed(2)}
-- Top Selling Items: ${(orderData.topItems || []).slice(0, 5).map(i => `${i.name} (${i.count})`).join(', ')}
-- Orders by Day: ${JSON.stringify(orderData.ordersByDay || {})}
-- Orders by Hour: ${JSON.stringify(orderData.ordersByHour || {})}
-- Recent Order Trend: ${orderData.trend || 'stable'}
-` : 'No order data available.';
-
-    const menuSummary = menuData ? `
-Menu Data:
-- Total Categories: ${menuData.categoryCount || 0}
-- Total Items: ${menuData.itemCount || 0}
-- Price Range: $${menuData.minPrice || 0} - $${menuData.maxPrice || 0}
-- Average Item Price: $${(menuData.avgPrice || 0).toFixed(2)}
-- Items with Discounts: ${menuData.discountedItems || 0}
-` : 'No menu data available.';
+    let systemContext = SYSTEM_CONTEXT;
 
     // Tier 1: Essential Insights
     if (tier === 1) {
@@ -3436,7 +3743,7 @@ async function getGoogleAccessToken(refreshToken) {
  * Helper: Get Yelp API key
  */
 function getYelpApiKey() {
-  return yelpApiKeySecret.value() || process.env.YELP_API_KEY || '';
+  return (yelpApiKeySecret.value() || process.env.YELP_API_KEY || '').trim();
 }
 
 // ---- YELP FUNCTIONS ----
@@ -3514,11 +3821,18 @@ exports.connectYelpBusiness = onCall({ secrets: [yelpApiKeySecret] }, async (req
     });
     const biz = bizResponse.data;
 
-    // Fetch reviews (max 3 from Yelp API)
-    const reviewsResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}/reviews?limit=3&sort_by=newest`, {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
-    const yelpReviews = reviewsResponse.data.reviews || [];
+    // Fetch reviews (max 3 from Yelp API) — may fail if endpoint is unavailable
+    let yelpReviews = [];
+    try {
+      const reviewsResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}/reviews`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        params: { limit: 3, sort_by: 'newest' }
+      });
+      yelpReviews = reviewsResponse.data.reviews || [];
+    } catch (reviewErr) {
+      console.warn('Yelp reviews fetch failed (endpoint may be deprecated):', reviewErr.response?.status, reviewErr.response?.data?.error?.code);
+      // Continue without reviews — connection still succeeds
+    }
 
     // Save connection state
     const connectionData = {
@@ -3589,28 +3903,36 @@ exports.fetchYelpReviews = onCall({ secrets: [yelpApiKeySecret] }, async (reques
     const uid = request.auth.uid;
     const db = admin.firestore();
 
-    const reviewsResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}/reviews?limit=3&sort_by=newest`, {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
-    const yelpReviews = reviewsResponse.data.reviews || [];
+    let yelpReviews = [];
+    try {
+      const reviewsResponse = await axios.get(`${YELP_API_BASE}/businesses/${businessId}/reviews`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        params: { limit: 3, sort_by: 'newest' }
+      });
+      yelpReviews = reviewsResponse.data.reviews || [];
+    } catch (reviewErr) {
+      console.warn('Yelp reviews fetch failed (endpoint may be deprecated):', reviewErr.response?.status);
+    }
 
     // Update cached reviews
-    const batch = db.batch();
-    for (const review of yelpReviews) {
-      const reviewRef = db.collection(`restaurants/${uid}/businessReviews`).doc(`yelp_${review.id}`);
-      batch.set(reviewRef, {
-        platform: 'yelp',
-        externalId: review.id,
-        authorName: review.user?.name || 'Anonymous',
-        authorImageUrl: review.user?.image_url || '',
-        rating: review.rating,
-        text: review.text,
-        createdAt: admin.firestore.Timestamp.fromDate(new Date(review.time_created)),
-        fetchedAt: admin.firestore.Timestamp.now(),
-        platformUrl: review.url || ''
-      });
+    if (yelpReviews.length > 0) {
+      const batch = db.batch();
+      for (const review of yelpReviews) {
+        const reviewRef = db.collection(`restaurants/${uid}/businessReviews`).doc(`yelp_${review.id}`);
+        batch.set(reviewRef, {
+          platform: 'yelp',
+          externalId: review.id,
+          authorName: review.user?.name || 'Anonymous',
+          authorImageUrl: review.user?.image_url || '',
+          rating: review.rating,
+          text: review.text,
+          createdAt: admin.firestore.Timestamp.fromDate(new Date(review.time_created)),
+          fetchedAt: admin.firestore.Timestamp.now(),
+          platformUrl: review.url || ''
+        });
+      }
+      await batch.commit();
     }
-    await batch.commit();
 
     // Update lastSyncedAt
     await db.doc(`restaurants/${uid}/settings/businessListings`).set(
@@ -3999,15 +4321,31 @@ Return as JSON array:
       await batch.commit();
 
       return { success: true, tasks };
-    } catch {
-      return {
-        success: true,
-        tasks: [
-          { platform: 'google', title: 'Complete your Google Business Profile', description: 'A complete profile gets 7x more clicks', priority: 'high', category: 'profile', impactScore: 20, steps: ['Go to google.com/business', 'Sign in and claim your business', 'Complete all sections'] },
-          { platform: 'yelp', title: 'Add photos to your Yelp page', description: 'Businesses with photos get 42% more direction requests', priority: 'high', category: 'photos', impactScore: 15, steps: ['Log into biz.yelp.com', 'Go to Photos section', 'Upload 10+ high-quality food photos'] },
-          { platform: 'apple', title: 'Claim your Apple Business Connect listing', description: 'Reach customers on Apple Maps, Siri, and Wallet', priority: 'medium', category: 'profile', impactScore: 10, steps: ['Go to businessconnect.apple.com', 'Sign in with your Apple ID', 'Search for and claim your business'] }
-        ]
-      };
+    } catch (parseErr) {
+      console.warn('Failed to parse Gemini visibility tasks, using defaults:', parseErr.message);
+      const fallbackTasks = [
+        { platform: 'google', title: 'Complete your Google Business Profile', description: 'A complete profile gets 7x more clicks', priority: 'high', category: 'profile', impactScore: 20, steps: ['Go to google.com/business', 'Sign in and claim your business', 'Complete all sections'] },
+        { platform: 'yelp', title: 'Add photos to your Yelp page', description: 'Businesses with photos get 42% more direction requests', priority: 'high', category: 'photos', impactScore: 15, steps: ['Log into biz.yelp.com', 'Go to Photos section', 'Upload 10+ high-quality food photos'] },
+        { platform: 'apple', title: 'Claim your Apple Business Connect listing', description: 'Reach customers on Apple Maps, Siri, and Wallet', priority: 'medium', category: 'profile', impactScore: 10, steps: ['Go to businessconnect.apple.com', 'Sign in with your Apple ID', 'Search for and claim your business'] }
+      ];
+
+      // Save fallback tasks to Firestore
+      const uid = request.auth.uid;
+      const db = admin.firestore();
+      const fallbackBatch = db.batch();
+      for (const task of fallbackTasks) {
+        const taskRef = db.collection(`restaurants/${uid}/visibilityTasks`).doc();
+        fallbackBatch.set(taskRef, {
+          ...task,
+          status: 'pending',
+          createdAt: admin.firestore.Timestamp.now(),
+          completedAt: null,
+          generatedByAI: true
+        });
+      }
+      await fallbackBatch.commit();
+
+      return { success: true, tasks: fallbackTasks };
     }
   } catch (error) {
     console.error('Error generating visibility tasks:', error);
@@ -4090,4 +4428,1650 @@ exports.getBusinessListingsOverview = onCall({ secrets: [yelpApiKeySecret, googl
     if (error instanceof HttpsError) throw error;
     throw new HttpsError('internal', error.message);
   }
+});
+
+// ============================================
+// STRIPE TERMINAL FUNCTIONS (Mobile POS App)
+// ============================================
+
+/**
+ * Create a connection token for the Stripe Terminal SDK.
+ * Called on app launch and whenever the SDK needs to reconnect.
+ */
+exports.createTerminalConnectionToken = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in');
+    }
+
+    const params = {};
+    if (request.data && request.data.locationId) {
+      params.location = request.data.locationId;
+    }
+
+    const connectionToken = await stripe.terminal.connectionTokens.create(params);
+
+    return { secret: connectionToken.secret };
+  } catch (error) {
+    console.error('Error creating terminal connection token:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Create a Stripe Terminal Location for the restaurant.
+ * A location is required to connect a Tap to Pay reader.
+ */
+exports.createTerminalLocation = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in');
+    }
+
+    const { displayName, address } = request.data;
+
+    if (!displayName || !address || !address.line1 || !address.city || !address.state || !address.postal_code) {
+      throw new HttpsError('invalid-argument', 'Display name and full address are required');
+    }
+
+    const location = await stripe.terminal.locations.create({
+      display_name: displayName,
+      address: {
+        line1: address.line1,
+        city: address.city,
+        state: address.state,
+        postal_code: address.postal_code,
+        country: address.country || 'US',
+      },
+      metadata: {
+        restaurantId: request.auth.uid,
+      },
+    });
+
+    // Save location ID to Firestore for future use
+    const db = admin.firestore();
+    const settingsRef = db.doc(`restaurants/${request.auth.uid}/settings/terminal`);
+    await settingsRef.set(
+      { stripeTerminalLocationId: location.id, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+
+    return {
+      locationId: location.id,
+      displayName: location.display_name,
+    };
+  } catch (error) {
+    console.error('Error creating terminal location:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Retrieve the restaurant's Terminal Location from Stripe.
+ */
+exports.getTerminalLocation = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in');
+    }
+
+    const db = admin.firestore();
+    const settingsDoc = await db.doc(
+      `restaurants/${request.auth.uid}/settings/terminal`
+    ).get();
+
+    const locationId = settingsDoc.data()?.stripeTerminalLocationId;
+    if (!locationId) {
+      return { exists: false };
+    }
+
+    const location = await stripe.terminal.locations.retrieve(locationId);
+    return {
+      exists: true,
+      locationId: location.id,
+      displayName: location.display_name,
+      address: location.address,
+    };
+  } catch (error) {
+    console.error('Error getting terminal location:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+// ============================================
+// ADMIN TWO-FACTOR AUTHENTICATION (TOTP)
+// ============================================
+
+/**
+ * Helper: Verify the caller is an admin.
+ * Returns the admin doc data or throws HttpsError.
+ */
+async function verifyAdminCaller(authContext) {
+  if (!authContext) {
+    throw new HttpsError('unauthenticated', 'Must be signed in.');
+  }
+  const db = admin.firestore();
+  const adminDoc = await db.doc(`admins/${authContext.uid}`).get();
+  if (!adminDoc.exists) {
+    throw new HttpsError('permission-denied', 'Not an admin.');
+  }
+  return adminDoc.data();
+}
+
+/**
+ * Helper: Generate 8 backup codes (format: XXXX-XXXX).
+ */
+function generateBackupCodes() {
+  const codes = [];
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 to avoid confusion
+  for (let i = 0; i < 8; i++) {
+    let code = '';
+    for (let j = 0; j < 8; j++) {
+      if (j === 4) code += '-';
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    codes.push(code);
+  }
+  return codes;
+}
+
+/**
+ * Step 1 of 2FA Setup: Generate a TOTP secret and QR code.
+ * Returns the QR code data URL and manual-entry key for the admin to
+ * add to their authenticator app.
+ *
+ * The secret is stored as a pending (unverified) secret in admin2FA/{uid}.
+ * It only becomes active after verifyAndEnable2FA confirms the first code.
+ */
+exports.setupAdmin2FA = onCall(async (request) => {
+  try {
+    const adminData = await verifyAdminCaller(request.auth);
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    // Generate TOTP secret
+    const secret = generateSecret();
+    const accountName = adminData.email || request.auth.token.email || 'Admin';
+    const otpauthUrl = generateURI({ issuer: 'Koda Carte Admin', label: accountName, secret, type: 'totp' });
+
+    // Generate QR code as data URL
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl, {
+      width: 256,
+      margin: 2,
+      color: { dark: '#1a1a2e', light: '#ffffff' }
+    });
+
+    // Store pending secret (not yet activated)
+    await db.doc(`admin2FA/${uid}`).set({
+      pendingSecret: secret,
+      pendingCreatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // Format the secret into groups of 4 for easier manual entry
+    const formattedKey = secret.match(/.{1,4}/g).join(' ');
+
+    return {
+      success: true,
+      qrCodeDataUrl,
+      manualEntryKey: formattedKey,
+    };
+  } catch (error) {
+    console.error('Error setting up 2FA:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to set up two-factor authentication.');
+  }
+});
+
+/**
+ * Step 2 of 2FA Setup: Verify the first code and activate 2FA.
+ * The admin enters a code from their authenticator app to prove they set it up correctly.
+ * On success, 2FA is enabled and 8 backup codes are generated.
+ */
+exports.verifyAndEnable2FA = onCall(async (request) => {
+  try {
+    await verifyAdminCaller(request.auth);
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code || code.length !== 6) {
+      throw new HttpsError('invalid-argument', 'Please enter a valid 6-digit code.');
+    }
+
+    // Get the pending secret
+    const tfaDoc = await db.doc(`admin2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.pendingSecret) {
+      throw new HttpsError('failed-precondition', 'No pending 2FA setup found. Please start the setup again.');
+    }
+
+    // Check if pending secret is expired (10 minutes)
+    if (tfaData.pendingCreatedAt) {
+      const createdAt = tfaData.pendingCreatedAt.toDate ? tfaData.pendingCreatedAt.toDate() : new Date(tfaData.pendingCreatedAt);
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      if (createdAt < tenMinutesAgo) {
+        throw new HttpsError('failed-precondition', 'Setup has expired. Please start again.');
+      }
+    }
+
+    // Verify the code against the pending secret
+    const isValid = verifySync({ secret: tfaData.pendingSecret, token: code }).valid;
+
+    if (!isValid) {
+      throw new HttpsError('invalid-argument', 'Incorrect code. Make sure the code from your authenticator app matches and try again.');
+    }
+
+    // Generate backup codes
+    const backupCodes = generateBackupCodes();
+
+    // Activate 2FA: move secret to permanent, store backup codes, clear pending
+    await db.doc(`admin2FA/${uid}`).set({
+      secret: tfaData.pendingSecret,
+      enabled: true,
+      enabledAt: FieldValue.serverTimestamp(),
+      backupCodes: backupCodes.map(c => ({ code: c, used: false })),
+      pendingSecret: null,
+      pendingCreatedAt: null,
+    });
+
+    // Update the admin document so the client knows 2FA is enabled
+    await db.doc(`admins/${uid}`).update({
+      twoFactorEnabled: true,
+    });
+
+    return {
+      success: true,
+      backupCodes,
+    };
+  } catch (error) {
+    console.error('Error enabling 2FA:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to enable two-factor authentication.');
+  }
+});
+
+/**
+ * Verify a TOTP code during admin login.
+ * Accepts either a 6-digit authenticator code or a backup code (XXXX-XXXX format).
+ */
+exports.verifyAdmin2FACode = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code) {
+      throw new HttpsError('invalid-argument', 'Please enter a code.');
+    }
+
+    const tfaDoc = await db.doc(`admin2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.enabled || !tfaData?.secret) {
+      throw new HttpsError('failed-precondition', 'Two-factor authentication is not enabled.');
+    }
+
+    const trimmedCode = code.trim();
+
+    // Check if it's a backup code (format: XXXX-XXXX)
+    if (trimmedCode.includes('-') && trimmedCode.length === 9) {
+      const upperCode = trimmedCode.toUpperCase();
+      const backupIndex = tfaData.backupCodes.findIndex(
+        bc => bc.code === upperCode && !bc.used
+      );
+
+      if (backupIndex === -1) {
+        throw new HttpsError('invalid-argument', 'Invalid or already used backup code.');
+      }
+
+      // Mark backup code as used
+      const updatedCodes = [...tfaData.backupCodes];
+      updatedCodes[backupIndex] = { ...updatedCodes[backupIndex], used: true, usedAt: new Date().toISOString() };
+
+      await db.doc(`admin2FA/${uid}`).update({
+        backupCodes: updatedCodes,
+      });
+
+      // Count remaining backup codes
+      const remaining = updatedCodes.filter(bc => !bc.used).length;
+
+      return { success: true, method: 'backup', remainingBackupCodes: remaining };
+    }
+
+    // Standard 6-digit TOTP code
+    if (trimmedCode.length !== 6 || !/^\d{6}$/.test(trimmedCode)) {
+      throw new HttpsError('invalid-argument', 'Please enter a valid 6-digit code from your authenticator app.');
+    }
+
+    const isValid = verifySync({ secret: tfaData.secret, token: trimmedCode }).valid;
+
+    if (!isValid) {
+      throw new HttpsError('invalid-argument', 'Incorrect code. Please check your authenticator app and try again.');
+    }
+
+    return { success: true, method: 'totp' };
+  } catch (error) {
+    console.error('Error verifying 2FA code:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to verify code.');
+  }
+});
+
+/**
+ * Disable 2FA for an admin. Requires a valid TOTP or backup code to confirm.
+ */
+exports.disableAdmin2FA = onCall(async (request) => {
+  try {
+    await verifyAdminCaller(request.auth);
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code) {
+      throw new HttpsError('invalid-argument', 'Please enter your authenticator code to disable 2FA.');
+    }
+
+    const tfaDoc = await db.doc(`admin2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.enabled || !tfaData?.secret) {
+      throw new HttpsError('failed-precondition', 'Two-factor authentication is not currently enabled.');
+    }
+
+    const trimmedCode = code.trim();
+
+    // Verify with TOTP code
+    let verified = false;
+    if (trimmedCode.length === 6 && /^\d{6}$/.test(trimmedCode)) {
+      verified = verifySync({ secret: tfaData.secret, token: trimmedCode }).valid;
+    }
+
+    // Or verify with backup code
+    if (!verified && trimmedCode.includes('-') && trimmedCode.length === 9) {
+      const upperCode = trimmedCode.toUpperCase();
+      verified = tfaData.backupCodes.some(bc => bc.code === upperCode && !bc.used);
+    }
+
+    if (!verified) {
+      throw new HttpsError('invalid-argument', 'Incorrect code. Cannot disable 2FA without a valid code.');
+    }
+
+    // Disable 2FA
+    await db.doc(`admin2FA/${uid}`).delete();
+
+    // Update admin document
+    await db.doc(`admins/${uid}`).update({
+      twoFactorEnabled: false,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error disabling 2FA:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to disable two-factor authentication.');
+  }
+});
+
+/**
+ * Regenerate backup codes for an admin with 2FA enabled.
+ * Old backup codes are replaced. Requires a valid TOTP code to confirm.
+ */
+exports.regenerateBackupCodes = onCall(async (request) => {
+  try {
+    await verifyAdminCaller(request.auth);
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      throw new HttpsError('invalid-argument', 'Please enter a valid 6-digit code from your authenticator app.');
+    }
+
+    const tfaDoc = await db.doc(`admin2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.enabled || !tfaData?.secret) {
+      throw new HttpsError('failed-precondition', 'Two-factor authentication is not enabled.');
+    }
+
+    const isValid = verifySync({ secret: tfaData.secret, token: code }).valid;
+    if (!isValid) {
+      throw new HttpsError('invalid-argument', 'Incorrect code.');
+    }
+
+    // Generate new backup codes
+    const backupCodes = generateBackupCodes();
+
+    await db.doc(`admin2FA/${uid}`).update({
+      backupCodes: backupCodes.map(c => ({ code: c, used: false })),
+    });
+
+    return { success: true, backupCodes };
+  } catch (error) {
+    console.error('Error regenerating backup codes:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to regenerate backup codes.');
+  }
+});
+
+// ============================================
+// RESTAURANT USER TWO-FACTOR AUTHENTICATION
+// ============================================
+// Mirrors admin 2FA but uses restaurant2FA/{uid} collection
+// and restaurants/{uid}.twoFactorEnabled flag.
+
+/**
+ * Step 1 of restaurant 2FA setup: Generate TOTP secret and QR code.
+ */
+exports.setupRestaurant2FA = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+
+    // Get restaurant name for the authenticator label
+    const restaurantDoc = await db.doc(`restaurants/${uid}`).get();
+    const accountName = restaurantDoc.data()?.email || request.auth.token.email || 'Restaurant';
+
+    const secret = generateSecret();
+    const otpauthUrl = generateURI({ issuer: 'Koda Carte', label: accountName, secret, type: 'totp' });
+
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl, {
+      width: 256,
+      margin: 2,
+      color: { dark: '#1a1a2e', light: '#ffffff' }
+    });
+
+    await db.doc(`restaurant2FA/${uid}`).set({
+      pendingSecret: secret,
+      pendingCreatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    const formattedKey = secret.match(/.{1,4}/g).join(' ');
+
+    return { success: true, qrCodeDataUrl, manualEntryKey: formattedKey };
+  } catch (error) {
+    console.error('Error setting up restaurant 2FA:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to set up two-factor authentication.');
+  }
+});
+
+/**
+ * Step 2: Verify the first code and activate restaurant 2FA.
+ */
+exports.verifyAndEnableRestaurant2FA = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code || code.length !== 6) {
+      throw new HttpsError('invalid-argument', 'Please enter a valid 6-digit code.');
+    }
+
+    const tfaDoc = await db.doc(`restaurant2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.pendingSecret) {
+      throw new HttpsError('failed-precondition', 'No pending 2FA setup found. Please start the setup again.');
+    }
+
+    if (tfaData.pendingCreatedAt) {
+      const createdAt = tfaData.pendingCreatedAt.toDate ? tfaData.pendingCreatedAt.toDate() : new Date(tfaData.pendingCreatedAt);
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      if (createdAt < tenMinutesAgo) {
+        throw new HttpsError('failed-precondition', 'Setup has expired. Please start again.');
+      }
+    }
+
+    const isValid = verifySync({ secret: tfaData.pendingSecret, token: code }).valid;
+
+    if (!isValid) {
+      throw new HttpsError('invalid-argument', 'Incorrect code. Make sure the code from your authenticator app matches and try again.');
+    }
+
+    const backupCodes = generateBackupCodes();
+
+    await db.doc(`restaurant2FA/${uid}`).set({
+      secret: tfaData.pendingSecret,
+      enabled: true,
+      enabledAt: FieldValue.serverTimestamp(),
+      backupCodes: backupCodes.map(c => ({ code: c, used: false })),
+      pendingSecret: null,
+      pendingCreatedAt: null,
+    });
+
+    await db.doc(`restaurants/${uid}`).update({
+      twoFactorEnabled: true,
+    });
+
+    return { success: true, backupCodes };
+  } catch (error) {
+    console.error('Error enabling restaurant 2FA:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to enable two-factor authentication.');
+  }
+});
+
+/**
+ * Verify a restaurant user's TOTP or backup code during login.
+ */
+exports.verifyRestaurant2FACode = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code) {
+      throw new HttpsError('invalid-argument', 'Please enter a code.');
+    }
+
+    const tfaDoc = await db.doc(`restaurant2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.enabled || !tfaData?.secret) {
+      throw new HttpsError('failed-precondition', 'Two-factor authentication is not enabled.');
+    }
+
+    const trimmedCode = code.trim();
+
+    // Check backup code (XXXX-XXXX format)
+    if (trimmedCode.includes('-') && trimmedCode.length === 9) {
+      const upperCode = trimmedCode.toUpperCase();
+      const backupIndex = tfaData.backupCodes.findIndex(
+        bc => bc.code === upperCode && !bc.used
+      );
+
+      if (backupIndex === -1) {
+        throw new HttpsError('invalid-argument', 'Invalid or already used backup code.');
+      }
+
+      const updatedCodes = [...tfaData.backupCodes];
+      updatedCodes[backupIndex] = { ...updatedCodes[backupIndex], used: true, usedAt: new Date().toISOString() };
+
+      await db.doc(`restaurant2FA/${uid}`).update({ backupCodes: updatedCodes });
+
+      const remaining = updatedCodes.filter(bc => !bc.used).length;
+      return { success: true, method: 'backup', remainingBackupCodes: remaining };
+    }
+
+    // Standard 6-digit TOTP code
+    if (trimmedCode.length !== 6 || !/^\d{6}$/.test(trimmedCode)) {
+      throw new HttpsError('invalid-argument', 'Please enter a valid 6-digit code from your authenticator app.');
+    }
+
+    const isValid = verifySync({ secret: tfaData.secret, token: trimmedCode }).valid;
+
+    if (!isValid) {
+      throw new HttpsError('invalid-argument', 'Incorrect code. Please check your authenticator app and try again.');
+    }
+
+    return { success: true, method: 'totp' };
+  } catch (error) {
+    console.error('Error verifying restaurant 2FA code:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to verify code.');
+  }
+});
+
+/**
+ * Disable restaurant 2FA. Requires a valid TOTP or backup code.
+ */
+exports.disableRestaurant2FA = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code) {
+      throw new HttpsError('invalid-argument', 'Please enter your authenticator code to disable 2FA.');
+    }
+
+    const tfaDoc = await db.doc(`restaurant2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.enabled || !tfaData?.secret) {
+      throw new HttpsError('failed-precondition', 'Two-factor authentication is not currently enabled.');
+    }
+
+    const trimmedCode = code.trim();
+    let verified = false;
+
+    if (trimmedCode.length === 6 && /^\d{6}$/.test(trimmedCode)) {
+      verified = verifySync({ secret: tfaData.secret, token: trimmedCode }).valid;
+    }
+
+    if (!verified && trimmedCode.includes('-') && trimmedCode.length === 9) {
+      const upperCode = trimmedCode.toUpperCase();
+      verified = tfaData.backupCodes.some(bc => bc.code === upperCode && !bc.used);
+    }
+
+    if (!verified) {
+      throw new HttpsError('invalid-argument', 'Incorrect code. Cannot disable 2FA without a valid code.');
+    }
+
+    await db.doc(`restaurant2FA/${uid}`).delete();
+    await db.doc(`restaurants/${uid}`).update({ twoFactorEnabled: false });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error disabling restaurant 2FA:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to disable two-factor authentication.');
+  }
+});
+
+/**
+ * Regenerate backup codes for a restaurant user with 2FA enabled.
+ */
+exports.regenerateRestaurantBackupCodes = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in.');
+    }
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    const db = admin.firestore();
+
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      throw new HttpsError('invalid-argument', 'Please enter a valid 6-digit code from your authenticator app.');
+    }
+
+    const tfaDoc = await db.doc(`restaurant2FA/${uid}`).get();
+    const tfaData = tfaDoc.data();
+
+    if (!tfaData?.enabled || !tfaData?.secret) {
+      throw new HttpsError('failed-precondition', 'Two-factor authentication is not enabled.');
+    }
+
+    const isValid = verifySync({ secret: tfaData.secret, token: code }).valid;
+    if (!isValid) {
+      throw new HttpsError('invalid-argument', 'Incorrect code.');
+    }
+
+    const backupCodes = generateBackupCodes();
+
+    await db.doc(`restaurant2FA/${uid}`).update({
+      backupCodes: backupCodes.map(c => ({ code: c, used: false })),
+    });
+
+    return { success: true, backupCodes };
+  } catch (error) {
+    console.error('Error regenerating restaurant backup codes:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'Failed to regenerate backup codes.');
+  }
+});
+
+// ============================================
+// TWITTER/X INTEGRATION (OAuth 2.0 with PKCE)
+// ============================================
+
+const TWITTER_AUTH_URL = 'https://twitter.com/i/oauth2/authorize';
+const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
+
+/**
+ * Initiate Twitter/X OAuth 2.0 PKCE flow
+ * Returns the authorization URL for the user to visit
+ */
+exports.initiateTwitterAuth = onCall({ secrets: [twitterClientId, twitterClientSecret] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const clientId = twitterClientId.value();
+  if (!clientId) {
+    return { success: false, error: 'not_configured', message: 'Twitter API credentials not configured. Please contact support.' };
+  }
+
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+
+  // Generate PKCE code verifier and challenge
+  const crypto = require('crypto');
+  const codeVerifier = crypto.randomBytes(32).toString('base64url');
+  const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+  const state = crypto.randomBytes(16).toString('hex');
+
+  // Store the code verifier and state for later verification
+  await db.doc(`twitterAuth/${uid}`).set({
+    codeVerifier,
+    state,
+    createdAt: FieldValue.serverTimestamp(),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minute expiry
+  });
+
+  // Determine callback URL based on environment
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+  const callbackUrl = isEmulator
+    ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/handleTwitterCallback'
+    : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/handleTwitterCallback';
+
+  const authUrl = `${TWITTER_AUTH_URL}?` + new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: callbackUrl,
+    scope: 'tweet.read tweet.write users.read offline.access',
+    state: `${uid}:${state}`,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256'
+  }).toString();
+
+  return { success: true, authUrl };
+});
+
+/**
+ * Handle Twitter/X OAuth callback
+ * Exchanges authorization code for access/refresh tokens
+ */
+exports.handleTwitterCallback = onRequest({ secrets: [twitterClientId, twitterClientSecret], cors: true }, async (req, res) => {
+  const { code, state, error: oauthError } = req.query;
+
+  if (oauthError) {
+    return res.redirect(`${getAppUrl()}?twitter_error=${encodeURIComponent(oauthError)}`);
+  }
+
+  if (!code || !state) {
+    return res.redirect(`${getAppUrl()}?twitter_error=missing_params`);
+  }
+
+  // Parse state to get uid
+  const [uid, stateToken] = state.split(':');
+  if (!uid || !stateToken) {
+    return res.redirect(`${getAppUrl()}?twitter_error=invalid_state`);
+  }
+
+  const db = admin.firestore();
+
+  try {
+    // Retrieve and validate the stored auth data
+    const authDoc = await db.doc(`twitterAuth/${uid}`).get();
+    if (!authDoc.exists) {
+      return res.redirect(`${getAppUrl()}?twitter_error=session_expired`);
+    }
+
+    const authData = authDoc.data();
+    if (authData.state !== stateToken) {
+      return res.redirect(`${getAppUrl()}?twitter_error=state_mismatch`);
+    }
+
+    if (authData.expiresAt.toDate() < new Date()) {
+      await db.doc(`twitterAuth/${uid}`).delete();
+      return res.redirect(`${getAppUrl()}?twitter_error=session_expired`);
+    }
+
+    // Determine callback URL (must match what was used in authorize)
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+    const callbackUrl = isEmulator
+      ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/handleTwitterCallback'
+      : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/handleTwitterCallback';
+
+    const clientId = twitterClientId.value();
+    const clientSecret = twitterClientSecret.value();
+
+    // Exchange code for tokens
+    const tokenResponse = await axios.post(
+      TWITTER_TOKEN_URL,
+      new URLSearchParams({
+        code,
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        redirect_uri: callbackUrl,
+        code_verifier: authData.codeVerifier
+      }).toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
+        }
+      }
+    );
+
+    const { access_token, refresh_token, expires_in } = tokenResponse.data;
+
+    // Get user profile info from Twitter
+    const profileResponse = await axios.get('https://api.twitter.com/2/users/me', {
+      headers: { 'Authorization': `Bearer ${access_token}` }
+    });
+
+    const twitterUser = profileResponse.data.data;
+
+    // Store connection data in Firestore
+    await db.doc(`restaurants/${uid}/settings/socialMedia`).set({
+      twitter: {
+        connected: true,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiresAt: new Date(Date.now() + expires_in * 1000).toISOString(),
+        twitterUserId: twitterUser.id,
+        twitterUsername: twitterUser.username,
+        twitterName: twitterUser.name,
+        connectedAt: new Date().toISOString()
+      }
+    }, { merge: true });
+
+    // Clean up auth session
+    await db.doc(`twitterAuth/${uid}`).delete();
+
+    // Redirect back to the app with success
+    const appUrl = isEmulator ? 'http://localhost:3000' : 'https://restaurant-portal-6b147.web.app';
+    return res.redirect(`${appUrl}/seo-social?twitter_connected=true`);
+  } catch (error) {
+    console.error('Twitter OAuth callback error:', error.response?.data || error.message);
+    const appUrl = process.env.FUNCTIONS_EMULATOR === 'true'
+      ? 'http://localhost:3000'
+      : 'https://restaurant-portal-6b147.web.app';
+    return res.redirect(`${appUrl}/seo-social?twitter_error=${encodeURIComponent(error.message)}`);
+  }
+});
+
+/**
+ * Helper to get app URL
+ */
+function getAppUrl() {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+  return isEmulator ? 'http://localhost:3000' : 'https://restaurant-portal-6b147.web.app';
+}
+
+/**
+ * Refresh Twitter/X access token using refresh token
+ */
+async function refreshTwitterToken(uid, refreshToken) {
+  const clientId = twitterClientId.value();
+  const clientSecret = twitterClientSecret.value();
+
+  const tokenResponse = await axios.post(
+    TWITTER_TOKEN_URL,
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId
+    }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
+      }
+    }
+  );
+
+  const { access_token, refresh_token: newRefreshToken, expires_in } = tokenResponse.data;
+
+  // Update stored tokens
+  const db = admin.firestore();
+  await db.doc(`restaurants/${uid}/settings/socialMedia`).set({
+    twitter: {
+      accessToken: access_token,
+      refreshToken: newRefreshToken || refreshToken,
+      expiresAt: new Date(Date.now() + expires_in * 1000).toISOString()
+    }
+  }, { merge: true });
+
+  return access_token;
+}
+
+/**
+ * Post a tweet on behalf of the user
+ */
+exports.postTweet = onCall({ secrets: [twitterClientId, twitterClientSecret] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const uid = request.auth.uid;
+  const { content, imageUrl } = request.data;
+
+  if (!content || !content.trim()) {
+    throw new HttpsError('invalid-argument', 'Tweet content is required');
+  }
+
+  const db = admin.firestore();
+
+  try {
+    // Get user's Twitter connection
+    const socialDoc = await db.doc(`restaurants/${uid}/settings/socialMedia`).get();
+    if (!socialDoc.exists || !socialDoc.data().twitter?.connected) {
+      throw new HttpsError('failed-precondition', 'Twitter/X is not connected. Please connect your account first.');
+    }
+
+    const twitter = socialDoc.data().twitter;
+    let accessToken = twitter.accessToken;
+
+    // Check if token is expired and refresh if needed
+    if (twitter.expiresAt && new Date(twitter.expiresAt) < new Date()) {
+      if (!twitter.refreshToken) {
+        throw new HttpsError('failed-precondition', 'Twitter session expired. Please reconnect your account.');
+      }
+      accessToken = await refreshTwitterToken(uid, twitter.refreshToken);
+    }
+
+    // Post the tweet
+    const result = await postToTwitter({ content, imageUrl }, accessToken);
+    return { success: true, tweetId: result.data?.id };
+  } catch (error) {
+    console.error('Error posting tweet:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', `Failed to post tweet: ${error.message}`);
+  }
+});
+
+/**
+ * Disconnect Twitter/X account
+ */
+exports.disconnectTwitter = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+
+  try {
+    await db.doc(`restaurants/${uid}/settings/socialMedia`).set({
+      twitter: {
+        connected: false,
+        accessToken: null,
+        refreshToken: null,
+        expiresAt: null,
+        twitterUserId: null,
+        twitterUsername: null,
+        twitterName: null,
+        disconnectedAt: new Date().toISOString()
+      }
+    }, { merge: true });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error disconnecting Twitter:', error);
+    throw new HttpsError('internal', 'Failed to disconnect Twitter/X');
+  }
+});
+
+/**
+ * Get Twitter/X connection status
+ */
+exports.getTwitterStatus = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+
+  try {
+    const socialDoc = await db.doc(`restaurants/${uid}/settings/socialMedia`).get();
+    if (!socialDoc.exists || !socialDoc.data().twitter) {
+      return { connected: false };
+    }
+
+    const twitter = socialDoc.data().twitter;
+    return {
+      connected: twitter.connected || false,
+      username: twitter.twitterUsername || null,
+      name: twitter.twitterName || null,
+      connectedAt: twitter.connectedAt || null
+    };
+  } catch (error) {
+    console.error('Error getting Twitter status:', error);
+    throw new HttpsError('internal', 'Failed to get Twitter status');
+  }
+});
+
+// ============================================
+// STAFF ACCESS CONTROL
+// ============================================
+
+const crypto = require('crypto');
+
+function hashPassword(password, salt) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, 64, (err, derivedKey) => {
+      if (err) reject(err);
+      resolve(derivedKey.toString('hex'));
+    });
+  });
+}
+
+function generateSalt() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+/**
+ * Create a staff account for a restaurant
+ * Creates a Firebase Auth user + Firestore record with permissions
+ */
+exports.createStaffAccount = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const ownerUid = request.auth.uid;
+  const { username, password, displayName, permissions } = request.data;
+
+  if (!username || !password || !displayName || !permissions) {
+    throw new HttpsError('invalid-argument', 'Missing required fields');
+  }
+  if (username.length < 3) {
+    throw new HttpsError('invalid-argument', 'Username must be at least 3 characters');
+  }
+  if (password.length < 6) {
+    throw new HttpsError('invalid-argument', 'Password must be at least 6 characters');
+  }
+  if (!Array.isArray(permissions) || permissions.length === 0) {
+    throw new HttpsError('invalid-argument', 'Must select at least one permission');
+  }
+
+  const db = admin.firestore();
+
+  // Check for duplicate username within this restaurant
+  const existing = await db.collection(`restaurants/${ownerUid}/staffAccounts`)
+    .where('usernameLower', '==', username.toLowerCase())
+    .limit(1).get();
+  if (!existing.empty) {
+    throw new HttpsError('already-exists', 'A staff account with this username already exists');
+  }
+
+  // Create Firebase Auth user with synthetic email
+  const syntheticEmail = `${username.toLowerCase()}.staff.${ownerUid}@kodacarte.local`;
+  let staffUser;
+  try {
+    staffUser = await admin.auth().createUser({
+      email: syntheticEmail,
+      password: password,
+      displayName: displayName
+    });
+  } catch (err) {
+    if (err.code === 'auth/email-already-exists') {
+      throw new HttpsError('already-exists', 'This staff username is already taken');
+    }
+    throw new HttpsError('internal', 'Failed to create staff auth account: ' + err.message);
+  }
+
+  // Set custom claims
+  await admin.auth().setCustomUserClaims(staffUser.uid, {
+    isStaff: true,
+    restaurantId: ownerUid,
+    permissions: permissions
+  });
+
+  // Hash password for Firestore record (backup verification)
+  const salt = generateSalt();
+  const passwordHash = await hashPassword(password, salt);
+
+  // Store staff record
+  await db.doc(`restaurants/${ownerUid}/staffAccounts/${staffUser.uid}`).set({
+    username: username,
+    usernameLower: username.toLowerCase(),
+    displayName: displayName,
+    email: syntheticEmail,
+    permissions: permissions,
+    active: true,
+    authUid: staffUser.uid,
+    passwordHash: passwordHash,
+    passwordSalt: salt,
+    createdAt: FieldValue.serverTimestamp(),
+    lastLogin: null
+  });
+
+  return {
+    success: true,
+    staffId: staffUser.uid,
+    message: `Staff account "${username}" created successfully`
+  };
+});
+
+/**
+ * Update a staff account's permissions, name, or password
+ */
+exports.updateStaffAccount = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const ownerUid = request.auth.uid;
+  const { staffId, displayName, permissions, newPassword, active } = request.data;
+
+  if (!staffId) {
+    throw new HttpsError('invalid-argument', 'Staff ID is required');
+  }
+
+  const db = admin.firestore();
+  const staffRef = db.doc(`restaurants/${ownerUid}/staffAccounts/${staffId}`);
+  const staffDoc = await staffRef.get();
+
+  if (!staffDoc.exists) {
+    throw new HttpsError('not-found', 'Staff account not found');
+  }
+
+  const updates = { updatedAt: FieldValue.serverTimestamp() };
+
+  if (displayName !== undefined) {
+    updates.displayName = displayName;
+    await admin.auth().updateUser(staffId, { displayName });
+  }
+
+  if (permissions !== undefined && Array.isArray(permissions)) {
+    updates.permissions = permissions;
+    // Update custom claims
+    const currentClaims = (await admin.auth().getUser(staffId)).customClaims || {};
+    await admin.auth().setCustomUserClaims(staffId, {
+      ...currentClaims,
+      permissions: permissions
+    });
+  }
+
+  if (newPassword) {
+    if (newPassword.length < 6) {
+      throw new HttpsError('invalid-argument', 'Password must be at least 6 characters');
+    }
+    await admin.auth().updateUser(staffId, { password: newPassword });
+    const salt = generateSalt();
+    const passwordHash = await hashPassword(newPassword, salt);
+    updates.passwordHash = passwordHash;
+    updates.passwordSalt = salt;
+  }
+
+  if (active !== undefined) {
+    updates.active = active;
+    await admin.auth().updateUser(staffId, { disabled: !active });
+  }
+
+  await staffRef.update(updates);
+
+  return { success: true, message: 'Staff account updated' };
+});
+
+/**
+ * Delete a staff account
+ */
+exports.deleteStaffAccount = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const ownerUid = request.auth.uid;
+  const { staffId } = request.data;
+
+  if (!staffId) {
+    throw new HttpsError('invalid-argument', 'Staff ID is required');
+  }
+
+  const db = admin.firestore();
+  const staffRef = db.doc(`restaurants/${ownerUid}/staffAccounts/${staffId}`);
+  const staffDoc = await staffRef.get();
+
+  if (!staffDoc.exists) {
+    throw new HttpsError('not-found', 'Staff account not found');
+  }
+
+  // Delete Firebase Auth user
+  try {
+    await admin.auth().deleteUser(staffId);
+  } catch (err) {
+    console.error('Error deleting staff auth user:', err);
+  }
+
+  // Delete Firestore record
+  await staffRef.delete();
+
+  return { success: true, message: 'Staff account deleted' };
+});
+
+/**
+ * Look up staff email by username (for login)
+ */
+exports.lookupStaffEmail = onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+      }
+
+      const { username } = req.body;
+      if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: 'Username is required' });
+      }
+
+      const db = admin.firestore();
+
+      // Search all restaurants for a staff account with this username
+      const restaurantsSnapshot = await db.collectionGroup('staffAccounts')
+        .where('usernameLower', '==', username.toLowerCase())
+        .where('active', '==', true)
+        .limit(1).get();
+
+      if (!restaurantsSnapshot.empty) {
+        const staffDoc = restaurantsSnapshot.docs[0];
+        const data = staffDoc.data();
+        return res.json({
+          email: data.email,
+          isStaff: true,
+          displayName: data.displayName
+        });
+      }
+
+      return res.status(404).json({ error: 'Staff account not found' });
+    } catch (error) {
+      console.error('Error looking up staff email:', error);
+      return res.status(500).json({ error: 'Failed to lookup staff account' });
+    }
+  });
+});
+
+// ============================================
+// STRIPE CONNECT HELPER
+// ============================================
+
+/**
+ * Look up a restaurant's connected Stripe account ID.
+ * Returns null if the restaurant hasn't connected Stripe (fallback to platform account).
+ */
+async function getStripeConnectAccountId(restaurantId) {
+  if (!restaurantId) return null;
+  try {
+    const db = admin.firestore();
+    const connectDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).get();
+    if (!connectDoc.exists) return null;
+    const data = connectDoc.data();
+    if (data.status === 'active' && data.stripeAccountId) {
+      return data.stripeAccountId;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error fetching Stripe Connect account:', err);
+    return null;
+  }
+}
+
+/**
+ * Resolve the correct restaurantId from auth context.
+ * Staff users carry restaurantId in custom claims; owners use their own UID.
+ */
+function resolveRestaurantId(request) {
+  if (request.auth?.token?.isStaff && request.auth?.token?.restaurantId) {
+    return request.auth.token.restaurantId;
+  }
+  return request.auth?.uid || null;
+}
+
+// ============================================
+// STRIPE CONNECT FUNCTIONS
+// ============================================
+
+/**
+ * Initiate Stripe Connect onboarding for a restaurant owner.
+ * Creates a Standard connected account and returns an Account Link URL.
+ */
+exports.initiateStripeConnect = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const db = admin.firestore();
+
+    // Check if already connected
+    const connectDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).get();
+    if (connectDoc.exists && connectDoc.data().status === 'active') {
+      throw new HttpsError('already-exists', 'Stripe account is already connected');
+    }
+
+    // Get restaurant info for pre-filling
+    const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
+    const restaurantData = restaurantDoc.exists ? restaurantDoc.data() : {};
+
+    let stripeAccountId;
+
+    // Reuse existing account if onboarding was started but not completed
+    if (connectDoc.exists && connectDoc.data().stripeAccountId) {
+      stripeAccountId = connectDoc.data().stripeAccountId;
+    } else {
+      // Create a new Standard connected account
+      const account = await stripe.accounts.create({
+        type: 'standard',
+        email: restaurantData.email || request.auth.token.email,
+        business_profile: {
+          name: restaurantData.restaurantName || undefined,
+        },
+        metadata: {
+          restaurantId: restaurantId,
+          platform: 'kodacarte'
+        }
+      });
+      stripeAccountId = account.id;
+    }
+
+    // Determine return/refresh URLs
+    const baseUrl = request.data?.returnUrl || 'https://restaurant-portal-6b147.web.app';
+    const returnUrl = `${baseUrl}/account?stripe_connect=success&account_id=${stripeAccountId}`;
+    const refreshUrl = `${baseUrl}/account?stripe_connect=refresh`;
+
+    // Create an Account Link for onboarding
+    const accountLink = await stripe.accountLinks.create({
+      account: stripeAccountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: 'account_onboarding',
+    });
+
+    // Save pending state to Firestore
+    await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).set({
+      stripeAccountId: stripeAccountId,
+      status: 'pending',
+      initiatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    return {
+      success: true,
+      url: accountLink.url,
+      stripeAccountId: stripeAccountId
+    };
+  } catch (error) {
+    console.error('Error initiating Stripe Connect:', error);
+    if (error.code) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Refresh a Stripe Connect onboarding link (if the previous one expired).
+ */
+exports.refreshStripeConnectLink = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const db = admin.firestore();
+
+    const connectDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).get();
+    if (!connectDoc.exists || !connectDoc.data().stripeAccountId) {
+      throw new HttpsError('not-found', 'No pending Stripe Connect found. Please start over.');
+    }
+
+    const stripeAccountId = connectDoc.data().stripeAccountId;
+    const baseUrl = request.data?.returnUrl || 'https://restaurant-portal-6b147.web.app';
+    const returnUrl = `${baseUrl}/account?stripe_connect=success&account_id=${stripeAccountId}`;
+    const refreshUrl = `${baseUrl}/account?stripe_connect=refresh`;
+
+    const accountLink = await stripe.accountLinks.create({
+      account: stripeAccountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: 'account_onboarding',
+    });
+
+    return {
+      success: true,
+      url: accountLink.url
+    };
+  } catch (error) {
+    console.error('Error refreshing Stripe Connect link:', error);
+    if (error.code) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Check if a Stripe Connect account has completed onboarding.
+ * Called after the user returns from Stripe onboarding.
+ */
+exports.checkStripeConnectStatus = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const stripeAccountId = request.data?.stripeAccountId;
+
+    if (!stripeAccountId) {
+      throw new HttpsError('invalid-argument', 'stripeAccountId is required');
+    }
+
+    // Retrieve account from Stripe to check status
+    const account = await stripe.accounts.retrieve(stripeAccountId);
+
+    // For Standard accounts, details_submitted is the key indicator.
+    // charges_enabled may take a moment to activate after onboarding.
+    const isComplete = account.details_submitted;
+    const db = admin.firestore();
+
+    if (isComplete) {
+      // Mark as active — charges_enabled will be true shortly after details_submitted
+      await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).set({
+        stripeAccountId: stripeAccountId,
+        status: 'active',
+        chargesEnabled: account.charges_enabled,
+        payoutsEnabled: account.payouts_enabled,
+        detailsSubmitted: true,
+        businessName: account.business_profile?.name || null,
+        connectedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    } else {
+      // Still pending — user hasn't finished the Stripe onboarding form
+      await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).set({
+        stripeAccountId: stripeAccountId,
+        status: 'pending',
+        chargesEnabled: account.charges_enabled,
+        payoutsEnabled: account.payouts_enabled,
+        detailsSubmitted: false,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    return {
+      success: true,
+      status: isComplete ? 'active' : 'pending',
+      chargesEnabled: account.charges_enabled,
+      payoutsEnabled: account.payouts_enabled,
+      detailsSubmitted: account.details_submitted
+    };
+  } catch (error) {
+    console.error('Error checking Stripe Connect status:', error);
+    if (error.code) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Get current Stripe Connect status for the restaurant.
+ */
+exports.getStripeConnectStatus = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const db = admin.firestore();
+
+    const connectDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).get();
+    if (!connectDoc.exists) {
+      return { connected: false, status: 'not_connected' };
+    }
+
+    const data = connectDoc.data();
+    return {
+      connected: data.status === 'active',
+      status: data.status,
+      stripeAccountId: data.stripeAccountId || null,
+      chargesEnabled: data.chargesEnabled || false,
+      payoutsEnabled: data.payoutsEnabled || false,
+      businessName: data.businessName || null,
+      connectedAt: data.connectedAt || null
+    };
+  } catch (error) {
+    console.error('Error getting Stripe Connect status:', error);
+    if (error.code) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+/**
+ * Disconnect a restaurant's Stripe Connect account.
+ */
+exports.disconnectStripeConnect = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const db = admin.firestore();
+
+    const connectDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).get();
+    if (!connectDoc.exists || !connectDoc.data().stripeAccountId) {
+      throw new HttpsError('not-found', 'No Stripe Connect account found');
+    }
+
+    const stripeAccountId = connectDoc.data().stripeAccountId;
+
+    // Remove the connection — doesn't delete the Stripe account itself
+    await db.doc(`restaurants/${restaurantId}/settings/stripeConnect`).set({
+      stripeAccountId: null,
+      status: 'disconnected',
+      disconnectedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      previousAccountId: stripeAccountId
+    });
+
+    return {
+      success: true,
+      message: 'Stripe account disconnected. Payments will now go through the platform account.'
+    };
+  } catch (error) {
+    console.error('Error disconnecting Stripe Connect:', error);
+    if (error.code) throw error;
+    throw new HttpsError('internal', error.message);
+  }
+});
+
+// ============================================
+// CUSTOMER REVIEWS
+// ============================================
+
+/**
+ * Submit a customer review (public HTTP endpoint).
+ * Reviews are created with status 'pending' and must be approved by the restaurant admin.
+ */
+exports.submitReview = onRequest((req, res) => {
+  cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+      }
+
+      const { restaurantId, customerName, customerEmail, rating, reviewText, customerId } = req.body;
+
+      if (!restaurantId || !customerName || !rating || !reviewText) {
+        return res.status(400).json({ error: 'Missing required fields: restaurantId, customerName, rating, reviewText' });
+      }
+
+      const numRating = parseInt(rating);
+      if (isNaN(numRating) || numRating < 1 || numRating > 5) {
+        return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+      }
+
+      if (reviewText.length > 1000) {
+        return res.status(400).json({ error: 'Review text must be 1000 characters or less' });
+      }
+
+      const db = admin.firestore();
+
+      // Verify restaurant exists
+      const restaurantDoc = await db.doc(`restaurants/${restaurantId}`).get();
+      if (!restaurantDoc.exists) {
+        return res.status(404).json({ error: 'Restaurant not found' });
+      }
+
+      const reviewDoc = {
+        customerName: customerName.trim(),
+        customerEmail: customerEmail ? customerEmail.trim() : null,
+        customerId: customerId || null,
+        rating: numRating,
+        reviewText: reviewText.trim(),
+        status: 'pending',
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      };
+
+      const docRef = await db.collection(`restaurants/${restaurantId}/reviews`).add(reviewDoc);
+
+      return res.status(201).json({
+        success: true,
+        message: 'Review submitted! It will be visible after approval.',
+        reviewId: docRef.id
+      });
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      return res.status(500).json({ error: 'Failed to submit review' });
+    }
+  });
+});
+
+/**
+ * Get approved reviews for a restaurant (public HTTP endpoint).
+ */
+exports.getApprovedReviews = onRequest((req, res) => {
+  cors(req, res, async () => {
+    try {
+      if (req.method !== 'GET') {
+        return res.status(405).json({ error: 'Method not allowed' });
+      }
+
+      const restaurantId = req.query.restaurantId;
+      if (!restaurantId) {
+        return res.status(400).json({ error: 'restaurantId query parameter is required' });
+      }
+
+      const db = admin.firestore();
+      const snapshot = await db.collection(`restaurants/${restaurantId}/reviews`)
+        .where('status', '==', 'approved')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+
+      const reviews = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        reviews.push({
+          id: doc.id,
+          customerName: data.customerName,
+          rating: data.rating,
+          reviewText: data.reviewText,
+          createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+        });
+      });
+
+      return res.json({ success: true, reviews });
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+      return res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+  });
 });

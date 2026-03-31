@@ -63,6 +63,10 @@
         return;
       }
 
+      // Check host page URL for promo deep-link param
+      var urlParams = new URLSearchParams(window.location.search);
+      var promoFromUrl = urlParams.get('koda_promo') || '';
+
       this._config = {
         restaurantId: config.restaurantId,
         mode: config.mode || 'inline',
@@ -72,6 +76,7 @@
         buttonText: config.buttonText || 'Order Online',
         buttonPosition: config.buttonPosition || 'bottom-right',
         defaultTab: config.defaultTab || 'menu',
+        promo: promoFromUrl,
         onOrderPlaced: config.onOrderPlaced || null,
         onCartUpdate: config.onCartUpdate || null,
         onAuthChange: config.onAuthChange || null,
@@ -173,37 +178,94 @@
       var iframeLoaded = false;
 
       var self = this;
-      btn.addEventListener('click', function() {
-        var isOpen = drawer.style.display !== 'none';
-        if (isOpen) {
-          drawer.style.display = 'none';
-          drawerOverlay.style.display = 'none';
-          btn.classList.remove('kc-float-btn-active');
-        } else {
-          drawer.style.display = 'flex';
-          drawerOverlay.style.display = 'block';
-          btn.classList.add('kc-float-btn-active');
-          if (!iframeLoaded) {
-            self._loadIframe(iframe);
-            iframeLoaded = true;
-          }
-        }
-      });
 
-      drawerOverlay.addEventListener('click', function() {
+      function openDrawer() {
+        drawer.style.display = 'flex';
+        drawerOverlay.style.display = 'block';
+        btn.classList.add('kc-float-btn-active');
+        if (!iframeLoaded) {
+          self._loadIframe(iframe);
+          iframeLoaded = true;
+        }
+      }
+
+      function closeDrawer() {
         drawer.style.display = 'none';
         drawerOverlay.style.display = 'none';
         btn.classList.remove('kc-float-btn-active');
+      }
+
+      btn.addEventListener('click', function() {
+        if (drawer.style.display !== 'none') {
+          closeDrawer();
+        } else {
+          openDrawer();
+        }
       });
 
-      // Close button inside drawer
+      // Auto-open drawer if promo deep-link detected
+      if (this._config.promo) {
+        openDrawer();
+      }
+
+      drawerOverlay.addEventListener('click', closeDrawer);
+
       var closeBtn = drawer.querySelector('.kc-close-btn');
       if (closeBtn) {
-        closeBtn.addEventListener('click', function() {
-          drawer.style.display = 'none';
-          drawerOverlay.style.display = 'none';
-          btn.classList.remove('kc-float-btn-active');
+        closeBtn.addEventListener('click', closeDrawer);
+      }
+
+      // Resize handle (desktop/tablet only)
+      var resizeHandle = document.createElement('div');
+      resizeHandle.className = 'kc-resize-handle';
+      drawer.appendChild(resizeHandle);
+
+      if (window.matchMedia('(min-width: 481px)').matches) {
+        var isResizing = false;
+        var resizeStartX, resizeStartY, resizeStartWidth, resizeStartTop;
+
+        function startResize(clientX, clientY) {
+          isResizing = true;
+          resizeStartX = clientX;
+          resizeStartY = clientY;
+          var rect = drawer.getBoundingClientRect();
+          resizeStartWidth = rect.width;
+          resizeStartTop = rect.top;
+          drawer.style.transition = 'none';
+        }
+
+        function doResize(clientX, clientY) {
+          if (!isResizing) return;
+          var newWidth = Math.max(320, Math.min(resizeStartWidth + (resizeStartX - clientX), window.innerWidth - 20));
+          var newTop = Math.max(10, Math.min(resizeStartTop + (clientY - resizeStartY), window.innerHeight - 300));
+          drawer.style.width = newWidth + 'px';
+          drawer.style.top = newTop + 'px';
+        }
+
+        function stopResize() {
+          if (isResizing) {
+            isResizing = false;
+            drawer.style.transition = '';
+          }
+        }
+
+        resizeHandle.addEventListener('mousedown', function(e) {
+          startResize(e.clientX, e.clientY);
+          e.preventDefault();
         });
+        document.addEventListener('mousemove', function(e) {
+          if (isResizing) { doResize(e.clientX, e.clientY); e.preventDefault(); }
+        });
+        document.addEventListener('mouseup', stopResize);
+
+        resizeHandle.addEventListener('touchstart', function(e) {
+          startResize(e.touches[0].clientX, e.touches[0].clientY);
+          e.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchmove', function(e) {
+          if (isResizing) { doResize(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+        }, { passive: false });
+        document.addEventListener('touchend', stopResize);
       }
     },
 
@@ -234,15 +296,13 @@
 
       return '' +
         '<div class="' + headerClass + '">' +
-          '<div class="kc-header-left">' +
-            '<span class="kc-brand">Powered by Koda Carte</span>' +
-          '</div>' +
           '<nav class="kc-tabs">' +
             '<button class="kc-tab active" data-tab="menu">Menu</button>' +
             '<button class="kc-tab" data-tab="account">My Account</button>' +
             '<button class="kc-tab" data-tab="orders">Orders</button>' +
             '<button class="kc-tab" data-tab="promotions">Promos</button>' +
             '<button class="kc-tab" data-tab="rewards">Rewards</button>' +
+            '<button class="kc-tab" data-tab="reviews">Reviews</button>' +
           '</nav>' +
           '<div class="kc-header-right">' +
             '<span class="kc-cart-badge" style="display:none;">0</span>' +
@@ -290,6 +350,10 @@
         '?restaurant=' + encodeURIComponent(cfg.restaurantId) +
         '&embed=true' +
         '&tab=' + encodeURIComponent(cfg.defaultTab);
+
+      if (cfg.promo) {
+        url += '&promo=' + encodeURIComponent(cfg.promo);
+      }
 
       iframe.src = url;
     },
@@ -388,19 +452,17 @@
           'display: flex;' +
           'align-items: center;' +
           'justify-content: space-between;' +
-          'padding: 0 16px;' +
+          'padding: 8px 12px;' +
           'background: var(--kc-primary);' +
           'color: #fff;' +
-          'height: 52px;' +
-          'gap: 12px;' +
+          'min-height: 44px;' +
+          'gap: 8px;' +
           'flex-shrink: 0;' +
         '}' +
-        '.kc-header-left { display: flex; align-items: center; }' +
-        '.kc-brand { font-size: 0.72rem; opacity: 0.7; white-space: nowrap; }' +
-        '.kc-header-right { display: flex; align-items: center; gap: 10px; }' +
+        '.kc-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }' +
 
         /* ---- TABS ---- */
-        '.kc-tabs { display: flex; gap: 2px; }' +
+        '.kc-tabs { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }' +
         '.kc-tab {' +
           'padding: 8px 16px;' +
           'background: transparent;' +
@@ -491,7 +553,7 @@
         /* ---- DRAWER ---- */
         '.kc-drawer {' +
           'position: fixed;' +
-          'top: 10px; right: 10px; bottom: 10px;' +
+          'top: 80px; right: 10px; bottom: 10px;' +
           'width: 420px;' +
           'max-width: calc(100vw - 20px);' +
           'background: #fff;' +
@@ -504,7 +566,31 @@
           'animation: kc-slide-in 0.3s ease;' +
         '}' +
         '.kc-drawer .kc-body { flex: 1; min-height: 0; }' +
-        '.kc-drawer .kc-tabs { flex-wrap: wrap; justify-content: center; }' +
+        '.kc-drawer .kc-tabs { justify-content: center; }' +
+
+        '.kc-resize-handle {' +
+          'position: absolute;' +
+          'top: 0;' +
+          'left: 0;' +
+          'width: 24px;' +
+          'height: 24px;' +
+          'cursor: nw-resize;' +
+          'z-index: 10;' +
+          'border-radius: 16px 0 0 0;' +
+        '}' +
+        '.kc-resize-handle::after {' +
+          'content: "";' +
+          'position: absolute;' +
+          'top: 6px;' +
+          'left: 6px;' +
+          'width: 8px;' +
+          'height: 8px;' +
+          'border-top: 2px solid rgba(255,255,255,0.5);' +
+          'border-left: 2px solid rgba(255,255,255,0.5);' +
+        '}' +
+        '.kc-resize-handle:hover::after {' +
+          'border-color: rgba(255,255,255,0.9);' +
+        '}' +
 
         '@keyframes kc-slide-in {' +
           'from { transform: translateX(100%); opacity: 0; }' +
@@ -513,10 +599,11 @@
 
         /* ---- RESPONSIVE ---- */
         '@media (max-width: 480px) {' +
-          '.kc-drawer { top: 0; right: 0; bottom: 0; width: 100%; max-width: 100%; border-radius: 0; }' +
-          '.kc-tab { padding: 6px 10px; font-size: 0.8rem; }' +
-          '.kc-float-text { display: none; }' +
-          '.kc-float-btn { padding: 14px; border-radius: 50%; }' +
+          '.kc-drawer { top: 12px; right: 6px; bottom: 6px; left: 6px; width: auto; max-width: 100%; border-radius: 12px; }' +
+          '.kc-tab { padding: 7px 12px; font-size: 0.8rem; }' +
+          '.kc-tabs { justify-content: center; }' +
+          '.kc-float-btn { bottom: 14px; right: 14px; padding: 12px 20px; font-size: 0.9rem; }' +
+          '.kc-resize-handle { display: none !important; }' +
         '}' +
         '';
 

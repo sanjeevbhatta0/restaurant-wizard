@@ -22,6 +22,7 @@ import Payments from './components/Payments';
 import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
 import WebsiteBuilder from './components/WebsiteBuilder';
+import ReviewManagement from './components/ReviewManagement';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import LandingPage from './components/landing/LandingPage';
 import AdminDashboard from './components/admin/AdminDashboard';
@@ -121,6 +122,11 @@ function App() {
                 <Route path="/website-builder" element={
                   <PrivateRoute>
                     <Layout><WebsiteBuilder /></Layout>
+                  </PrivateRoute>
+                } />
+                <Route path="/reviews" element={
+                  <PrivateRoute>
+                    <Layout><ReviewManagement /></Layout>
                   </PrivateRoute>
                 } />
                 <Route path="/account" element={

@@ -10,14 +10,14 @@ export function useLocation() {
 }
 
 export function LocationProvider({ children }) {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [isMultiLocation, setIsMultiLocation] = useState(false);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser) {
+    if (!currentUser || !restaurantUid) {
       setSelectedLocation(null);
       setIsMultiLocation(false);
       setLocations([]);
@@ -26,14 +26,14 @@ export function LocationProvider({ children }) {
     }
 
     loadRestaurantData();
-  }, [currentUser]);
+  }, [currentUser, restaurantUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadRestaurantData = async () => {
     try {
       setLoading(true);
       
       // Load restaurant data
-      const restaurantRef = doc(db, `restaurants/${currentUser.uid}`);
+      const restaurantRef = doc(db, `restaurants/${restaurantUid}`);
       const restaurantSnap = await getDoc(restaurantRef);
       
       if (restaurantSnap.exists()) {
@@ -43,7 +43,7 @@ export function LocationProvider({ children }) {
 
         if (multiLocation) {
           // Load locations
-          const locationsRef = collection(db, `restaurants/${currentUser.uid}/locations`);
+          const locationsRef = collection(db, `restaurants/${restaurantUid}/locations`);
           const locationsSnap = await getDocs(locationsRef);
           const locationsData = locationsSnap.docs.map(doc => ({
             id: doc.id,
@@ -54,18 +54,18 @@ export function LocationProvider({ children }) {
           // Set first location as default if none selected
           if (locationsData.length > 0) {
             // Check localStorage for previously selected location
-            const savedLocation = localStorage.getItem(`selectedLocation_${currentUser.uid}`);
+            const savedLocation = localStorage.getItem(`selectedLocation_${restaurantUid}`);
             if (savedLocation && locationsData.find(l => l.id === savedLocation)) {
               setSelectedLocation(savedLocation);
             } else {
               setSelectedLocation(locationsData[0].id);
-              localStorage.setItem(`selectedLocation_${currentUser.uid}`, locationsData[0].id);
+              localStorage.setItem(`selectedLocation_${restaurantUid}`, locationsData[0].id);
             }
           }
         } else {
           // Single location - use restaurant ID as location
           setLocations([]);
-          setSelectedLocation(currentUser.uid);
+          setSelectedLocation(restaurantUid);
         }
       } else {
         // Default to single location
@@ -82,7 +82,7 @@ export function LocationProvider({ children }) {
   const handleSetSelectedLocation = (locationId) => {
     setSelectedLocation(locationId);
     if (currentUser) {
-      localStorage.setItem(`selectedLocation_${currentUser.uid}`, locationId);
+      localStorage.setItem(`selectedLocation_${restaurantUid}`, locationId);
     }
   };
 

@@ -1,49 +1,27 @@
 /**
+ * @jest-environment node
+ */
+
+/**
  * E2E Tests — Full POS → Kitchen → Server → Payment Flow
- * 
+ *
  * These tests simulate the complete real-world flow using Firebase emulators.
  * They test the actual Firestore operations against the emulator to verify
  * data persistence and status transitions work correctly end-to-end.
- * 
+ *
  * REQUIRES: Firebase emulators running on localhost
  *   firebase emulators:start
- * 
+ *
  * Run with:
  *   FIRESTORE_EMULATOR_HOST=localhost:8080 npx react-scripts test --testPathPattern=e2e
  */
 
-const { initializeApp } = require('firebase/app');
-const {
-  getFirestore,
-  connectFirestoreEmulator,
-  collection,
-  addDoc,
-  doc,
-  getDoc,
-  updateDoc,
-  query,
-  where,
-  getDocs,
-  deleteDoc
-} = require('firebase/firestore');
-
-// Firebase test config
-const firebaseConfig = {
-  apiKey: 'test-api-key',
-  authDomain: 'test.firebaseapp.com',
-  projectId: 'restaurant-portal-6b147'
-};
-
-// Check if emulator is available
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
-const isEmulatorAvailable = !!process.env.FIRESTORE_EMULATOR_HOST;
+const { db, isEmulatorAvailable } = require('../helpers/e2eFirebase');
 
 // ==========================================
 // Setup
 // ==========================================
 
-let app;
-let db;
 const TEST_RESTAURANT_ID = 'e2e-test-restaurant-' + Date.now();
 
 // Conditionally run tests only when emulator is available
@@ -52,25 +30,11 @@ const describeE2E = isEmulatorAvailable ? describe : describe.skip;
 describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
   let createdOrderIds = [];
 
-  beforeAll(() => {
-    app = initializeApp(firebaseConfig, 'e2e-test-' + Date.now());
-    db = getFirestore(app);
-
-    if (!isEmulatorAvailable) {
-      console.warn('⚠️ Firestore emulator not detected. Skipping E2E tests.');
-      console.warn('   Start emulators: firebase emulators:start');
-      console.warn('   Then run: FIRESTORE_EMULATOR_HOST=localhost:8080 npm test');
-    } else {
-      const [host, port] = EMULATOR_HOST.split(':');
-      connectFirestoreEmulator(db, host, parseInt(port));
-    }
-  });
-
   afterAll(async () => {
     // Cleanup test data
     for (const orderId of createdOrderIds) {
       try {
-        await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).delete();
       } catch (e) {
         // Ignore cleanup errors
       }
@@ -125,8 +89,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     };
 
     test('Step 1 — POS: Create order and send to kitchen', async () => {
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-      const docRef = await addDoc(ordersRef, orderData);
+      const docRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add(orderData);
       orderId = docRef.id;
       createdOrderIds.push(orderId);
 
@@ -134,8 +97,8 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
       expect(typeof orderId).toBe('string');
 
       // Verify the order was created correctly
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
-      expect(orderDoc.exists()).toBe(true);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
+      expect(orderDoc.exists).toBe(true);
 
       const data = orderDoc.data();
       expect(data.status).toBe('sent_to_kitchen');
@@ -148,14 +111,11 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
 
     test('Step 2 — Kitchen: Query order appears in kitchen view', async () => {
       // Kitchen queries for orders with status in [new, sent_to_kitchen, preparing]
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-      const q = query(
-        ordersRef,
-        where('locationId', '==', TEST_RESTAURANT_ID),
-        where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
-      );
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('locationId', '==', TEST_RESTAURANT_ID)
+        .where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
+        .get();
 
-      const snapshot = await getDocs(q);
       const kitchenOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // Our order should appear in kitchen view
@@ -165,31 +125,28 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     });
 
     test('Step 3 — Kitchen: Mark order as preparing', async () => {
-      const orderRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`);
-
-      await updateDoc(orderRef, {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'preparing',
         updatedAt: new Date()
       });
 
       // Verify the update
-      const orderDoc = await getDoc(orderRef);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       const data = orderDoc.data();
       expect(data.status).toBe('preparing');
     });
 
     test('Step 4 — Kitchen: Mark order as ready', async () => {
-      const orderRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`);
       const readyAt = new Date();
 
-      await updateDoc(orderRef, {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'ready',
         readyAt,
         updatedAt: new Date()
       });
 
       // Verify the update
-      const orderDoc = await getDoc(orderRef);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       const data = orderDoc.data();
       expect(data.status).toBe('ready');
       expect(data.readyAt).toBeDefined();
@@ -197,14 +154,11 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
 
     test('Step 5 — Server: Query order appears in server view', async () => {
       // Server queries for orders with status in [preparing, ready]
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-      const q = query(
-        ordersRef,
-        where('locationId', '==', TEST_RESTAURANT_ID),
-        where('status', 'in', ['preparing', 'ready'])
-      );
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('locationId', '==', TEST_RESTAURANT_ID)
+        .where('status', 'in', ['preparing', 'ready'])
+        .get();
 
-      const snapshot = await getDocs(q);
       const serverOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
       const ourOrder = serverOrders.find(o => o.id === orderId);
@@ -213,17 +167,16 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     });
 
     test('Step 6 — Server: Mark order as served', async () => {
-      const orderRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`);
       const servedAt = new Date();
 
-      await updateDoc(orderRef, {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'served',
         servedAt,
         updatedAt: new Date()
       });
 
       // Verify
-      const orderDoc = await getDoc(orderRef);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       const data = orderDoc.data();
       expect(data.status).toBe('served');
       expect(data.servedAt).toBeDefined();
@@ -231,13 +184,10 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
 
     test('Step 7 — Payment: Order appears in payment view (served orders)', async () => {
       // Payment queries for orders with status == 'served'
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-      const q = query(
-        ordersRef,
-        where('status', '==', 'served')
-      );
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('status', '==', 'served')
+        .get();
 
-      const snapshot = await getDocs(q);
       const servedOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
       const ourOrder = servedOrders.find(o => o.id === orderId);
@@ -247,8 +197,6 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     });
 
     test('Step 8 — Payment: Process cash payment and mark as completed', async () => {
-      const orderRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`);
-
       const subtotal = 74.49;
       const taxRate = 8.5;
       const taxAmount = subtotal * (taxRate / 100);
@@ -268,7 +216,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
         paidAt: new Date().toISOString()
       };
 
-      await updateDoc(orderRef, {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'completed',
         paymentDate: new Date(),
         paymentDetails,
@@ -276,7 +224,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
       });
 
       // FINAL VERIFICATION: Order is now completed with all payment data
-      const orderDoc = await getDoc(orderRef);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       const data = orderDoc.data();
 
       expect(data.status).toBe('completed');
@@ -290,43 +238,33 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     });
 
     test('Step 9 — Verification: Order no longer appears in active views', async () => {
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-
       // Kitchen should NOT see it
-      const kitchenQ = query(
-        ordersRef,
-        where('locationId', '==', TEST_RESTAURANT_ID),
-        where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
-      );
-      const kitchenSnapshot = await getDocs(kitchenQ);
+      const kitchenSnapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('locationId', '==', TEST_RESTAURANT_ID)
+        .where('status', 'in', ['new', 'sent_to_kitchen', 'preparing'])
+        .get();
       const kitchenOrders = kitchenSnapshot.docs.map(d => ({ id: d.id }));
       expect(kitchenOrders.find(o => o.id === orderId)).toBeUndefined();
 
       // Server should NOT see it
-      const serverQ = query(
-        ordersRef,
-        where('locationId', '==', TEST_RESTAURANT_ID),
-        where('status', 'in', ['preparing', 'ready'])
-      );
-      const serverSnapshot = await getDocs(serverQ);
+      const serverSnapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('locationId', '==', TEST_RESTAURANT_ID)
+        .where('status', 'in', ['preparing', 'ready'])
+        .get();
       const serverOrders = serverSnapshot.docs.map(d => ({ id: d.id }));
       expect(serverOrders.find(o => o.id === orderId)).toBeUndefined();
 
       // Payment (served) should NOT see it
-      const paymentQ = query(
-        ordersRef,
-        where('status', '==', 'served')
-      );
-      const paymentSnapshot = await getDocs(paymentQ);
+      const paymentSnapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('status', '==', 'served')
+        .get();
       const paymentOrders = paymentSnapshot.docs.map(d => ({ id: d.id }));
       expect(paymentOrders.find(o => o.id === orderId)).toBeUndefined();
 
       // Completed orders should see it
-      const completedQ = query(
-        ordersRef,
-        where('status', '==', 'completed')
-      );
-      const completedSnapshot = await getDocs(completedQ);
+      const completedSnapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`)
+        .where('status', '==', 'completed')
+        .get();
       const completedOrders = completedSnapshot.docs.map(d => ({ id: d.id }));
       expect(completedOrders.find(o => o.id === orderId)).toBeDefined();
     });
@@ -365,8 +303,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
 
       const total = items.reduce((sum, item) => sum + item.subtotal, 0);
 
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-      const docRef = await addDoc(ordersRef, {
+      const docRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
         orderNumber: `E2E-DISC-${Date.now()}`,
         tableNumber: '8',
         locationId: TEST_RESTAURANT_ID,
@@ -381,7 +318,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
       orderId = docRef.id;
       createdOrderIds.push(orderId);
 
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       const data = orderDoc.data();
       expect(data.total).toBe(34.99);
       expect(data.items[1].discount).toBe(20);
@@ -396,10 +333,10 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     let orderIds = [];
 
     test('Should create multiple orders for the same table', async () => {
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
+      const ordersRef = db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`);
 
       // Order 1
-      const doc1 = await addDoc(ordersRef, {
+      const doc1 = await ordersRef.add({
         orderNumber: `E2E-MULTI-1-${Date.now()}`,
         tableNumber: '15',
         locationId: TEST_RESTAURANT_ID,
@@ -415,7 +352,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
       createdOrderIds.push(doc1.id);
 
       // Order 2
-      const doc2 = await addDoc(ordersRef, {
+      const doc2 = await ordersRef.add({
         orderNumber: `E2E-MULTI-2-${Date.now()}`,
         tableNumber: '15',
         locationId: TEST_RESTAURANT_ID,
@@ -431,13 +368,11 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
       createdOrderIds.push(doc2.id);
 
       // Query for table 15's served orders
-      const q = query(
-        ordersRef,
-        where('tableNumber', '==', '15'),
-        where('status', '==', 'served')
-      );
+      const snapshot = await ordersRef
+        .where('tableNumber', '==', '15')
+        .where('status', '==', 'served')
+        .get();
 
-      const snapshot = await getDocs(q);
       const table15Orders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
       expect(table15Orders.length).toBeGreaterThanOrEqual(2);
@@ -450,7 +385,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
     test('Should batch complete multiple orders for same table', async () => {
       // Complete all orders at once (like real payment does)
       for (const id of orderIds) {
-        await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${id}`), {
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${id}`).update({
           status: 'completed',
           paymentDate: new Date(),
           paymentDetails: {
@@ -467,7 +402,7 @@ describeE2E('E2E: Full POS → Kitchen → Server → Payment Flow', () => {
 
       // Verify both are completed
       for (const id of orderIds) {
-        const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${id}`));
+        const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${id}`).get();
         expect(orderDoc.data().status).toBe('completed');
       }
     });

@@ -21,7 +21,7 @@ const AIAnalytics = () => {
     const [menuData, setMenuData] = useState(null);
     const [chatQuestion, setChatQuestion] = useState('');
     const [chatHistory, setChatHistory] = useState([]);
-    const { currentUser } = useAuth();
+    const { currentUser, restaurantUid } = useAuth();
     const { categories } = useMenu();
 
     // Prepare order data for AI
@@ -29,7 +29,7 @@ const AIAnalytics = () => {
         if (!currentUser) return null;
 
         try {
-            const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+            const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
             const q = query(ordersRef, orderBy('createdAt', 'desc'));
             const snapshot = await getDocs(q);
 

@@ -12,6 +12,9 @@ import AddressAutocomplete from './AddressAutocomplete';
 import PasswordInput from './PasswordInput';
 import activityService from '../services/activityService';
 import { getUsageStats } from '../services/orderUsageService';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import TwoFactorSetup from './admin/TwoFactorSetup';
+import AccessControl from './AccessControl';
 import './Account.css';
 
 const Account = () => {
@@ -65,6 +68,22 @@ const Account = () => {
   const [usageStats, setUsageStats] = useState(null);
   const [usageLoading, setUsageLoading] = useState(true);
 
+  // 2FA state
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [showTfaSetup, setShowTfaSetup] = useState(false);
+  const [showTfaDisable, setShowTfaDisable] = useState(false);
+  const [tfaDisableCode, setTfaDisableCode] = useState('');
+  const [tfaDisableLoading, setTfaDisableLoading] = useState(false);
+  const [showTfaRegen, setShowTfaRegen] = useState(false);
+  const [tfaRegenCode, setTfaRegenCode] = useState('');
+  const [tfaRegenLoading, setTfaRegenLoading] = useState(false);
+  const [tfaRegenCodes, setTfaRegenCodes] = useState([]);
+  // Stripe Connect state
+  const [stripeConnectStatus, setStripeConnectStatus] = useState(null);
+  const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
+
+  const functions = getFunctions();
+
   useEffect(() => {
     if (!currentUser?.uid) return;
 
@@ -82,6 +101,7 @@ const Account = () => {
           setTaxRate(data.taxRate !== undefined ? data.taxRate : 8);
           setServiceMode(data.serviceMode || 'full_service');
           setHasPin(!!data.reimbursementPin);
+          setTwoFactorEnabled(!!data.twoFactorEnabled);
         }
 
         if (currentUser.email) {
@@ -125,6 +145,127 @@ const Account = () => {
 
     loadUsageStats();
   }, [currentUser]);
+
+  // Fetch Stripe Connect status
+  const fetchStripeConnectStatus = async () => {
+    try {
+      const fn = httpsCallable(functions, 'getStripeConnectStatus');
+      const result = await fn();
+      setStripeConnectStatus(result.data);
+    } catch (error) {
+      console.error('Error fetching Stripe Connect status:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    fetchStripeConnectStatus();
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle Stripe Connect return URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stripeConnect = params.get('stripe_connect');
+    const accountId = params.get('account_id');
+
+    if (stripeConnect === 'success' && accountId) {
+      setActiveSection('payment_account');
+      // Check onboarding status
+      const checkStatus = async () => {
+        try {
+          setStripeConnectLoading(true);
+          const fn = httpsCallable(functions, 'checkStripeConnectStatus');
+          const result = await fn({ stripeAccountId: accountId });
+          setStripeConnectStatus({
+            connected: result.data.status === 'active',
+            status: result.data.status,
+            stripeAccountId: accountId,
+            chargesEnabled: result.data.chargesEnabled,
+            payoutsEnabled: result.data.payoutsEnabled
+          });
+          if (result.data.status === 'active') {
+            setSuccess('Stripe account connected successfully! Payments will now go to your Stripe account.');
+          } else {
+            setError('Stripe onboarding is not complete yet. Please click "Continue Setup" to finish.');
+          }
+        } catch (err) {
+          console.error('Error checking Stripe Connect status:', err);
+          setError('Could not verify Stripe connection. Please try again.');
+        } finally {
+          setStripeConnectLoading(false);
+        }
+      };
+      checkStatus();
+      // Clean URL params
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (stripeConnect === 'refresh') {
+      setActiveSection('payment_account');
+      setError('The Stripe setup link expired. Please click "Connect Stripe Account" to try again.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stripe Connect handlers
+  const handleConnectStripe = async () => {
+    setStripeConnectLoading(true);
+    setError('');
+    try {
+      const baseUrl = window.location.origin;
+      const fn = httpsCallable(functions, 'initiateStripeConnect');
+      const result = await fn({ returnUrl: baseUrl });
+      if (result.data.url) {
+        window.location.href = result.data.url;
+      }
+    } catch (err) {
+      console.error('Error initiating Stripe Connect:', err);
+      if (err.message?.includes('already-exists')) {
+        setError('A Stripe account is already connected.');
+        fetchStripeConnectStatus();
+      } else {
+        setError('Failed to start Stripe connection. Please try again.');
+      }
+    } finally {
+      setStripeConnectLoading(false);
+    }
+  };
+
+  const handleContinueStripeSetup = async () => {
+    setStripeConnectLoading(true);
+    setError('');
+    try {
+      const baseUrl = window.location.origin;
+      const fn = httpsCallable(functions, 'refreshStripeConnectLink');
+      const result = await fn({ returnUrl: baseUrl });
+      if (result.data.url) {
+        window.location.href = result.data.url;
+      }
+    } catch (err) {
+      console.error('Error refreshing Stripe Connect link:', err);
+      setError('Failed to refresh setup link. Please try connecting again.');
+    } finally {
+      setStripeConnectLoading(false);
+    }
+  };
+
+  const handleDisconnectStripe = async () => {
+    if (!window.confirm('Are you sure you want to disconnect your Stripe account?\n\nPayments will revert to going through the Koda Carte platform account.')) {
+      return;
+    }
+    setStripeConnectLoading(true);
+    setError('');
+    try {
+      const fn = httpsCallable(functions, 'disconnectStripeConnect');
+      await fn();
+      setStripeConnectStatus({ connected: false, status: 'disconnected' });
+      setSuccess('Stripe account disconnected. Payments will now go through the platform.');
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      console.error('Error disconnecting Stripe:', err);
+      setError('Failed to disconnect Stripe account.');
+    } finally {
+      setStripeConnectLoading(false);
+    }
+  };
 
   const handleSaveAccountDetails = async (e) => {
     e.preventDefault();
@@ -390,6 +531,7 @@ const Account = () => {
 
       case 'security':
         return (
+          <>
           <Card className="account-card">
             <Card.Header className="account-card-header">
               <h3><i className="bi bi-shield-lock"></i> Security</h3>
@@ -465,6 +607,197 @@ const Account = () => {
               )}
             </Card.Body>
           </Card>
+
+          {/* Two-Factor Authentication Card */}
+          <Card className="account-card mt-4">
+            <Card.Header className="account-card-header">
+              <div className="d-flex justify-content-between align-items-center">
+                <h3><i className="bi bi-shield-check"></i> Two-Factor Authentication</h3>
+                <Badge bg={twoFactorEnabled ? 'success' : 'secondary'}>
+                  {twoFactorEnabled ? 'Active' : 'Not Active'}
+                </Badge>
+              </div>
+            </Card.Header>
+            <Card.Body>
+              {!twoFactorEnabled ? (
+                <div className="password-section">
+                  <div className="d-flex gap-3 align-items-start mb-3">
+                    <i className="bi bi-lock-fill" style={{ fontSize: '2rem', color: '#667eea' }}></i>
+                    <div>
+                      <h5 className="mb-1">Add an extra layer of security</h5>
+                      <p className="text-muted mb-1">
+                        Two-factor authentication protects your account by requiring a code from your phone
+                        in addition to your password. Even if someone knows your password, they can't get in
+                        without your phone.
+                      </p>
+                      <p className="text-muted small mb-0">Setup takes about 2 minutes.</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline-primary"
+                    onClick={() => setShowTfaSetup(true)}
+                    className="gradient-outline-button"
+                  >
+                    <i className="bi bi-shield-plus"></i> Enable Two-Factor Authentication
+                  </Button>
+                </div>
+              ) : (
+                <div>
+                  <Alert variant="success" className="d-flex align-items-start gap-2 mb-3">
+                    <i className="bi bi-check-circle-fill mt-1"></i>
+                    <div>
+                      <strong>Your account is protected</strong>
+                      <br />
+                      <small>You'll be asked for a code from your authenticator app each time you sign in.</small>
+                    </div>
+                  </Alert>
+
+                  {/* Regenerate Backup Codes */}
+                  {!showTfaRegen ? (
+                    <Button
+                      variant="outline-secondary"
+                      className="me-2 mb-2"
+                      onClick={() => setShowTfaRegen(true)}
+                    >
+                      <i className="bi bi-key"></i> Generate New Backup Codes
+                    </Button>
+                  ) : tfaRegenCodes.length > 0 ? (
+                    <div className="border rounded p-3 mb-3">
+                      <h6>Your New Backup Codes</h6>
+                      <p className="text-muted small mb-2">Save these somewhere safe. Your old codes no longer work.</p>
+                      <div className="row g-2 mb-3">
+                        {tfaRegenCodes.map((code, i) => (
+                          <div key={i} className="col-6">
+                            <code className="d-block bg-dark text-light p-2 rounded text-center">{i + 1}. {code}</code>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="d-flex gap-2 flex-wrap">
+                        <Button size="sm" variant="outline-secondary" onClick={() => {
+                          navigator.clipboard.writeText(tfaRegenCodes.join('\n'));
+                          setSuccess('Backup codes copied!');
+                          setTimeout(() => setSuccess(''), 3000);
+                        }}>Copy</Button>
+                        <Button size="sm" variant="outline-secondary" onClick={() => {
+                          setShowTfaRegen(false);
+                          setTfaRegenCodes([]);
+                          setTfaRegenCode('');
+                        }}>Done</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border rounded p-3 mb-3">
+                      <p className="mb-2">Enter your authenticator code to generate new backup codes:</p>
+                      <div className="d-flex gap-2 align-items-center flex-wrap">
+                        <Form.Control
+                          type="text"
+                          value={tfaRegenCode}
+                          onChange={(e) => setTfaRegenCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="6-digit code"
+                          maxLength={6}
+                          style={{ maxWidth: '140px', fontFamily: 'monospace', textAlign: 'center', letterSpacing: '2px' }}
+                        />
+                        <Button
+                          variant="primary"
+                          disabled={tfaRegenLoading || tfaRegenCode.length !== 6}
+                          onClick={async () => {
+                            setTfaRegenLoading(true);
+                            try {
+                              const regenFn = httpsCallable(functions, 'regenerateRestaurantBackupCodes');
+                              const result = await regenFn({ code: tfaRegenCode });
+                              setTfaRegenCodes(result.data.backupCodes);
+                              setSuccess('New backup codes generated!');
+                              setTimeout(() => setSuccess(''), 3000);
+                            } catch (err) {
+                              setError(err.message?.includes('Incorrect') ? 'Incorrect code. Please try again.' : 'Failed to regenerate codes.');
+                            } finally {
+                              setTfaRegenLoading(false);
+                            }
+                          }}
+                          className="gradient-button"
+                        >
+                          {tfaRegenLoading ? 'Generating...' : 'Generate'}
+                        </Button>
+                        <Button variant="outline-secondary" onClick={() => { setShowTfaRegen(false); setTfaRegenCode(''); }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Disable 2FA */}
+                  {!showTfaDisable ? (
+                    <Button
+                      variant="outline-danger"
+                      className="mb-2"
+                      onClick={() => setShowTfaDisable(true)}
+                    >
+                      <i className="bi bi-shield-x"></i> Disable Two-Factor Authentication
+                    </Button>
+                  ) : (
+                    <div className="border border-danger rounded p-3 mb-3">
+                      <p className="mb-2"><strong>Are you sure?</strong> Disabling 2FA will make your account less secure. Enter your authenticator code to confirm:</p>
+                      <div className="d-flex gap-2 align-items-center flex-wrap">
+                        <Form.Control
+                          type="text"
+                          value={tfaDisableCode}
+                          onChange={(e) => setTfaDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="6-digit code"
+                          maxLength={6}
+                          style={{ maxWidth: '140px', fontFamily: 'monospace', textAlign: 'center', letterSpacing: '2px' }}
+                        />
+                        <Button
+                          variant="danger"
+                          disabled={tfaDisableLoading || tfaDisableCode.length !== 6}
+                          onClick={async () => {
+                            setTfaDisableLoading(true);
+                            try {
+                              const disableFn = httpsCallable(functions, 'disableRestaurant2FA');
+                              await disableFn({ code: tfaDisableCode });
+                              setTwoFactorEnabled(false);
+                              setShowTfaDisable(false);
+                              setTfaDisableCode('');
+                              setSuccess('Two-factor authentication has been disabled.');
+                              setTimeout(() => setSuccess(''), 3000);
+                            } catch (err) {
+                              setError(err.message?.includes('Incorrect') ? 'Incorrect code. Please try again.' : 'Failed to disable 2FA.');
+                            } finally {
+                              setTfaDisableLoading(false);
+                            }
+                          }}
+                        >
+                          {tfaDisableLoading ? 'Disabling...' : 'Confirm Disable'}
+                        </Button>
+                        <Button variant="outline-secondary" onClick={() => { setShowTfaDisable(false); setTfaDisableCode(''); }}>
+                          Keep Enabled
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+
+          {/* 2FA Setup Wizard Modal */}
+          {showTfaSetup && (
+            <TwoFactorSetup
+              onComplete={() => {
+                setShowTfaSetup(false);
+                setTwoFactorEnabled(true);
+                setSuccess('Two-factor authentication enabled successfully!');
+                setTimeout(() => setSuccess(''), 3000);
+              }}
+              onCancel={() => setShowTfaSetup(false)}
+              showToast={(msg, type) => {
+                if (type === 'error') setError(msg);
+                else { setSuccess(msg); setTimeout(() => setSuccess(''), 3000); }
+              }}
+              setupFnName="setupRestaurant2FA"
+              verifyFnName="verifyAndEnableRestaurant2FA"
+            />
+          )}
+          </>
         );
 
       case 'pin':
@@ -1579,6 +1912,225 @@ const Account = () => {
           </Card>
         );
 
+      case 'payment_account':
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-stripe"></i> Payment Account</h3>
+            </Card.Header>
+            <Card.Body>
+              <div style={{ maxWidth: '700px' }}>
+                <p style={{ color: '#666', marginBottom: '24px', fontSize: '0.95rem' }}>
+                  Connect your own Stripe account to receive payments directly from your customers.
+                  If not connected, payments go through the Koda Carte platform.
+                </p>
+
+                {stripeConnectLoading && (
+                  <div className="text-center py-4">
+                    <Spinner animation="border" variant="primary" />
+                    <p className="mt-2 text-muted">Checking Stripe connection...</p>
+                  </div>
+                )}
+
+                {!stripeConnectLoading && stripeConnectStatus?.connected && (
+                  <div>
+                    <Alert variant="success" style={{ borderRadius: '12px' }}>
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-check-circle-fill" style={{ fontSize: '1.3rem' }}></i>
+                        <div>
+                          <strong>Stripe Account Connected</strong>
+                          <br />
+                          <span style={{ fontSize: '0.9rem' }}>
+                            Payments from POS and online orders go directly to your Stripe account.
+                          </span>
+                        </div>
+                      </div>
+                    </Alert>
+
+                    <div style={{
+                      background: '#f8f9fa',
+                      borderRadius: '12px',
+                      padding: '20px',
+                      marginTop: '16px'
+                    }}>
+                      <h6 style={{ fontWeight: 600, marginBottom: '12px' }}>Account Details</h6>
+                      <Table borderless size="sm" style={{ marginBottom: 0 }}>
+                        <tbody>
+                          {stripeConnectStatus.businessName && (
+                            <tr>
+                              <td style={{ color: '#666', width: '160px' }}>Business Name</td>
+                              <td style={{ fontWeight: 500 }}>{stripeConnectStatus.businessName}</td>
+                            </tr>
+                          )}
+                          <tr>
+                            <td style={{ color: '#666' }}>Status</td>
+                            <td>
+                              <Badge bg="success">Active</Badge>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style={{ color: '#666' }}>Charges</td>
+                            <td>
+                              {stripeConnectStatus.chargesEnabled
+                                ? <Badge bg="success">Enabled</Badge>
+                                : <Badge bg="warning">Pending</Badge>}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style={{ color: '#666' }}>Payouts</td>
+                            <td>
+                              {stripeConnectStatus.payoutsEnabled
+                                ? <Badge bg="success">Enabled</Badge>
+                                : <Badge bg="warning">Pending</Badge>}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </Table>
+                    </div>
+
+                    <div className="mt-4">
+                      <Button
+                        variant="outline-danger"
+                        size="sm"
+                        onClick={handleDisconnectStripe}
+                        disabled={stripeConnectLoading}
+                      >
+                        <i className="bi bi-x-circle me-1"></i>
+                        Disconnect Stripe Account
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!stripeConnectLoading && stripeConnectStatus?.status === 'pending' && (
+                  <div>
+                    <Alert variant="warning" style={{ borderRadius: '12px' }}>
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-exclamation-triangle-fill" style={{ fontSize: '1.3rem' }}></i>
+                        <div>
+                          <strong>Setup Incomplete</strong>
+                          <br />
+                          <span style={{ fontSize: '0.9rem' }}>
+                            Your Stripe account setup was started but not completed. Please finish the setup to start receiving payments.
+                          </span>
+                        </div>
+                      </div>
+                    </Alert>
+                    <Button
+                      variant="primary"
+                      onClick={handleContinueStripeSetup}
+                      disabled={stripeConnectLoading}
+                      style={{
+                        background: 'linear-gradient(135deg, #635BFF, #7B73FF)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '12px 24px',
+                        fontWeight: 600
+                      }}
+                    >
+                      {stripeConnectLoading ? (
+                        <Spinner animation="border" size="sm" className="me-2" />
+                      ) : (
+                        <i className="bi bi-arrow-right-circle me-2"></i>
+                      )}
+                      Continue Stripe Setup
+                    </Button>
+                  </div>
+                )}
+
+                {!stripeConnectLoading && (!stripeConnectStatus || stripeConnectStatus.status === 'not_connected' || stripeConnectStatus.status === 'disconnected') && (
+                  <div>
+                    <div style={{
+                      background: 'linear-gradient(135deg, #f0f0ff, #e8e5ff)',
+                      borderRadius: '16px',
+                      padding: '32px',
+                      textAlign: 'center',
+                      border: '1px solid #d4d0ff'
+                    }}>
+                      <div style={{
+                        width: '64px',
+                        height: '64px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #635BFF, #7B73FF)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        margin: '0 auto 16px'
+                      }}>
+                        <i className="bi bi-stripe" style={{ color: 'white', fontSize: '1.8rem' }}></i>
+                      </div>
+                      <h5 style={{ fontWeight: 700, marginBottom: '8px' }}>
+                        Receive Payments Directly
+                      </h5>
+                      <p style={{ color: '#666', marginBottom: '24px', maxWidth: '400px', margin: '0 auto 24px' }}>
+                        Connect your Stripe account to receive customer payments directly.
+                        It only takes a few minutes to set up.
+                      </p>
+                      <Button
+                        size="lg"
+                        onClick={handleConnectStripe}
+                        disabled={stripeConnectLoading}
+                        style={{
+                          background: 'linear-gradient(135deg, #635BFF, #7B73FF)',
+                          border: 'none',
+                          borderRadius: '10px',
+                          padding: '14px 32px',
+                          fontWeight: 600,
+                          fontSize: '1rem',
+                          boxShadow: '0 4px 14px rgba(99, 91, 255, 0.3)'
+                        }}
+                      >
+                        {stripeConnectLoading ? (
+                          <Spinner animation="border" size="sm" className="me-2" />
+                        ) : (
+                          <i className="bi bi-link-45deg me-2"></i>
+                        )}
+                        Connect Stripe Account
+                      </Button>
+                    </div>
+
+                    {stripeConnectStatus?.status === 'disconnected' && (
+                      <Alert variant="info" className="mt-3" style={{ borderRadius: '12px' }}>
+                        <i className="bi bi-info-circle me-1"></i>
+                        Your previous Stripe account was disconnected. You can connect a new one at any time.
+                      </Alert>
+                    )}
+
+                    <div style={{
+                      marginTop: '24px',
+                      padding: '16px 20px',
+                      background: '#f8f9fa',
+                      borderRadius: '12px',
+                      border: '1px solid #e9ecef'
+                    }}>
+                      <h6 style={{ fontWeight: 600, marginBottom: '12px' }}>
+                        <i className="bi bi-question-circle me-1"></i> How it works
+                      </h6>
+                      <ul style={{ paddingLeft: '20px', marginBottom: 0, color: '#555', fontSize: '0.9rem' }}>
+                        <li style={{ marginBottom: '8px' }}>
+                          Click "Connect Stripe Account" to securely set up your Stripe account
+                        </li>
+                        <li style={{ marginBottom: '8px' }}>
+                          You'll be redirected to Stripe to complete a quick verification
+                        </li>
+                        <li style={{ marginBottom: '8px' }}>
+                          Once connected, all POS and online order payments go directly to your account
+                        </li>
+                        <li>
+                          You can disconnect at any time — payments will revert to the Koda Carte platform
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card.Body>
+          </Card>
+        );
+
+      case 'access_control':
+        return <AccessControl />;
+
       default:
         return null;
     }
@@ -1635,6 +2187,24 @@ const Account = () => {
             >
               <i className="bi bi-key"></i>
               <span>Reimbursement PIN</span>
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'payment_account' ? 'active' : ''}`}
+              onClick={() => setActiveSection('payment_account')}
+              data-section="payment_account"
+            >
+              <i className="bi bi-stripe"></i>
+              <span>Payment Account</span>
+              {stripeConnectStatus?.connected && (
+                <Badge bg="success" style={{ marginLeft: '8px', fontSize: '0.65rem' }}>Connected</Badge>
+              )}
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'access_control' ? 'active' : ''}`}
+              onClick={() => setActiveSection('access_control')}
+            >
+              <i className="bi bi-shield-check"></i>
+              <span>Staff Access Control</span>
             </button>
             {isMultiLocation && (
               <button

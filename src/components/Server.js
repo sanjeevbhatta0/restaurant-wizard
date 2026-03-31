@@ -14,7 +14,7 @@ import './PageHeader.css';
 import './Server.css';
 
 const Server = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
   const { hasServerRole, getServiceMode } = useSubscription();
   const [orders, setOrders] = useState([]);
@@ -80,7 +80,7 @@ const Server = () => {
     }
 
     // Query for orders that are preparing or ready
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
     // Build query with consistent locationId filtering
     let q;
@@ -93,10 +93,10 @@ const Server = () => {
           orderBy('createdAt', 'asc')
         );
       } else {
-        // Single-location: filter by currentUser.uid (matches what POS sets)
+        // Single-location: filter by restaurantUid (matches what POS sets)
         q = query(
           ordersRef,
-          where('locationId', '==', currentUser.uid),
+          where('locationId', '==', restaurantUid),
           where('status', 'in', ['preparing', 'ready']),
           orderBy('createdAt', 'asc')
         );
@@ -114,7 +114,7 @@ const Server = () => {
         } else {
           q = query(
             ordersRef,
-            where('locationId', '==', currentUser.uid),
+            where('locationId', '==', restaurantUid),
             where('status', 'in', ['preparing', 'ready'])
           );
         }
@@ -177,7 +177,7 @@ const Server = () => {
       // Check if it's an index error
       if (error.code === 'failed-precondition') {
         console.error('Missing Firestore index. Create index with:', {
-          collection: `restaurants/${currentUser.uid}/orders`,
+          collection: `restaurants/${restaurantUid}/orders`,
           fields: [
             { fieldPath: 'locationId', order: 'ASCENDING' },
             { fieldPath: 'status', order: 'ASCENDING' },
@@ -243,7 +243,7 @@ const Server = () => {
       unsubRelayStatus();
       unsubRelaySync();
     };
-  }, [currentUser, selectedLocation, isMultiLocation]);
+  }, [currentUser, restaurantUid, selectedLocation, isMultiLocation]);
 
   const addNotification = (message, type = 'info', urgent = false) => {
     const notification = {
@@ -279,7 +279,7 @@ const Server = () => {
   const markAsPicked = async (orderId) => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${orderId}`);
 
       // Get order data for activity logging
       const order = orders.find(o => o.id === orderId);
@@ -302,12 +302,12 @@ const Server = () => {
         const tableNumber = Array.isArray(order.tableNumber)
           ? order.tableNumber.join(' and ')
           : order.tableNumber;
-        await activityService.logOrderActivity(currentUser.uid, 'status_changed', {
+        await activityService.logOrderActivity(restaurantUid, 'status_changed', {
           orderNumber: order.orderNumber || orderId,
           orderId: orderId,
           tableNumber: tableNumber || 'N/A',
           status: 'served',
-          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
         });
       }
 

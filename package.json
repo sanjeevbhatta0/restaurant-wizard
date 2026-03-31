@@ -24,6 +24,7 @@
     "react-quill": "^2.0.0",
     "react-router-dom": "^6.3.0",
     "react-scripts": "5.0.1",
+    "recharts": "^2.12.7",
     "twitter-api-v2": "^1.15.1",
     "web-vitals": "^2.1.4",
     "ws": "^8.20.0"
@@ -35,11 +36,17 @@
     "test": "react-scripts test",
     "test:unit": "react-scripts test --watchAll=false --testPathPattern=__tests__/unit",
     "test:integration": "react-scripts test --watchAll=false --testPathPattern=__tests__/integration",
-    "test:e2e": "FIRESTORE_EMULATOR_HOST=localhost:8080 react-scripts test --watchAll=false --testPathPattern=__tests__/e2e",
+    "test:e2e": "FIRESTORE_EMULATOR_HOST=localhost:8080 react-scripts test --watchAll=false --runInBand --forceExit --testPathPattern=__tests__/e2e",
     "test:pos": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration|e2e)",
     "test:widget": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration|e2e)/(embedApp|widgetOrderFlow|widgetE2E|websiteServing|websiteOrderFlow|websiteOrderE2E)",
     "test:listings": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration)/(businessListings|businessListingsFlow)",
     "test:service-mode": "react-scripts test --watchAll=false --testPathPattern=__tests__/(unit|integration)/(serviceMode|counterServiceFlow)",
+    "test:2fa": "react-scripts test --watchAll=false --testPathPattern='__tests__/(unit|integration)/(twoFactorAuth|twoFactorAuthFlow)'",
+    "test:social": "react-scripts test --watchAll=false --testPathPattern='__tests__/(unit|integration)/(socialMedia|socialMediaFlow)'",
+    "test:access-control": "react-scripts test --watchAll=false --testPathPattern='__tests__/(unit|integration|e2e)/(accessControl|accessControlFlow|accessControlE2E)'",
+    "test:stripe-connect": "react-scripts test --watchAll=false --testPathPattern='__tests__/(unit|integration|e2e)/(stripeConnect|stripeConnectFlow|stripeConnectE2E)'",
+    "test:reviews": "react-scripts test --watchAll=false --testPathPattern='__tests__/(unit|integration|e2e)/(reviews|reviewsFlow|reviewsE2E)'",
+    "test:admin": "FIRESTORE_EMULATOR_HOST=localhost:8080 react-scripts test --watchAll=false --runInBand --forceExit --testPathPattern='__tests__/(unit|integration|e2e)/(platformAdmin|platformAdminFlow|platformAdminE2E)'",
     "test:ci": "CI=true react-scripts test --watchAll=false --coverage --passWithNoTests",
     "eject": "react-scripts eject",
     "dev": "concurrently \"npm start\" \"firebase emulators:start\"",
@@ -66,6 +73,7 @@
   },
   "devDependencies": {
     "aria-query": "^5.3.2",
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "firebase-admin": "^13.7.0"
   }
 }

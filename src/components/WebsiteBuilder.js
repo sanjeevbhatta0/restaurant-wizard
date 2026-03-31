@@ -41,7 +41,7 @@ const TEMPLATES = [
 ];
 
 export default function WebsiteBuilder() {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation, locations } = useLocation();
   const [activeTab, setActiveTab] = useState('template');
   const [saving, setSaving] = useState(false);
@@ -101,9 +101,9 @@ export default function WebsiteBuilder() {
         setLoading(true);
         
         // For multi-location, use location-specific config path
-        const configPath = isMultiLocation 
-          ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/website/config`
-          : `restaurants/${currentUser.uid}/website/config`;
+        const configPath = isMultiLocation
+          ? `restaurants/${restaurantUid}/locations/${selectedLocation}/website/config`
+          : `restaurants/${restaurantUid}/website/config`;
         
         // Load website config
         const configDoc = await getDoc(doc(db, configPath));
@@ -125,11 +125,11 @@ export default function WebsiteBuilder() {
         }
         
         // Load restaurant/location data for defaults
-        const restaurantDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}`));
+        const restaurantDoc = await getDoc(doc(db, `restaurants/${restaurantUid}`));
         let locationData = null;
         
         if (isMultiLocation && selectedLocation) {
-          const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`));
+          const locationDoc = await getDoc(doc(db, `restaurants/${restaurantUid}/locations/${selectedLocation}`));
           if (locationDoc.exists()) {
             locationData = locationDoc.data();
           }
@@ -140,7 +140,7 @@ export default function WebsiteBuilder() {
           // For multi-location, create slug with location identifier
           const locationInfo = locationData || {};
           const locationSlug = locationData?.slug || selectedLocation || '';
-          const baseSlug = data.slug || currentUser.uid;
+          const baseSlug = data.slug || restaurantUid;
           const slug = isMultiLocation ? `${baseSlug}-${locationSlug}` : baseSlug;
           
           setWebsiteUrl(`https://${slug}.restaurant-portal-6b147.web.app`);
@@ -162,7 +162,7 @@ export default function WebsiteBuilder() {
             address: prev.address || locationInfo.address || data.address || '',
             phone: prev.phone || locationInfo.phone || data.phone || '',
             email: prev.email || locationInfo.email || data.email || '',
-            locationId: isMultiLocation ? selectedLocation : currentUser.uid
+            locationId: isMultiLocation ? selectedLocation : restaurantUid
           }));
         }
       } catch (err) {
@@ -202,7 +202,7 @@ export default function WebsiteBuilder() {
       // Include locationId for multi-location restaurants
       const configWithLocation = {
         ...config,
-        locationId: isMultiLocation ? selectedLocation : currentUser.uid
+        locationId: isMultiLocation ? selectedLocation : restaurantUid
       };
       const result = await saveWebsiteConfig({ 
         config: configWithLocation,

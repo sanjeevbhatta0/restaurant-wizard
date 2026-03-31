@@ -5,16 +5,18 @@ import {
   ProgressBar, ListGroup, Accordion
 } from 'react-bootstrap';
 import {
-  FaFacebook, FaInstagram, FaTwitter, FaImage, FaMagic, FaRobot, FaLightbulb,
+  FaFacebook, FaInstagram, FaImage, FaMagic, FaRobot, FaLightbulb,
   FaChartLine, FaCalendarAlt, FaHashtag, FaCopy, FaRedo, FaCheck, FaSearch,
   FaGoogle, FaMapMarkerAlt, FaStar, FaExclamationTriangle, FaLock
 } from 'react-icons/fa';
+import { FaXTwitter } from 'react-icons/fa6';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, getDoc, collection, addDoc, query, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
 import socialMediaService from '../services/socialMediaService';
 import aiContentService from '../services/aiContentService';
 import { facebookService } from '../services/facebookService';
+import twitterService from '../services/twitterService';
 import businessListingsService from '../services/businessListingsService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -28,7 +30,7 @@ import './SeoSocialPosts.css';
 import './PageHeader.css';
 
 const SeoSocialPosts = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation, locations } = useLocation();
   const { hasFeatureAccess } = useSubscription();
   const navigate = useNavigate();
@@ -46,6 +48,8 @@ const SeoSocialPosts = () => {
   const [selectedFacebookPage, setSelectedFacebookPage] = useState('');
   const [instagramAccounts, setInstagramAccounts] = useState([]);
   const [selectedInstagramAccount, setSelectedInstagramAccount] = useState('');
+  const [twitterUsername, setTwitterUsername] = useState('');
+  const [twitterConnecting, setTwitterConnecting] = useState(false);
 
   // Restaurant data
   const [restaurantData, setRestaurantData] = useState(null);
@@ -89,6 +93,24 @@ const SeoSocialPosts = () => {
   const [visibilityTasks, setVisibilityTasks] = useState([]);
   const [isLoadingListings, setIsLoadingListings] = useState(false);
 
+  // Handle Twitter/X OAuth callback params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('twitter_connected') === 'true') {
+      setSuccess('Successfully connected to X (Twitter)!');
+      setConnectedAccounts(prev => ({ ...prev, twitter: true }));
+      // Clean up URL params
+      window.history.replaceState({}, '', window.location.pathname);
+      // Refresh Twitter status
+      twitterService.getStatus().then(status => {
+        if (status.connected) setTwitterUsername(status.username || '');
+      }).catch(() => {});
+    } else if (params.get('twitter_error')) {
+      setError(`X (Twitter) connection failed: ${params.get('twitter_error')}`);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     if (currentUser) {
@@ -104,13 +126,13 @@ const SeoSocialPosts = () => {
 
   const loadRestaurantData = async () => {
     try {
-      const restaurantDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}`));
+      const restaurantDoc = await getDoc(doc(db, `restaurants/${restaurantUid}`));
       if (restaurantDoc.exists()) {
         const data = restaurantDoc.data();
 
         // Get location-specific data if multi-location
         if (isMultiLocation && selectedLocation) {
-          const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`));
+          const locationDoc = await getDoc(doc(db, `restaurants/${restaurantUid}/locations/${selectedLocation}`));
           if (locationDoc.exists()) {
             const locationData = locationDoc.data();
             setRestaurantData({ ...data, ...locationData, locationName: locationData.name });
@@ -129,13 +151,13 @@ const SeoSocialPosts = () => {
   const loadMenuItems = async () => {
     try {
       const categoriesSnapshot = await getDocs(
-        collection(db, `restaurants/${currentUser.uid}/menuCategories`)
+        collection(db, `restaurants/${restaurantUid}/menuCategories`)
       );
 
       const items = [];
       for (const categoryDoc of categoriesSnapshot.docs) {
         const itemsSnapshot = await getDocs(
-          collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryDoc.id}/items`)
+          collection(db, `restaurants/${restaurantUid}/menuCategories/${categoryDoc.id}/items`)
         );
         itemsSnapshot.forEach(itemDoc => {
           const itemData = itemDoc.data();
@@ -156,7 +178,7 @@ const SeoSocialPosts = () => {
   const loadPostHistory = async () => {
     try {
       const postsQuery = query(
-        collection(db, `restaurants/${currentUser.uid}/socialPosts`),
+        collection(db, `restaurants/${restaurantUid}/socialPosts`),
         orderBy('createdAt', 'desc'),
         limit(10)
       );
@@ -170,7 +192,7 @@ const SeoSocialPosts = () => {
 
   const loadSavedConnections = async () => {
     try {
-      const connections = await socialMediaService.getConnections(currentUser.uid);
+      const connections = await socialMediaService.getConnections(restaurantUid);
 
       if (connections?.facebook?.connected) {
         setConnectedAccounts(prev => ({ ...prev, facebook: true }));
@@ -179,6 +201,17 @@ const SeoSocialPosts = () => {
 
       if (connections?.instagram?.connected) {
         setConnectedAccounts(prev => ({ ...prev, instagram: true }));
+      }
+
+      // Load Twitter/X connection status
+      try {
+        const twitterStatus = await twitterService.getStatus();
+        if (twitterStatus.connected) {
+          setConnectedAccounts(prev => ({ ...prev, twitter: true }));
+          setTwitterUsername(twitterStatus.username || '');
+        }
+      } catch (twitterErr) {
+        console.log('Twitter status check skipped:', twitterErr.message);
       }
     } catch (error) {
       console.error('Error loading saved connections:', error);
@@ -190,17 +223,17 @@ const SeoSocialPosts = () => {
   const loadBusinessListings = async () => {
     try {
       setIsLoadingListings(true);
-      const connections = await businessListingsService.getConnections(currentUser.uid);
+      const connections = await businessListingsService.getConnections(restaurantUid);
       setBusinessConnections(connections);
 
       // Load cached reviews if any platform is connected
       if (connections?.yelp?.connected || connections?.google?.connected) {
-        const reviews = await businessListingsService.getCachedReviews(currentUser.uid, 'all', 50);
+        const reviews = await businessListingsService.getCachedReviews(restaurantUid, 'all', 50);
         setBusinessReviews(reviews);
       }
 
       // Load visibility tasks
-      const tasks = await businessListingsService.getVisibilityTasks(currentUser.uid);
+      const tasks = await businessListingsService.getVisibilityTasks(restaurantUid);
       setVisibilityTasks(tasks);
     } catch (err) {
       console.error('Error loading business listings:', err);
@@ -222,13 +255,13 @@ const SeoSocialPosts = () => {
   };
 
   const handleAppleSave = async (info) => {
-    await businessListingsService.saveAppleBusinessInfo(currentUser.uid, info);
+    await businessListingsService.saveAppleBusinessInfo(restaurantUid, info);
     await loadBusinessListings();
     setSuccess('Apple Business information saved!');
   };
 
   const handleDisconnectPlatform = async (platform) => {
-    await businessListingsService.disconnectPlatform(currentUser.uid, platform);
+    await businessListingsService.disconnectPlatform(restaurantUid, platform);
     await loadBusinessListings();
     setSuccess(`${platform.charAt(0).toUpperCase() + platform.slice(1)} disconnected.`);
   };
@@ -264,7 +297,7 @@ const SeoSocialPosts = () => {
   };
 
   const handleUpdateTaskStatus = async (taskId, status) => {
-    await businessListingsService.updateTaskStatus(currentUser.uid, taskId, status);
+    await businessListingsService.updateTaskStatus(restaurantUid, taskId, status);
     setVisibilityTasks(prev => prev.map(t => t.id === taskId ? { ...t, status, completedAt: status === 'completed' ? new Date().toISOString() : null } : t));
   };
 
@@ -282,7 +315,7 @@ const SeoSocialPosts = () => {
 
       if (pages.length > 0) {
         setConnectedAccounts(prev => ({ ...prev, facebook: true }));
-        await socialMediaService.updateConnection(currentUser.uid, 'facebook', {
+        await socialMediaService.updateConnection(restaurantUid, 'facebook', {
           connected: true,
           connectedAt: new Date().toISOString()
         });
@@ -463,7 +496,7 @@ const SeoSocialPosts = () => {
       setError('');
 
       const response = await facebookService.login();
-      await socialMediaService.updateConnection(currentUser.uid, 'facebook', {
+      await socialMediaService.updateConnection(restaurantUid, 'facebook', {
         connected: true,
         token: response.authResponse.accessToken,
         userId: response.authResponse.userID,
@@ -493,6 +526,42 @@ const SeoSocialPosts = () => {
     }
   };
 
+  const handleTwitterConnect = async () => {
+    try {
+      setTwitterConnecting(true);
+      setError('');
+      await twitterService.connect();
+      // After popup closes and callback succeeds, refresh status
+      const status = await twitterService.getStatus();
+      if (status.connected) {
+        setConnectedAccounts(prev => ({ ...prev, twitter: true }));
+        setTwitterUsername(status.username || '');
+        setSuccess('Successfully connected to X (Twitter)!');
+      }
+    } catch (err) {
+      if (err.message !== 'Twitter connection was cancelled or failed') {
+        setError(`Failed to connect X (Twitter): ${err.message}`);
+      }
+    } finally {
+      setTwitterConnecting(false);
+    }
+  };
+
+  const handleTwitterDisconnect = async () => {
+    try {
+      setIsLoading(true);
+      await twitterService.disconnect();
+      setConnectedAccounts(prev => ({ ...prev, twitter: false }));
+      setSelectedPlatforms(prev => ({ ...prev, twitter: false }));
+      setTwitterUsername('');
+      setSuccess('X (Twitter) disconnected.');
+    } catch (err) {
+      setError('Failed to disconnect X (Twitter)');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -517,7 +586,7 @@ const SeoSocialPosts = () => {
       let imageUrl = null;
 
       if (selectedImage) {
-        const imageRef = ref(storage, `social-posts/${currentUser.uid}/${Date.now()}-${selectedImage.name}`);
+        const imageRef = ref(storage, `social-posts/${restaurantUid}/${Date.now()}-${selectedImage.name}`);
         const uploadResult = await uploadBytes(imageRef, selectedImage);
         imageUrl = await getDownloadURL(uploadResult.ref);
       }
@@ -535,8 +604,12 @@ const SeoSocialPosts = () => {
         await facebookService.postToInstagram(selectedInstagramAccount, imageUrl, postContent);
       }
 
+      if (selectedPlatforms.twitter && connectedAccounts.twitter) {
+        await twitterService.postTweet(postContent, imageUrl);
+      }
+
       // Save to history
-      await addDoc(collection(db, `restaurants/${currentUser.uid}/socialPosts`), {
+      await addDoc(collection(db, `restaurants/${restaurantUid}/socialPosts`), {
         content: postContent,
         imageUrl,
         platforms: selectedPlatforms,
@@ -697,12 +770,13 @@ const SeoSocialPosts = () => {
                             {!connectedAccounts.instagram && <small className="d-block">Not connected</small>}
                           </Button>
                           <Button
-                            variant="outline-secondary"
-                            disabled
+                            variant={selectedPlatforms.twitter ? 'dark' : 'outline-secondary'}
+                            onClick={() => handlePlatformToggle('twitter')}
+                            disabled={!connectedAccounts.twitter}
                             className="platform-btn"
                           >
-                            <FaTwitter className="me-2" />Twitter
-                            <small className="d-block">Coming Soon</small>
+                            <FaXTwitter className="me-2" />X (Twitter)
+                            {!connectedAccounts.twitter && <small className="d-block">Not connected</small>}
                           </Button>
                         </div>
                       </div>
@@ -787,7 +861,12 @@ const SeoSocialPosts = () => {
                           className="content-textarea"
                         />
                         <div className="d-flex justify-content-between mt-2">
-                          <small className="text-muted">{postContent.length} characters</small>
+                          <small className={`${selectedPlatforms.twitter && postContent.length > 280 ? 'text-danger fw-bold' : 'text-muted'}`}>
+                            {postContent.length} characters
+                            {selectedPlatforms.twitter && (
+                              <span> · {280 - postContent.length} remaining for X</span>
+                            )}
+                          </small>
                           <Button
                             variant="link"
                             size="sm"
@@ -869,7 +948,7 @@ const SeoSocialPosts = () => {
                         disabled={
                           isLoading ||
                           !postContent.trim() ||
-                          (!selectedPlatforms.facebook && !selectedPlatforms.instagram) ||
+                          (!selectedPlatforms.facebook && !selectedPlatforms.instagram && !selectedPlatforms.twitter) ||
                           (selectedPlatforms.facebook && !selectedFacebookPage) ||
                           (selectedPlatforms.instagram && !selectedInstagramAccount)
                         }
@@ -912,9 +991,37 @@ const SeoSocialPosts = () => {
                         <FaInstagram className="me-2" />
                         {connectedAccounts.instagram && instagramAccounts.length > 0 ? '✓ Instagram Connected' : 'Connect Instagram'}
                       </Button>
-                      <Button variant="outline-secondary" disabled className="connect-btn">
-                        <FaTwitter className="me-2" />Twitter Coming Soon
-                      </Button>
+                      {connectedAccounts.twitter ? (
+                        <div className="d-flex gap-2">
+                          <Button
+                            variant="outline-success"
+                            className="connect-btn flex-grow-1"
+                            disabled
+                          >
+                            <FaXTwitter className="me-2" />
+                            ✓ @{twitterUsername || 'Connected'}
+                          </Button>
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={handleTwitterDisconnect}
+                            disabled={isLoading}
+                            title="Disconnect X"
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          onClick={handleTwitterConnect}
+                          variant="outline-dark"
+                          className="connect-btn"
+                          disabled={isLoading || twitterConnecting}
+                        >
+                          <FaXTwitter className="me-2" />
+                          {twitterConnecting ? 'Connecting...' : 'Connect X (Twitter)'}
+                        </Button>
+                      )}
                     </div>
                     <small className="text-muted d-block mt-2">
                       Connect your accounts to post directly from here
@@ -950,6 +1057,9 @@ const SeoSocialPosts = () => {
                     </ListGroup.Item>
                     <ListGroup.Item className="small">
                       <strong>Facebook:</strong> Include a call-to-action
+                    </ListGroup.Item>
+                    <ListGroup.Item className="small">
+                      <strong>X (Twitter):</strong> Keep it under 280 chars, be conversational
                     </ListGroup.Item>
                     <ListGroup.Item className="small">
                       <strong>Engagement:</strong> Ask questions in your posts
@@ -1358,6 +1468,7 @@ const SeoSocialPosts = () => {
                               <div>
                                 {post.platforms?.facebook && <Badge bg="primary" className="me-1"><FaFacebook /></Badge>}
                                 {post.platforms?.instagram && <Badge bg="danger" className="me-1"><FaInstagram /></Badge>}
+                                {post.platforms?.twitter && <Badge bg="dark" className="me-1"><FaXTwitter /></Badge>}
                               </div>
                               <small className="text-muted">
                                 {post.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
@@ -1421,7 +1532,7 @@ const SeoSocialPosts = () => {
                 <Form.Select value={aiPlatform} onChange={(e) => setAiPlatform(e.target.value)}>
                   <option value="instagram">Instagram</option>
                   <option value="facebook">Facebook</option>
-                  <option value="twitter">Twitter</option>
+                  <option value="twitter">X (Twitter)</option>
                 </Form.Select>
               </Form.Group>
             </Col>

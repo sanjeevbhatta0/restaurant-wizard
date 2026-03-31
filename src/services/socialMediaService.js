@@ -9,14 +9,12 @@ const socialMediaService = {
   // Get user's social media connections
   getConnections: async (userId) => {
     try {
-      const docRef = doc(db, 'users', userId, 'settings', 'socialMedia');
+      const docRef = doc(db, 'restaurants', userId, 'settings', 'socialMedia');
       const docSnap = await getDoc(docRef);
-      
+
       if (docSnap.exists()) {
-        console.log('Found existing connections:', docSnap.data());
         return docSnap.data();
       } else {
-        console.log('No existing connections found');
         return {};
       }
     } catch (error) {
@@ -28,22 +26,10 @@ const socialMediaService = {
   // Update social media connection status
   updateConnection: async (userId, platform, connectionData) => {
     try {
-      console.log('Updating connection for:', { userId, platform, connectionData });
-      const docRef = doc(db, 'users', userId, 'settings', 'socialMedia');
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        // Update existing document
-        await updateDoc(docRef, {
-          [platform]: connectionData
-        });
-      } else {
-        // Create new document
-        await setDoc(docRef, {
-          [platform]: connectionData
-        });
-      }
-      console.log('Connection updated successfully');
+      const docRef = doc(db, 'restaurants', userId, 'settings', 'socialMedia');
+      await setDoc(docRef, {
+        [platform]: connectionData
+      }, { merge: true });
     } catch (error) {
       console.error('Error updating connection:', error);
       throw error;

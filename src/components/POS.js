@@ -35,7 +35,7 @@ const POS = () => {
   const [sendingOrder, setSendingOrder] = useState(false);
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [showWakeLockPrompt, setShowWakeLockPrompt] = useState(true);
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
   const { isPayFirst, requiresTables, getServiceMode } = useSubscription();
 
@@ -72,7 +72,7 @@ const POS = () => {
     if (!currentUser?.uid) return;
     const loadTaxRate = async () => {
       try {
-        const docSnap = await getDoc(doc(db, 'restaurants', currentUser.uid));
+        const docSnap = await getDoc(doc(db, 'restaurants', restaurantUid));
         if (docSnap.exists()) {
           const data = docSnap.data();
           if (data.taxRate !== undefined) setTaxRate(data.taxRate);
@@ -82,7 +82,7 @@ const POS = () => {
       }
     };
     loadTaxRate();
-  }, [currentUser]);
+  }, [currentUser, restaurantUid]);
 
   // Auto-select first category when categories load
   useEffect(() => {
@@ -169,7 +169,7 @@ const POS = () => {
   const buildOrderData = (orderNumber, paymentInfo = null) => {
     const orderLocationId = isMultiLocation && selectedLocation
       ? selectedLocation
-      : currentUser.uid;
+      : restaurantUid;
 
     const tableNumber = selectedTables.length > 0
       ? (selectedTables.length === 1 ? selectedTables[0] : selectedTables)
@@ -219,14 +219,14 @@ const POS = () => {
   // Submit order to Firestore
   const submitOrder = async (orderData, orderLocationId, orderNumber) => {
     const docRef = await addDoc(
-      collection(db, `restaurants/${currentUser.uid}/orders`),
+      collection(db, `restaurants/${restaurantUid}/orders`),
       orderData
     );
 
     lanSyncService.sendOrder({ id: docRef.id, ...orderData });
 
     try {
-      await incrementOrderCount(currentUser.uid, orderData.total);
+      await incrementOrderCount(restaurantUid, orderData.total);
     } catch (usageErr) {
       console.error('Failed to track order usage:', usageErr);
     }
@@ -242,7 +242,7 @@ const POS = () => {
         }).join(' and '))
       : null;
 
-    await activityService.logOrderActivity(currentUser.uid, 'received', {
+    await activityService.logOrderActivity(restaurantUid, 'received', {
       orderNumber,
       tableNumber: tableDisplay,
       status: 'sent_to_kitchen',
@@ -677,7 +677,7 @@ const POS = () => {
                         setProcessing={setPaymentProcessing}
                         orderIds={[]}
                         tableNumbers={selectedTables}
-                        restaurantId={currentUser.uid}
+                        restaurantId={restaurantUid}
                         paymentDetails={{
                           subtotal: calculateSubtotal(),
                           taxRate: taxRate,

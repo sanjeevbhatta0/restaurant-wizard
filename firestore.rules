@@ -2,68 +2,80 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Restaurants collection - users can only access their own restaurant
+
+    // Helper: Check if user is the restaurant owner OR an active staff member of that restaurant
+    function isOwnerOrStaff(restaurantId) {
+      return request.auth != null && (
+        request.auth.uid == restaurantId ||
+        (request.auth.token.isStaff == true && request.auth.token.restaurantId == restaurantId)
+      );
+    }
+
+    // Restaurants collection
     match /restaurants/{restaurantId} {
-      // Allow users to read/write their own restaurant document
-      allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+      // Anyone can read restaurant info (for customer app discovery + theming)
+      allow read: if true;
+      // Restaurant owner or staff can write
+      allow write: if isOwnerOrStaff(restaurantId);
       
       // Menu Categories subcollection (used by MenuManagement and POS)
       match /menuCategories/{categoryId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
-        
+        allow read, write: if isOwnerOrStaff(restaurantId);
+
         // Items within each category
         match /items/{itemId} {
-          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          allow read, write: if isOwnerOrStaff(restaurantId);
         }
       }
-      
+
       // Orders subcollection (used by POS and Orders components)
       match /orders/{orderId} {
-        // Restaurant owner can read/write their orders
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        // Restaurant owner or staff can read/write orders
+        allow read, write: if isOwnerOrStaff(restaurantId);
         // Customers can read their own orders (matched by customerId)
         allow read: if request.auth != null && resource.data.customerId == request.auth.uid;
         // Public can create orders (for customers ordering online)
         allow create: if true;
       }
-      
+
       // Layout subcollection (used by TableLayout component)
       match /layout/{layoutId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
       
-      // Website subcollection (used by WebsiteBuilder)
+      // Website subcollection (used by WebsiteBuilder + customer app theming)
       match /website/{websiteId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read: if true;
+        allow write: if isOwnerOrStaff(restaurantId);
       }
       
-      // Locations subcollection (used for multi-location restaurants)
+      // Locations subcollection (used for multi-location restaurants + customer app)
       match /locations/{locationId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.uid == restaurantId;
         
         // Layout subcollection within each location
         match /layout/{layoutId} {
-          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          allow read, write: if isOwnerOrStaff(restaurantId);
         }
-        
+
         // Website subcollection within each location (for multi-location website builder)
         match /website/{websiteId} {
-          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          allow read, write: if isOwnerOrStaff(restaurantId);
         }
-        
+
         // Menu Categories within each location (for multi-location)
         match /menuCategories/{categoryId} {
-          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
-          
+          allow read, write: if isOwnerOrStaff(restaurantId);
+
           match /items/{itemId} {
-            allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+            allow read, write: if isOwnerOrStaff(restaurantId);
           }
         }
-        
+
         // Orders within each location (for multi-location)
         match /orders/{orderId} {
-          allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+          allow read, write: if isOwnerOrStaff(restaurantId);
           // Customers can read their own orders (matched by customerId)
           allow read: if request.auth != null && resource.data.customerId == request.auth.uid;
           allow create: if true;
@@ -72,12 +84,12 @@ service cloud.firestore {
       
       // Reimbursements subcollection
       match /reimbursements/{reimbursementId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
-      
+
       // Activity logs subcollection
       match /activities/{activityId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
       
       // Customers subcollection (for customer portal)
@@ -88,18 +100,28 @@ service cloud.firestore {
         allow create: if request.auth != null && request.auth.uid == customerId;
       }
 
+      // Reviews subcollection
+      match /reviews/{reviewId} {
+        // Restaurant owner or staff can read/write (moderate reviews)
+        allow read, write: if isOwnerOrStaff(restaurantId);
+        // Public can read approved reviews
+        allow read: if resource.data.status == 'approved';
+        // Anyone can create (submit a review) — Cloud Function validates
+        allow create: if true;
+      }
+
       // Promotions subcollection
       match /promotions/{promotionId} {
-        // Restaurant owner can CRUD
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        // Restaurant owner or staff can CRUD
+        allow read, write: if isOwnerOrStaff(restaurantId);
         // Public can read published promotions (for customer portal)
         allow read: if resource.data.isPublished == true;
       }
 
       // Promotion Claims subcollection
       match /promotionClaims/{claimId} {
-        // Restaurant owner can read all claims
-        allow read: if request.auth != null && request.auth.uid == restaurantId;
+        // Restaurant owner or staff can read all claims
+        allow read: if isOwnerOrStaff(restaurantId);
         // Customer can read their own claims
         allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       }
@@ -114,29 +136,38 @@ service cloud.firestore {
         allow read: if request.auth != null && (request.auth.uid == customerId || request.auth.uid == restaurantId);
       }
 
-      // Rewards Config subcollection
+      // Rewards Config subcollection (customer app needs to read for tier/spin display)
       match /rewardsConfig/{configId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read: if true;
+        allow write: if isOwnerOrStaff(restaurantId);
+      }
+
+      // Staff Accounts subcollection (managed by owner via Cloud Functions)
+      match /staffAccounts/{staffId} {
+        // Only restaurant owner can read staff accounts list
+        allow read: if request.auth != null && request.auth.uid == restaurantId;
+        // Writes are handled by Cloud Functions (admin SDK), not client
+        allow write: if false;
       }
 
       // Settings subcollection (business listings, etc.)
       match /settings/{settingId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
 
       // Business reviews cache (from Yelp, Google, Apple)
       match /businessReviews/{reviewId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
 
       // Visibility tasks (AI-generated improvement tasks)
       match /visibilityTasks/{taskId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
 
       // Social posts
       match /socialPosts/{postId} {
-        allow read, write: if request.auth != null && request.auth.uid == restaurantId;
+        allow read, write: if isOwnerOrStaff(restaurantId);
       }
     }
     
@@ -198,6 +229,21 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if request.auth != null && request.auth.uid == adminId;
       allow write: if false; // Managed manually via Firebase Console
+    }
+
+    // Admin 2FA secrets — server-only (Cloud Functions use admin SDK)
+    match /admin2FA/{adminId} {
+      allow read, write: if false;
+    }
+
+    // Restaurant user 2FA secrets — server-only (Cloud Functions use admin SDK)
+    match /restaurant2FA/{userId} {
+      allow read, write: if false;
+    }
+
+    // Twitter OAuth temporary sessions — server-only (Cloud Functions use admin SDK)
+    match /twitterAuth/{userId} {
+      allow read, write: if false;
     }
   }
 }

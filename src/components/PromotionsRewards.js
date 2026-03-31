@@ -22,7 +22,7 @@ function parsePromoDiscountClient(type, discountStr) {
 }
 
 const PromotionsRewards = () => {
-    const { currentUser: user } = useAuth();
+    const { currentUser: user, restaurantUid } = useAuth();
     const [activeTab, setActiveTab] = useState('promotions');
     const [promotions, setPromotions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -85,15 +85,15 @@ const PromotionsRewards = () => {
             loadPromotions();
             loadRewardsConfig();
             // Load restaurant slug for flyer URL generation
-            getDoc(doc(db, 'restaurants', user.uid)).then(snap => {
-                if (snap.exists()) setRestaurantSlug(snap.data().slug || user.uid);
+            getDoc(doc(db, 'restaurants', restaurantUid)).then(snap => {
+                if (snap.exists()) setRestaurantSlug(snap.data().slug || restaurantUid);
             }).catch(() => {});
         }
     }, [user]);
 
     const loadRewardsConfig = async () => {
         try {
-            const configDoc = await getDoc(doc(db, `restaurants/${user.uid}/rewardsConfig/settings`));
+            const configDoc = await getDoc(doc(db, `restaurants/${restaurantUid}/rewardsConfig/settings`));
             if (configDoc.exists()) {
                 setRewardsConfig(configDoc.data());
             }
@@ -105,7 +105,7 @@ const PromotionsRewards = () => {
     const saveRewardsConfig = async () => {
         try {
             setRewardsSaving(true);
-            await setDoc(doc(db, `restaurants/${user.uid}/rewardsConfig/settings`), {
+            await setDoc(doc(db, `restaurants/${restaurantUid}/rewardsConfig/settings`), {
                 ...rewardsConfig,
                 updatedAt: serverTimestamp()
             });
@@ -121,7 +121,7 @@ const PromotionsRewards = () => {
     const loadPromotions = async () => {
         try {
             setLoading(true);
-            const promoRef = collection(db, `restaurants/${user.uid}/promotions`);
+            const promoRef = collection(db, `restaurants/${restaurantUid}/promotions`);
             const q = query(promoRef, orderBy('createdAt', 'desc'));
             const snapshot = await getDocs(q);
 
@@ -178,10 +178,10 @@ const PromotionsRewards = () => {
             }
 
             if (editingPromo) {
-                await updateDoc(doc(db, `restaurants/${user.uid}/promotions`, editingPromo.id), promoData);
+                await updateDoc(doc(db, `restaurants/${restaurantUid}/promotions`, editingPromo.id), promoData);
             } else {
                 promoData.createdAt = serverTimestamp();
-                await addDoc(collection(db, `restaurants/${user.uid}/promotions`), promoData);
+                await addDoc(collection(db, `restaurants/${restaurantUid}/promotions`), promoData);
             }
 
             setShowForm(false);
@@ -250,7 +250,7 @@ const PromotionsRewards = () => {
         if (!window.confirm('Are you sure you want to delete this promotion?')) return;
 
         try {
-            await deleteDoc(doc(db, `restaurants/${user.uid}/promotions`, promoId));
+            await deleteDoc(doc(db, `restaurants/${restaurantUid}/promotions`, promoId));
             loadPromotions();
         } catch (err) {
             console.error('Error deleting promotion:', err);
@@ -260,7 +260,7 @@ const PromotionsRewards = () => {
 
     const togglePublish = async (promo) => {
         try {
-            await updateDoc(doc(db, `restaurants/${user.uid}/promotions`, promo.id), {
+            await updateDoc(doc(db, `restaurants/${restaurantUid}/promotions`, promo.id), {
                 isPublished: !promo.isPublished,
                 updatedAt: serverTimestamp()
             });
@@ -836,7 +836,14 @@ const PromotionsRewards = () => {
 const StoreLaunchFlyer = ({ promo, restaurantSlug, onClose }) => {
     const flyerRef = useRef(null);
     const websiteBaseUrl = 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite';
-    const flyerUrl = `${websiteBaseUrl}?restaurant=${restaurantSlug}&promo=${promo.id}`;
+    const defaultUrl = `${websiteBaseUrl}?restaurant=${restaurantSlug}&promo=${promo.id}`;
+    const [customUrl, setCustomUrl] = useState('');
+    const [urlMode, setUrlMode] = useState('default'); // 'default' or 'custom'
+
+    // Build the final QR target URL
+    const flyerUrl = urlMode === 'custom' && customUrl.trim()
+        ? `${customUrl.trim()}${customUrl.trim().includes('?') ? '&' : '?'}koda_promo=${promo.id}`
+        : defaultUrl;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(flyerUrl)}`;
     const qrDownloadUrl = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(flyerUrl)}&format=png`;
 
@@ -883,6 +890,36 @@ const StoreLaunchFlyer = ({ promo, restaurantSlug, onClose }) => {
                 <div className="flyer-modal-header">
                     <h3>Promotion Flyer</h3>
                     <button className="btn-ghost" onClick={onClose}><i className="bi bi-x-lg"></i></button>
+                </div>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee', background: '#fafbfc' }}>
+                    <label style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', display: 'block' }}>QR Code Destination</label>
+                    <div style={{ display: 'flex', gap: '16px', marginBottom: '10px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '14px' }}>
+                            <input type="radio" name="urlMode" value="default" checked={urlMode === 'default'} onChange={() => setUrlMode('default')} />
+                            Koda Carte hosted site
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '14px' }}>
+                            <input type="radio" name="urlMode" value="custom" checked={urlMode === 'custom'} onChange={() => setUrlMode('custom')} />
+                            My own website
+                        </label>
+                    </div>
+                    {urlMode === 'custom' && (
+                        <div style={{ marginBottom: '8px' }}>
+                            <input
+                                type="url"
+                                placeholder="https://myrestaurant.com"
+                                value={customUrl}
+                                onChange={e => setCustomUrl(e.target.value)}
+                                style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
+                            />
+                            <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                                Your site must have the Koda Carte widget installed. The promo will auto-open in the widget.
+                            </div>
+                        </div>
+                    )}
+                    <div style={{ fontSize: '12px', color: '#666', background: '#f0f0f0', padding: '8px 10px', borderRadius: '6px', wordBreak: 'break-all' }}>
+                        <strong>QR points to:</strong> {flyerUrl}
+                    </div>
                 </div>
                 <div ref={flyerRef}>
                     <div className="flyer">

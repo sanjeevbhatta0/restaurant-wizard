@@ -17,6 +17,8 @@
     "cors": "^2.8.5",
     "firebase-admin": "^11.11.1",
     "firebase-functions": "^6.4.0",
+    "otplib": "^13.4.0",
+    "qrcode": "^1.5.4",
     "stripe": "^20.1.0"
   },
   "private": true

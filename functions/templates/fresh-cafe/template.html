@@ -1215,6 +1215,31 @@
                 border-radius: 0;
             }
         }
+        /* Reviews Section */
+        .reviews-section { padding: 80px 20px; background: #f8f9fa; }
+        .reviews-section h2 { text-align: center; font-size: 2.2rem; margin-bottom: 10px; color: var(--primary); }
+        .reviews-section .section-subtitle { text-align: center; color: #666; margin-bottom: 40px; }
+        .reviews-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto 40px; }
+        .review-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .review-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .review-card-name { font-weight: 600; font-size: 1rem; }
+        .review-card-date { font-size: 0.8rem; color: #999; }
+        .review-stars { color: #f59e0b; font-size: 0.95rem; margin-bottom: 10px; }
+        .review-card-text { color: #555; line-height: 1.6; font-size: 0.95rem; }
+        .review-form-container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .review-form-container h3 { margin-bottom: 20px; font-size: 1.3rem; }
+        .review-form-group { margin-bottom: 16px; }
+        .review-form-group label { display: block; margin-bottom: 6px; font-weight: 500; color: #333; font-size: 0.9rem; }
+        .review-form-group input, .review-form-group textarea { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; font-family: inherit; }
+        .review-form-group textarea { resize: vertical; min-height: 100px; }
+        .review-star-input { display: flex; gap: 4px; cursor: pointer; font-size: 1.5rem; }
+        .review-star-input i { color: #d1d5db; transition: color 0.15s; }
+        .review-star-input i.active { color: #f59e0b; }
+        .review-submit-btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; }
+        .review-submit-btn:hover { opacity: 0.9; }
+        .review-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .review-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 12px 16px; border-radius: 8px; margin-top: 12px; text-align: center; }
+        .review-empty { text-align: center; color: #999; padding: 40px 20px; }
     </style>
 </head>
 
@@ -1232,6 +1257,7 @@
                     <li><a href="#home">Home</a></li>
                     <li><a href="#about">About</a></li>
                     <li><a href="#menu">Menu</a></li>
+                    <li><a href="#reviews">Reviews</a></li>
                     <li><a href="#contact">Contact</a></li>
                     <li>
                         <a href="#" class="nav-order-btn" onclick="toggleCart(); return false;">
@@ -1342,6 +1368,44 @@
             </div>
         </section>
 
+        <!-- Reviews Section -->
+        <section class="reviews-section" id="reviews">
+            <h2>Customer Reviews</h2>
+            <p class="section-subtitle">What our guests are saying</p>
+            <div class="reviews-grid" id="reviewsGrid">
+                <div class="review-empty">Loading reviews...</div>
+            </div>
+            <div class="review-form-container">
+                <h3>Leave a Review</h3>
+                <div id="reviewFormMessage"></div>
+                <form id="reviewForm" onsubmit="submitReviewForm(event)">
+                    <div class="review-form-group">
+                        <label>Your Name *</label>
+                        <input type="text" id="reviewName" required maxlength="100" placeholder="Your name">
+                    </div>
+                    <div class="review-form-group">
+                        <label>Email (optional)</label>
+                        <input type="email" id="reviewEmail" placeholder="your@email.com">
+                    </div>
+                    <div class="review-form-group">
+                        <label>Rating *</label>
+                        <div class="review-star-input" id="starInput">
+                            <i class="bi bi-star" data-rating="1" onclick="setReviewRating(1)"></i>
+                            <i class="bi bi-star" data-rating="2" onclick="setReviewRating(2)"></i>
+                            <i class="bi bi-star" data-rating="3" onclick="setReviewRating(3)"></i>
+                            <i class="bi bi-star" data-rating="4" onclick="setReviewRating(4)"></i>
+                            <i class="bi bi-star" data-rating="5" onclick="setReviewRating(5)"></i>
+                        </div>
+                    </div>
+                    <div class="review-form-group">
+                        <label>Your Review *</label>
+                        <textarea id="reviewText" required maxlength="1000" placeholder="Tell us about your experience..."></textarea>
+                    </div>
+                    <button type="submit" class="review-submit-btn" id="reviewSubmitBtn">Submit Review</button>
+                </form>
+            </div>
+        </section>
+
         <footer class="footer">
             <div class="footer-logo">🌿 {{restaurantName}}</div>
             <p>{{tagline}}</p>
@@ -1393,11 +1457,13 @@
                 restaurantName: '{{restaurantName}}',
                 apiBaseUrl: '{{apiBaseUrl}}',
                 stripePublishableKey: '{{stripePublishableKey}}',
+                stripeConnectedAccountId: '{{stripeConnectedAccountId}}',
                 taxRate: {{taxRate}} / 100,
                 promoId: '{{promoId}}'
         };
 
             const hours = {{hoursJson}};
+            let selectedRating = 0;
             let cart = [];
             let menuData = [];
             let selectedCategory = 'all';
@@ -1408,6 +1474,7 @@
                 loadMenu();
                 loadCart();
                 renderHours();
+                loadReviews();
 
                 // Initialize Stripe if key is available (check if it starts with 'pk_' which is valid Stripe key format)
                 console.log('Stripe key check:', CONFIG.stripePublishableKey ? CONFIG.stripePublishableKey.substring(0, 20) + '...' : 'NOT SET');
@@ -1416,8 +1483,9 @@
                         if (typeof Stripe === 'undefined') {
                             console.error('Stripe.js library not loaded! Check if https://js.stripe.com/v3/ is accessible.');
                         } else {
-                            stripe = Stripe(CONFIG.stripePublishableKey);
-                            console.log('Stripe initialized successfully with key:', CONFIG.stripePublishableKey.substring(0, 20) + '...');
+                            const stripeOpts = CONFIG.stripeConnectedAccountId ? { stripeAccount: CONFIG.stripeConnectedAccountId } : {};
+                            stripe = Stripe(CONFIG.stripePublishableKey, stripeOpts);
+                            console.log('Stripe initialized successfully with key:', CONFIG.stripePublishableKey.substring(0, 20) + '...', CONFIG.stripeConnectedAccountId ? '(connected account)' : '(platform)');
                         }
                     } catch (e) {
                         console.error('Error initializing Stripe:', e);
@@ -1979,6 +2047,52 @@
             },
             useMockData: false
         });
+    </script>
+    <script>
+    async function loadReviews() {
+        try {
+            const resp = await fetch(CONFIG.apiBaseUrl + '/getApprovedReviews?restaurantId=' + CONFIG.restaurantId);
+            const data = await resp.json();
+            const grid = document.getElementById('reviewsGrid');
+            if (data.success && data.reviews && data.reviews.length > 0) {
+                grid.innerHTML = data.reviews.map(function(r) {
+                    var stars = '';
+                    for (var i = 1; i <= 5; i++) { stars += '<i class="bi bi-star' + (i <= r.rating ? '-fill' : '') + '"></i>'; }
+                    var dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                    return '<div class="review-card"><div class="review-card-header"><span class="review-card-name">' + r.customerName + '</span><span class="review-card-date">' + dateStr + '</span></div><div class="review-stars">' + stars + '</div><div class="review-card-text">' + r.reviewText + '</div></div>';
+                }).join('');
+            } else {
+                grid.innerHTML = '<div class="review-empty">No reviews yet. Be the first to share your experience!</div>';
+            }
+        } catch (e) {
+            document.getElementById('reviewsGrid').innerHTML = '<div class="review-empty">No reviews yet. Be the first to share your experience!</div>';
+        }
+    }
+    function setReviewRating(rating) {
+        selectedRating = rating;
+        document.querySelectorAll('#starInput i').forEach(function(s, i) {
+            s.className = i < rating ? 'bi bi-star-fill active' : 'bi bi-star';
+        });
+    }
+    async function submitReviewForm(e) {
+        e.preventDefault();
+        var msgEl = document.getElementById('reviewFormMessage');
+        var btn = document.getElementById('reviewSubmitBtn');
+        if (selectedRating === 0) { msgEl.innerHTML = '<div style="color:#dc2626;padding:8px 0;">Please select a rating.</div>'; return; }
+        btn.disabled = true; btn.textContent = 'Submitting...'; msgEl.innerHTML = '';
+        try {
+            var resp = await fetch(CONFIG.apiBaseUrl + '/submitReview', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ restaurantId: CONFIG.restaurantId, customerName: document.getElementById('reviewName').value.trim(), customerEmail: document.getElementById('reviewEmail').value.trim(), rating: selectedRating, reviewText: document.getElementById('reviewText').value.trim() })
+            });
+            var data = await resp.json();
+            if (data.success) {
+                msgEl.innerHTML = '<div class="review-success">Thank you! Your review has been submitted and will be visible after approval.</div>';
+                document.getElementById('reviewForm').reset(); setReviewRating(0);
+            } else { msgEl.innerHTML = '<div style="color:#dc2626;padding:8px 0;">' + (data.error || 'Failed to submit review.') + '</div>'; }
+        } catch (err) { msgEl.innerHTML = '<div style="color:#dc2626;padding:8px 0;">Failed to submit review. Please try again.</div>'; }
+        finally { btn.disabled = false; btn.textContent = 'Submit Review'; }
+    }
     </script>
 </body>
 

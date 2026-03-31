@@ -1,21 +1,38 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
-// Stripe publishable key - will be fetched from backend or use test key
-let stripePromise = null;
+// Cache Stripe instances: platform + connected accounts
+const stripeInstances = {};
 
 /**
- * Initialize Stripe with the publishable key
- * For sandbox/test mode, use your test publishable key
+ * Initialize Stripe with the publishable key.
+ * If connectedAccountId is provided, creates a Stripe instance targeting that connected account.
+ * @param {string} [connectedAccountId] - Optional Stripe Connect account ID
  */
-export const getStripe = async () => {
-  if (!stripePromise) {
-    // You can either hardcode the test key here or fetch from backend
-    // For production, consider fetching from a secure backend endpoint
+export const getStripe = async (connectedAccountId) => {
+  const cacheKey = connectedAccountId || '__platform__';
+  if (!stripeInstances[cacheKey]) {
     const publishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15';
-    stripePromise = loadStripe(publishableKey);
+    const opts = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+    stripeInstances[cacheKey] = loadStripe(publishableKey, opts);
   }
-  return stripePromise;
+  return stripeInstances[cacheKey];
+};
+
+/**
+ * Fetch the Stripe Connect status for the current restaurant.
+ * Returns { connected, connectedAccountId, ... } or { connected: false }.
+ */
+export const getStripeConnectStatus = async () => {
+  try {
+    const functions = getFunctions();
+    const fn = httpsCallable(functions, 'getStripeConnectStatus');
+    const result = await fn();
+    return result.data;
+  } catch (error) {
+    console.error('Error fetching Stripe Connect status:', error);
+    return { connected: false, status: 'error' };
+  }
 };
 
 /**
@@ -194,6 +211,7 @@ export const calculateTierPrice = (tier, billingCycle, locationCount) => {
 
 export default {
   getStripe,
+  getStripeConnectStatus,
   createPaymentIntent,
   confirmPayment,
   processRefund,

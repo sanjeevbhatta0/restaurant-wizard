@@ -1,4 +1,8 @@
 /**
+ * @jest-environment node
+ */
+
+/**
  * E2E Tests — Website Builder Order Flow
  *
  * Tests the complete website order lifecycle using Firebase Firestore emulator:
@@ -11,34 +15,8 @@
  *   FIRESTORE_EMULATOR_HOST=localhost:8080 npx react-scripts test --testPathPattern=e2e/websiteOrderE2E
  */
 
-const { initializeApp } = require('firebase/app');
-const {
-  getFirestore,
-  connectFirestoreEmulator,
-  collection,
-  addDoc,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  query,
-  where,
-  getDocs,
-  deleteDoc,
-  orderBy
-} = require('firebase/firestore');
+const { db, isEmulatorAvailable } = require('../helpers/e2eFirebase');
 
-const firebaseConfig = {
-  apiKey: 'test-api-key',
-  authDomain: 'test.firebaseapp.com',
-  projectId: 'restaurant-portal-6b147'
-};
-
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
-const isEmulatorAvailable = !!process.env.FIRESTORE_EMULATOR_HOST;
-
-let app;
-let db;
 const TEST_RESTAURANT_ID = 'website-e2e-test-' + Date.now();
 const TEST_LOCATION_ID = 'website-loc-' + Date.now();
 
@@ -49,14 +27,8 @@ describeE2E('E2E: Website Builder Order Flow', () => {
   let createdCategoryIds = [];
 
   beforeAll(async () => {
-    app = initializeApp(firebaseConfig, 'website-e2e-' + Date.now());
-    db = getFirestore(app);
-
-    const [host, port] = EMULATOR_HOST.split(':');
-    connectFirestoreEmulator(db, host, parseInt(port));
-
     // Create restaurant
-    await setDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}`), {
+    await db.doc(`restaurants/${TEST_RESTAURANT_ID}`).set({
       restaurantName: 'Website E2E Restaurant',
       slug: 'website-e2e-' + Date.now(),
       isMultiLocation: true,
@@ -64,33 +36,38 @@ describeE2E('E2E: Website Builder Order Flow', () => {
     });
 
     // Create menu
-    const catRef = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories`));
-    await setDoc(catRef, { name: 'Main Course', order: 1 });
+    const catRef = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories`).doc();
+    await catRef.set({ name: 'Main Course', order: 1 });
     createdCategoryIds.push(catRef.id);
 
-    await setDoc(doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catRef.id}/items`)), {
+    const itemsCol = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catRef.id}/items`);
+
+    const item1Ref = itemsCol.doc();
+    await item1Ref.set({
       name: 'Grilled Salmon', price: 24.99, discount: 0, discountType: 'amount', locations: [TEST_LOCATION_ID]
     });
-    await setDoc(doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catRef.id}/items`)), {
+    const item2Ref = itemsCol.doc();
+    await item2Ref.set({
       name: 'Pasta Primavera', price: 18.99, discount: 3, discountType: 'amount', locations: []
     });
-    await setDoc(doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catRef.id}/items`)), {
+    const item3Ref = itemsCol.doc();
+    await item3Ref.set({
       name: 'Caesar Salad', price: 12.99, discount: 0, discountType: 'amount', locations: ['other-location']
     });
   });
 
   afterAll(async () => {
     for (const orderId of createdOrderIds) {
-      try { await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`)); } catch (e) {}
+      try { await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).delete(); } catch (e) {}
     }
     for (const catId of createdCategoryIds) {
       try {
-        const itemsSnap = await getDocs(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}/items`));
-        for (const itemDoc of itemsSnap.docs) { await deleteDoc(itemDoc.ref); }
-        await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}`));
+        const itemsSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}/items`).get();
+        for (const itemDoc of itemsSnap.docs) { await itemDoc.ref.delete(); }
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}`).delete();
       } catch (e) {}
     }
-    try { await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}`)); } catch (e) {}
+    try { await db.doc(`restaurants/${TEST_RESTAURANT_ID}`).delete(); } catch (e) {}
   });
 
   // ==========================================
@@ -123,15 +100,12 @@ describeE2E('E2E: Website Builder Order Flow', () => {
         createdAt: new Date().toISOString()
       };
 
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        orderData
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add(orderData);
       orderId = orderRef.id;
       createdOrderIds.push(orderId);
 
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
-      expect(orderDoc.exists()).toBe(true);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
+      expect(orderDoc.exists).toBe(true);
       const saved = orderDoc.data();
       expect(saved.source).toBe('website');
       expect(saved.status).toBe('new');
@@ -141,25 +115,25 @@ describeE2E('E2E: Website Builder Order Flow', () => {
 
     it('should flow through kitchen → ready → completed', async () => {
       // Kitchen picks up
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'preparing', preparingAt: new Date().toISOString()
       });
-      let snap = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
+      let snap = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       expect(snap.data().status).toBe('preparing');
 
       // Kitchen marks ready
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'ready', readyAt: new Date().toISOString()
       });
-      snap = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
+      snap = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       expect(snap.data().status).toBe('ready');
 
       // Payment completes
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).update({
         status: 'completed', completedAt: new Date().toISOString(),
         paymentDetails: { method: 'cash', amount: 62.10, paidAt: new Date().toISOString() }
       });
-      snap = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
+      snap = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
       expect(snap.data().status).toBe('completed');
       expect(snap.data().paymentDetails.method).toBe('cash');
     });
@@ -186,10 +160,10 @@ describeE2E('E2E: Website Builder Order Flow', () => {
         createdAt: new Date().toISOString()
       };
 
-      const ref = await addDoc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`), orderData);
+      const ref = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add(orderData);
       createdOrderIds.push(ref.id);
 
-      const readBack = (await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${ref.id}`))).data();
+      const readBack = (await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${ref.id}`).get()).data();
       expect(readBack.customer.name).toBe(orderData.customer.name);
       expect(readBack.customer.email).toBe(orderData.customer.email);
       expect(readBack.items).toHaveLength(1);
@@ -209,13 +183,11 @@ describeE2E('E2E: Website Builder Order Flow', () => {
   describe('Multi-Location Website Order', () => {
     it('should store locationId and filter menu by location', async () => {
       // Fetch menu filtered by TEST_LOCATION_ID
-      const catSnap = await getDocs(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories`));
+      const catSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories`).get();
       let locationItems = [];
 
       for (const catDoc of catSnap.docs) {
-        const itemsSnap = await getDocs(
-          collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catDoc.id}/items`)
-        );
+        const itemsSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catDoc.id}/items`).get();
         itemsSnap.docs.forEach(d => {
           const data = d.data();
           if (data.locations && data.locations.length > 0) {
@@ -235,22 +207,19 @@ describeE2E('E2E: Website Builder Order Flow', () => {
       expect(locationItems.find(i => i.name === 'Caesar Salad')).toBeUndefined();
 
       // Place order with locationId
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        {
-          orderNumber: `WEB-MULTI-${Date.now()}`,
-          source: 'website',
-          status: 'new',
-          locationId: TEST_LOCATION_ID,
-          customer: { name: 'Multi-Loc Customer' },
-          items: locationItems.map(i => ({ id: i.id, name: i.name, quantity: 1, price: i.price })),
-          total: locationItems.reduce((s, i) => s + i.price, 0),
-          createdAt: new Date().toISOString()
-        }
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
+        orderNumber: `WEB-MULTI-${Date.now()}`,
+        source: 'website',
+        status: 'new',
+        locationId: TEST_LOCATION_ID,
+        customer: { name: 'Multi-Loc Customer' },
+        items: locationItems.map(i => ({ id: i.id, name: i.name, quantity: 1, price: i.price })),
+        total: locationItems.reduce((s, i) => s + i.price, 0),
+        createdAt: new Date().toISOString()
+      });
       createdOrderIds.push(orderRef.id);
 
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`));
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).get();
       expect(orderDoc.data().locationId).toBe(TEST_LOCATION_ID);
     });
   });
@@ -261,37 +230,34 @@ describeE2E('E2E: Website Builder Order Flow', () => {
 
   describe('Prepaid Website Order', () => {
     it('should store payment details for prepaid card order', async () => {
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        {
-          orderNumber: `WEB-PREPAID-${Date.now()}`,
-          source: 'website',
-          status: 'new',
-          customer: { name: 'Prepaid Customer', email: 'prepaid@test.com' },
-          items: [{ id: 'pp1', name: 'Steak', quantity: 1, price: 35.00 }],
-          subtotal: 35.00,
-          tax: 3.15,
-          total: 38.15,
-          paymentMethod: 'card',
-          paymentDetails: {
-            status: 'pending',
-            chargeId: 'ch_test_123',
-            last4: '4242'
-          },
-          createdAt: new Date().toISOString()
-        }
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
+        orderNumber: `WEB-PREPAID-${Date.now()}`,
+        source: 'website',
+        status: 'new',
+        customer: { name: 'Prepaid Customer', email: 'prepaid@test.com' },
+        items: [{ id: 'pp1', name: 'Steak', quantity: 1, price: 35.00 }],
+        subtotal: 35.00,
+        tax: 3.15,
+        total: 38.15,
+        paymentMethod: 'card',
+        paymentDetails: {
+          status: 'pending',
+          chargeId: 'ch_test_123',
+          last4: '4242'
+        },
+        createdAt: new Date().toISOString()
+      });
       createdOrderIds.push(orderRef.id);
 
       // Verify payment details stored
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`));
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).get();
       const data = orderDoc.data();
       expect(data.paymentMethod).toBe('card');
       expect(data.paymentDetails.chargeId).toBe('ch_test_123');
       expect(data.paymentDetails.status).toBe('pending');
 
       // Complete payment
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).update({
         status: 'completed',
         paymentDetails: {
           ...data.paymentDetails,
@@ -300,7 +266,7 @@ describeE2E('E2E: Website Builder Order Flow', () => {
         }
       });
 
-      const updated = (await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`))).data();
+      const updated = (await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).get()).data();
       expect(updated.status).toBe('completed');
       expect(updated.paymentDetails.status).toBe('verified');
     });
@@ -313,21 +279,18 @@ describeE2E('E2E: Website Builder Order Flow', () => {
   describe('Order Number Generation', () => {
     it('should store and retrieve orderNumber', async () => {
       const orderNumber = `WEB-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        {
-          orderNumber,
-          source: 'website',
-          status: 'new',
-          customer: { name: 'Number Test' },
-          items: [{ id: 'n1', name: 'Test', quantity: 1, price: 5 }],
-          total: 5,
-          createdAt: new Date().toISOString()
-        }
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
+        orderNumber,
+        source: 'website',
+        status: 'new',
+        customer: { name: 'Number Test' },
+        items: [{ id: 'n1', name: 'Test', quantity: 1, price: 5 }],
+        total: 5,
+        createdAt: new Date().toISOString()
+      });
       createdOrderIds.push(orderRef.id);
 
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`));
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).get();
       expect(orderDoc.data().orderNumber).toBe(orderNumber);
       expect(typeof orderDoc.data().orderNumber).toBe('string');
       expect(orderDoc.data().orderNumber.length).toBeGreaterThan(0);

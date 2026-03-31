@@ -1226,7 +1226,7 @@
     position: relative;
     width: 280px;
     height: 280px;
-    margin-bottom: 1.5rem;
+    margin: 1rem 0 2.5rem;
 }
 
 .cp-wheel-pointer {
@@ -1283,6 +1283,7 @@
 }
 
 .cp-spin-btn {
+    margin-top: 0.5rem;
     padding: 1rem 3rem;
     background: linear-gradient(135deg, var(--cp-accent), #c0392b);
     color: white;
@@ -1372,6 +1373,103 @@
     padding: 1rem;
     background: rgba(231, 76, 60, 0.1);
     border-radius: var(--cp-radius);
+}
+
+/* =========================================
+   8b. REVIEWS TAB
+   ========================================= */
+
+.cp-reviews-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.cp-review-card {
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
+    padding: 1.25rem;
+    transition: var(--cp-transition);
+}
+
+.cp-review-card:hover {
+    box-shadow: var(--cp-shadow-lg);
+}
+
+.cp-review-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.cp-review-card-header strong {
+    font-size: 0.95rem;
+    color: var(--cp-text);
+}
+
+.cp-review-date {
+    font-size: 0.8rem;
+    color: var(--cp-text-light);
+}
+
+.cp-review-card-stars {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 0.5rem;
+}
+
+.cp-review-card-text {
+    color: var(--cp-text);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.cp-review-empty {
+    text-align: center;
+    padding: 2rem;
+    color: var(--cp-text-light);
+    font-size: 0.95rem;
+}
+
+.cp-review-form-section {
+    background: white;
+    border-radius: var(--cp-radius);
+    box-shadow: var(--cp-shadow);
+    padding: 1.5rem;
+}
+
+.cp-review-form-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--cp-sidebar-bg);
+    margin-bottom: 1rem;
+}
+
+.cp-review-star-input {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.cp-review-star-input span {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--cp-text);
+}
+
+.cp-review-stars-select {
+    display: flex;
+    gap: 4px;
+}
+
+.cp-review-textarea {
+    resize: vertical;
+    min-height: 80px;
 }
 
 /* =========================================

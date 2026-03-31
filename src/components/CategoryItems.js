@@ -17,7 +17,7 @@ import { Container, Card, Button, Form, Alert, Spinner, Modal } from 'react-boot
 
 const CategoryItems = () => {
   const { categoryId } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const navigate = useNavigate();
   
   const [category, setCategory] = useState(null);
@@ -43,7 +43,7 @@ const CategoryItems = () => {
     // Fetch category details
     const fetchCategory = async () => {
       try {
-        const categoryRef = doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}`);
+        const categoryRef = doc(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}`);
         const categorySnap = await getDoc(categoryRef);
         
         if (categorySnap.exists()) {
@@ -60,7 +60,7 @@ const CategoryItems = () => {
     };
 
     // Fetch items
-    const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`);
+    const itemsRef = collection(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items`);
     const q = query(itemsRef, orderBy('name'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -114,13 +114,13 @@ const CategoryItems = () => {
 
       if (itemForm.image) {
         const fileName = `${Date.now()}-${itemForm.image.name}`;
-        imageStoragePath = `restaurants/${currentUser.uid}/menuItems/${categoryId}/${fileName}`;
+        imageStoragePath = `restaurants/${restaurantUid}/menuItems/${categoryId}/${fileName}`;
         const storageRef = ref(storage, imageStoragePath);
         await uploadBytes(storageRef, itemForm.image);
         imageUrl = await getDownloadURL(storageRef);
       }
 
-      await addDoc(collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`), {
+      await addDoc(collection(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items`), {
         name: itemForm.name,
         description: itemForm.description,
         price: parseFloat(itemForm.price),
@@ -147,7 +147,7 @@ const CategoryItems = () => {
         await deleteObject(imageRef);
       }
       
-      await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemId}`));
+      await deleteDoc(doc(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items/${itemId}`));
       setSuccess('Item deleted successfully');
     } catch (error) {
       setError('Failed to delete item: ' + error.message);

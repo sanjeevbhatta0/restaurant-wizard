@@ -104,14 +104,6 @@
             width: 60px; height: 3px; background: #e2b04a; margin: 16px auto 0; border-radius: 2px;
         }
 
-        /* ===== WIDGET CONTAINER ===== */
-        #koda-menu {
-            max-width: 1200px;
-            margin: 0 auto 80px;
-            padding: 0 20px;
-            min-height: 400px;
-        }
-
         /* ===== CONTACT SECTION ===== */
         .contact {
             background: #f8f6f0;
@@ -144,50 +136,6 @@
             font-size: 0.85rem;
         }
 
-        /* ===== TEST CONTROLS ===== */
-        .test-controls {
-            position: fixed;
-            bottom: 80px;
-            left: 20px;
-            background: #fff;
-            border: 2px solid #e2b04a;
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            z-index: 99997;
-            max-width: 280px;
-        }
-        .test-controls h4 {
-            font-size: 0.85rem;
-            color: #1a1a2e;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-        .test-controls button {
-            display: block;
-            width: 100%;
-            padding: 8px 12px;
-            margin-bottom: 6px;
-            border: 1px solid #ddd;
-            background: #f9f9f9;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.82rem;
-            text-align: left;
-            transition: all 0.2s;
-        }
-        .test-controls button:hover { background: #e2b04a; color: #1a1a2e; border-color: #e2b04a; }
-        .test-controls button.active { background: #1a1a2e; color: #e2b04a; border-color: #1a1a2e; }
-        .test-controls .status {
-            font-size: 0.75rem;
-            color: #28a745;
-            margin-top: 8px;
-            padding: 6px;
-            background: #d4edda;
-            border-radius: 4px;
-            display: none;
-        }
-
         /* Responsive */
         @media (max-width: 768px) {
             .about { flex-direction: column; text-align: center; }
@@ -195,7 +143,6 @@
             .hero h1 { font-size: 2.2rem; }
             .navbar { padding: 14px 20px; }
             .navbar nav a { margin-left: 16px; font-size: 0.85rem; }
-            .test-controls { bottom: auto; top: 70px; left: 10px; right: 10px; max-width: none; }
         }
     </style>
 </head>
@@ -233,12 +180,9 @@
     <section id="menu">
         <div class="section-header">
             <h2>Menu & Online Ordering</h2>
-            <p>Browse our menu and order directly — no need to leave our website!</p>
+            <p>Click the <strong>Order Online</strong> button to browse our menu and place your order!</p>
             <div class="divider"></div>
         </div>
-
-        <!-- This is where the Koda Carte widget gets embedded -->
-        <div id="koda-menu"></div>
     </section>
 
     <!-- CONTACT -->
@@ -265,96 +209,15 @@
         &copy; 2026 The Golden Fork. All rights reserved. Powered by Koda Carte.
     </div>
 
-    <!-- ========================================== -->
-    <!-- TEST CONTROLS (for testing different modes) -->
-    <!-- ========================================== -->
-    <div class="test-controls" id="test-controls">
-        <h4>Widget Test Controls</h4>
-        <button class="active" onclick="switchMode('inline')">Inline Embed (current)</button>
-        <button onclick="switchMode('float')">Floating Button</button>
-        <button onclick="switchMode('page')">Full Page Section</button>
-        <div class="status" id="test-status"></div>
-    </div>
-
-    <!-- ========================================== -->
-    <!-- KODA CARTE WIDGET INTEGRATION              -->
-    <!-- This is the actual code a client would add -->
-    <!-- ========================================== -->
+    <!-- KODA CARTE WIDGET — Floating Button -->
     <script src="widget.js"></script>
     <script>
-        // Default: initialize in inline mode
-        var currentMode = 'inline';
-
-        // Use the restaurant ID from test-order.html for consistency
-        var RESTAURANT_ID = 'gurkha-kitchen-express';
-
         KodaCarte.init({
-            restaurantId: RESTAURANT_ID,
-            mode: 'inline',
-            target: '#koda-menu',
-            primaryColor: '#1a1a2e',
-            onReady: function() {
-                showStatus('Widget loaded successfully!');
-            },
-            onOrderPlaced: function(data) {
-                showStatus('Order placed! ' + JSON.stringify(data));
-            },
-            onCartUpdate: function(data) {
-                showStatus('Cart updated: ' + (data.count || 0) + ' items');
-            },
-            onAuthChange: function(data) {
-                showStatus('Auth: ' + (data.authenticated ? 'Signed in' : 'Signed out'));
-            }
+            restaurantId: 'gurkha-kitchen-express',
+            mode: 'float',
+            buttonText: 'Order Online',
+            primaryColor: '#1a1a2e'
         });
-
-        // Test control functions
-        function switchMode(mode) {
-            if (mode === currentMode) return;
-            currentMode = mode;
-
-            // Update button states
-            var btns = document.querySelectorAll('.test-controls button');
-            btns.forEach(function(b) { b.classList.remove('active'); });
-            event.target.classList.add('active');
-
-            // Remove existing widget elements
-            var existing = document.querySelectorAll('.kc-widget, .kc-float-btn, .kc-drawer, .kc-drawer-overlay');
-            existing.forEach(function(el) { el.remove(); });
-
-            // Clear inline container
-            var inlineTarget = document.getElementById('koda-menu');
-            if (inlineTarget) inlineTarget.innerHTML = '';
-
-            // Re-initialize with new mode
-            var config = {
-                restaurantId: RESTAURANT_ID,
-                mode: mode,
-                primaryColor: '#1a1a2e',
-                onReady: function() { showStatus('Widget loaded in ' + mode + ' mode!'); },
-                onOrderPlaced: function(data) { showStatus('Order placed!'); },
-                onCartUpdate: function(data) { showStatus('Cart: ' + (data.count || 0) + ' items'); },
-                onAuthChange: function(data) { showStatus('Auth: ' + (data.authenticated ? 'In' : 'Out')); }
-            };
-
-            if (mode === 'inline') {
-                config.target = '#koda-menu';
-            } else if (mode === 'page') {
-                config.target = '#koda-menu';
-            } else if (mode === 'float') {
-                config.buttonText = 'Order Online';
-            }
-
-            KodaCarte.init(config);
-            showStatus('Switched to ' + mode + ' mode');
-        }
-
-        function showStatus(msg) {
-            var el = document.getElementById('test-status');
-            el.textContent = msg;
-            el.style.display = 'block';
-            clearTimeout(el._timer);
-            el._timer = setTimeout(function() { el.style.display = 'none'; }, 4000);
-        }
     </script>
 </body>
 </html>

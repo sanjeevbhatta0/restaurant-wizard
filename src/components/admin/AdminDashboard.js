@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import { useAdmin } from '../../contexts/AdminContext';
 import PricingManagement from './PricingManagement';
 import FeatureManagement from './FeatureManagement';
@@ -11,8 +10,8 @@ import PublishScheduler from './PublishScheduler';
 import './AdminDashboard.css';
 
 const AdminDashboard = () => {
-    const { currentUser } = useAuth();
     const {
+        currentUser,
         isAdmin,
         loading,
         hasUnsavedChanges,

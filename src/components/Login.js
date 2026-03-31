@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { auth, db } from '../firebase';
 import { Container, Card, Form, Button, Alert } from 'react-bootstrap';
 import PasswordInput from './PasswordInput';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -12,35 +14,49 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [show2FA, setShow2FA] = useState(false);
+  const [tfaCode, setTfaCode] = useState('');
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [backupCode, setBackupCode] = useState('');
+  const [backupWarning, setBackupWarning] = useState('');
   const navigate = useNavigate();
+  const functions = getFunctions();
 
   // Helper function to check if input is an email
   const isEmail = (str) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
   };
 
-  // Look up email by username using Cloud Function
+  // Look up email by username using Cloud Function (checks restaurant owners + staff)
   const getEmailByUsername = async (username) => {
     try {
-      // Determine the correct function URL based on environment
       const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
-      const functionUrl = isEmulator 
-        ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/lookupEmailByUsername'
-        : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/lookupEmailByUsername';
-      
-      const response = await fetch(functionUrl, {
+      const baseUrl = isEmulator
+        ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
+        : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net';
+
+      // Try owner lookup first
+      const ownerResponse = await fetch(`${baseUrl}/lookupEmailByUsername`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username }),
       });
-      
-      if (response.ok) {
-        const data = await response.json();
+      if (ownerResponse.ok) {
+        const data = await ownerResponse.json();
         return data.email;
       }
-      
+
+      // Try staff lookup
+      const staffResponse = await fetch(`${baseUrl}/lookupStaffEmail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      if (staffResponse.ok) {
+        const data = await staffResponse.json();
+        return data.email;
+      }
+
       return null;
     } catch (error) {
       console.error('Error looking up username:', error);
@@ -53,9 +69,9 @@ const Login = () => {
     try {
       setError('');
       setLoading(true);
-      
+
       let email = usernameOrEmail;
-      
+
       // If input is not an email, try to look it up as username
       if (!isEmail(usernameOrEmail)) {
         const foundEmail = await getEmailByUsername(usernameOrEmail);
@@ -66,8 +82,25 @@ const Login = () => {
         }
         email = foundEmail;
       }
-      
-      await signInWithEmailAndPassword(auth, email, password);
+
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+      // Check if this is a staff user via custom claims
+      const tokenResult = await userCredential.user.getIdTokenResult();
+      if (tokenResult.claims.isStaff) {
+        // Staff users go straight to home (permissions enforced by Layout)
+        navigate('/home');
+        return;
+      }
+
+      // Check if 2FA is enabled for this restaurant user
+      const restaurantDoc = await getDoc(doc(db, 'restaurants', userCredential.user.uid));
+      if (restaurantDoc.exists() && restaurantDoc.data().twoFactorEnabled) {
+        setShow2FA(true);
+        setLoading(false);
+        return;
+      }
+
       navigate('/home');
     } catch (error) {
       if (error.code === 'auth/user-not-found') {
@@ -82,6 +115,153 @@ const Login = () => {
     }
     setLoading(false);
   };
+
+  const handleVerify2FA = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBackupWarning('');
+    setLoading(true);
+
+    const codeToVerify = useBackupCode ? backupCode.trim() : tfaCode.trim();
+
+    if (!codeToVerify) {
+      setError(useBackupCode ? 'Please enter a backup code.' : 'Please enter the 6-digit code.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const verifyFn = httpsCallable(functions, 'verifyRestaurant2FACode');
+      const result = await verifyFn({ code: codeToVerify });
+
+      if (result.data.method === 'backup' && result.data.remainingBackupCodes <= 2) {
+        setBackupWarning(`You only have ${result.data.remainingBackupCodes} backup code${result.data.remainingBackupCodes === 1 ? '' : 's'} left. Go to Account > Security to generate new ones.`);
+        setTimeout(() => navigate('/home'), 2500);
+      } else {
+        navigate('/home');
+      }
+    } catch (err) {
+      console.error('2FA verification error:', err);
+      if (err.message?.includes('Invalid or already used backup')) {
+        setError('That backup code is invalid or has already been used. Please try another one.');
+      } else if (err.message?.includes('Incorrect code')) {
+        setError('Incorrect code. Please check your authenticator app and try again.');
+      } else {
+        setError('Verification failed. Please try again.');
+      }
+      setLoading(false);
+    }
+  };
+
+  const handleCancel2FA = async () => {
+    await auth.signOut();
+    setShow2FA(false);
+    setTfaCode('');
+    setBackupCode('');
+    setUseBackupCode(false);
+    setError('');
+    setBackupWarning('');
+  };
+
+  // 2FA Verification Screen
+  if (show2FA) {
+    return (
+      <div className="auth-page">
+        <div className="auth-background"></div>
+        <Container className="auth-container">
+          <div className="auth-card-wrapper">
+            <Card className="auth-card">
+              <div className="auth-card-header">
+                <div className="auth-logo">
+                  <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M16 2L4 8V16C4 22.6 9.4 28 16 28C22.6 28 28 22.6 28 16V8L16 2Z" fill="white"/>
+                    <path d="M16 6L8 10V16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16V10L16 6Z" fill="rgba(255,255,255,0.8)"/>
+                    <circle cx="16" cy="16" r="4" fill="#667eea"/>
+                  </svg>
+                </div>
+                <h2>Two-Factor Authentication</h2>
+                <p>{useBackupCode ? 'Enter one of your backup codes' : 'Enter the code from your authenticator app'}</p>
+              </div>
+              <Card.Body className="auth-card-body">
+                {error && <Alert variant="danger" className="auth-alert">{error}</Alert>}
+                {backupWarning && (
+                  <Alert variant="warning" className="auth-alert">{backupWarning}</Alert>
+                )}
+                <Form onSubmit={handleVerify2FA}>
+                  {!useBackupCode ? (
+                    <div className="mb-3">
+                      <p className="text-muted small mb-3">
+                        Open your authenticator app and find the entry for <strong>Koda Carte</strong>. Enter the 6-digit code shown.
+                      </p>
+                      <Form.Control
+                        type="text"
+                        className="auth-input text-center"
+                        value={tfaCode}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                          setTfaCode(val);
+                        }}
+                        placeholder="000000"
+                        maxLength={6}
+                        autoFocus
+                        autoComplete="one-time-code"
+                        style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '8px', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="mb-3">
+                      <p className="text-muted small mb-3">
+                        Enter one of the backup codes you saved when you set up 2FA. Each code can only be used once.
+                      </p>
+                      <Form.Control
+                        type="text"
+                        className="auth-input text-center"
+                        value={backupCode}
+                        onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+                        placeholder="XXXX-XXXX"
+                        maxLength={9}
+                        autoFocus
+                        style={{ fontSize: '1.3rem', fontWeight: '700', letterSpacing: '4px', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  )}
+
+                  <Button
+                    disabled={loading || (!useBackupCode && tfaCode.length !== 6) || (useBackupCode && backupCode.length < 9)}
+                    className="auth-button w-100"
+                    type="submit"
+                  >
+                    {loading ? 'Verifying...' : 'Verify & Sign In'}
+                  </Button>
+                </Form>
+
+                <div className="text-center mt-3">
+                  <button
+                    className="btn btn-link text-decoration-none"
+                    style={{ fontSize: '0.85rem' }}
+                    onClick={() => {
+                      setUseBackupCode(!useBackupCode);
+                      setError('');
+                    }}
+                  >
+                    {useBackupCode ? 'Use authenticator app instead' : "Lost your phone? Use a backup code"}
+                  </button>
+                  <br />
+                  <button
+                    className="btn btn-link text-muted text-decoration-none"
+                    style={{ fontSize: '0.8rem' }}
+                    onClick={handleCancel2FA}
+                  >
+                    Cancel sign in
+                  </button>
+                </div>
+              </Card.Body>
+            </Card>
+          </div>
+        </Container>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-page">
@@ -105,11 +285,11 @@ const Login = () => {
               <Form onSubmit={handleSubmit}>
                 <Form.Group className="mb-3">
                   <Form.Label>Username or Email</Form.Label>
-                  <Form.Control 
-                    type="text" 
+                  <Form.Control
+                    type="text"
                     value={usernameOrEmail}
                     onChange={(e) => setUsernameOrEmail(e.target.value)}
-                    required 
+                    required
                     className="auth-input"
                     placeholder="Enter your username or email"
                   />
@@ -122,13 +302,13 @@ const Login = () => {
                   <PasswordInput
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required 
+                    required
                     className="auth-input"
                   />
                 </Form.Group>
-                <Button 
-                  disabled={loading} 
-                  className="auth-button w-100" 
+                <Button
+                  disabled={loading}
+                  className="auth-button w-100"
                   type="submit"
                 >
                   {loading ? 'Signing in...' : 'Log In'}

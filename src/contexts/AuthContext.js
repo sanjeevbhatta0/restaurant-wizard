@@ -11,19 +11,56 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isStaff, setIsStaff] = useState(false);
+  const [staffPermissions, setStaffPermissions] = useState([]);
+  const [staffRestaurantId, setStaffRestaurantId] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+
+      if (user) {
+        // Check for staff custom claims
+        try {
+          const tokenResult = await user.getIdTokenResult();
+          const claims = tokenResult.claims;
+          if (claims.isStaff) {
+            setIsStaff(true);
+            setStaffPermissions(claims.permissions || []);
+            setStaffRestaurantId(claims.restaurantId || null);
+          } else {
+            setIsStaff(false);
+            setStaffPermissions([]);
+            setStaffRestaurantId(null);
+          }
+        } catch {
+          setIsStaff(false);
+          setStaffPermissions([]);
+          setStaffRestaurantId(null);
+        }
+      } else {
+        setIsStaff(false);
+        setStaffPermissions([]);
+        setStaffRestaurantId(null);
+      }
+
       setLoading(false);
     });
 
     return unsubscribe;
   }, []);
 
+  // restaurantUid: the restaurant owner's UID for Firestore paths
+  // For staff, this is the owner; for owners, this is themselves
+  const restaurantUid = isStaff ? staffRestaurantId : currentUser?.uid;
+
   const value = {
     currentUser,
-    loading
+    loading,
+    isStaff,
+    staffPermissions,
+    staffRestaurantId,
+    restaurantUid
   };
 
   return (
@@ -31,4 +68,4 @@ export function AuthProvider({ children }) {
       {!loading && children}
     </AuthContext.Provider>
   );
-} 
+}

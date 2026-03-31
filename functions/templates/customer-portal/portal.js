@@ -21,7 +21,7 @@ class CustomerPortal {
     // State
     this.user = null;
     this.isAuthenticated = false;
-    this.currentView = 'account'; // account, active_orders, orders, promotions, rewards
+    this.currentView = 'account'; // account, active_orders, orders, promotions, rewards, reviews
     this.isSpinning = false;
     this.checkoutPending = false;
     this.activeOrders = [];
@@ -111,7 +111,7 @@ class CustomerPortal {
 
   // Navigate to a specific tab (used by embed postMessage)
   navigateToTab(tab) {
-    if (['account', 'active_orders', 'orders', 'promotions', 'rewards'].includes(tab)) {
+    if (['account', 'active_orders', 'orders', 'promotions', 'rewards', 'reviews'].includes(tab)) {
       this.currentView = tab;
       this.showDashboard();
     }
@@ -486,11 +486,19 @@ class CustomerPortal {
     // Attach event listeners
     this.attachDashboardListeners();
 
+    // Load reviews if on reviews tab
+    if (this.currentView === 'reviews') {
+      this.loadApprovedReviews();
+    }
+
     // Background refresh if data is stale (re-renders dashboard when done)
     if (this.isDataStale() && this.isAuthenticated) {
       this.refreshDataIfNeeded().then(() => {
         this.modal.innerHTML = this.renderDashboard();
         this.attachDashboardListeners();
+        if (this.currentView === 'reviews') {
+          this.loadApprovedReviews();
+        }
       });
     }
   }
@@ -501,6 +509,12 @@ class CustomerPortal {
   }
 
   showPrizeModal(prize) {
+    const message = prize.type === 'none'
+      ? 'Better luck next time! Come back tomorrow for another spin.'
+      : prize.type === 'points'
+        ? `You won ${prize.value} reward points!`
+        : `You won a ${prize.name} reward! Check My Rewards below.`;
+
     const prizeModal = document.createElement('div');
     prizeModal.className = 'cp-modal cp-prize-modal active';
     prizeModal.innerHTML = `
@@ -509,7 +523,7 @@ class CustomerPortal {
       </button>
       <div class="cp-prize-icon">${prize.icon}</div>
       <h3>${prize.type === 'none' ? 'Oh no!' : 'Congratulations!'}</h3>
-      <p>${prize.message}</p>
+      <p>${message}</p>
       ${prize.type !== 'none' ? `
         <div class="cp-prize-value">${prize.name}</div>
       ` : ''}
@@ -898,6 +912,10 @@ class CustomerPortal {
               <i class="bi bi-gift"></i>
               <span>Fun Rewards</span>
             </button>
+            <button class="cp-nav-item ${this.currentView === 'reviews' ? 'active' : ''}" data-view="reviews">
+              <i class="bi bi-chat-quote"></i>
+              <span>Reviews</span>
+            </button>
             <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 1rem 0;"></div>
             <button class="cp-nav-item" onclick="customerPortal.hideFullPageDashboard()">
               <i class="bi bi-arrow-left"></i>
@@ -967,6 +985,8 @@ class CustomerPortal {
         return this.renderPromotions();
       case 'rewards':
         return this.renderDailySpin();
+      case 'reviews':
+        return this.renderReviews();
       default:
         return this.renderAccountOverview();
     }
@@ -1460,6 +1480,133 @@ class CustomerPortal {
     `;
   }
 
+  renderReviews() {
+    return `
+      <div class="cp-content-header">
+        <h2><i class="bi bi-chat-quote"></i> Reviews</h2>
+        <p>See what others are saying and share your experience</p>
+      </div>
+      <div id="cp-reviews-list" class="cp-reviews-list">
+        <div class="cp-loading-container">
+          <div class="cp-loading-spinner"></div>
+          <div class="cp-loading-text">Loading reviews...</div>
+        </div>
+      </div>
+      <div class="cp-review-form-section">
+        <h3 class="cp-review-form-title">Write a Review</h3>
+        <div class="cp-review-star-input" id="cp-review-star-input">
+          <span>Your Rating:</span>
+          <div class="cp-review-stars-select">
+            ${[1,2,3,4,5].map(i => `<i class="bi bi-star" data-rating="${i}" onclick="customerPortal.setReviewRating(${i})" style="cursor:pointer;font-size:1.5rem;color:#d1d5db;transition:color 0.2s"></i>`).join('')}
+          </div>
+        </div>
+        <div class="cp-form-group">
+          <label class="cp-form-label">Name</label>
+          <input type="text" class="cp-form-input" id="cp-review-name" placeholder="Your name" value="${this.user?.fullName || ''}" />
+        </div>
+        <div class="cp-form-group">
+          <label class="cp-form-label">Email (optional)</label>
+          <input type="email" class="cp-form-input" id="cp-review-email" placeholder="your@email.com" value="${this.user?.email || ''}" />
+        </div>
+        <div class="cp-form-group">
+          <label class="cp-form-label">Your Review</label>
+          <textarea class="cp-form-input cp-review-textarea" id="cp-review-text" placeholder="Tell us about your experience..." rows="4"></textarea>
+        </div>
+        <div id="cp-review-form-message"></div>
+        <button class="cp-btn cp-btn-primary" id="cp-review-submit-btn" onclick="customerPortal.submitReview()">Submit Review</button>
+      </div>
+    `;
+  }
+
+  setReviewRating(rating) {
+    this._selectedReviewRating = rating;
+    const stars = document.querySelectorAll('#cp-review-star-input .cp-review-stars-select i');
+    stars.forEach((star, i) => {
+      star.className = i < rating ? 'bi bi-star-fill' : 'bi bi-star';
+      star.style.color = i < rating ? '#f59e0b' : '#d1d5db';
+    });
+  }
+
+  async submitReview() {
+    const name = document.getElementById('cp-review-name')?.value?.trim();
+    const email = document.getElementById('cp-review-email')?.value?.trim();
+    const text = document.getElementById('cp-review-text')?.value?.trim();
+    const rating = this._selectedReviewRating || 0;
+    const msgEl = document.getElementById('cp-review-form-message');
+    const btn = document.getElementById('cp-review-submit-btn');
+
+    if (!name) { msgEl.innerHTML = '<div class="cp-alert cp-alert-error">Please enter your name.</div>'; return; }
+    if (rating === 0) { msgEl.innerHTML = '<div class="cp-alert cp-alert-error">Please select a rating.</div>'; return; }
+    if (!text) { msgEl.innerHTML = '<div class="cp-alert cp-alert-error">Please write a review.</div>'; return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<div class="cp-spinner"></div> Submitting...';
+    msgEl.innerHTML = '';
+
+    try {
+      const resp = await fetch(this.config.apiBaseUrl + '/submitReview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: this.config.restaurantId,
+          customerName: name,
+          customerEmail: email,
+          rating: rating,
+          reviewText: text
+        })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        msgEl.innerHTML = '<div class="cp-alert cp-alert-success">Thank you! Your review has been submitted and will be visible after approval.</div>';
+        document.getElementById('cp-review-text').value = '';
+        this._selectedReviewRating = 0;
+        this.setReviewRating(0);
+      } else {
+        msgEl.innerHTML = '<div class="cp-alert cp-alert-error">' + (data.error || 'Failed to submit review.') + '</div>';
+      }
+    } catch (err) {
+      msgEl.innerHTML = '<div class="cp-alert cp-alert-error">Failed to submit review. Please try again.</div>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Submit Review';
+    }
+  }
+
+  async loadApprovedReviews() {
+    try {
+      const resp = await fetch(this.config.apiBaseUrl + '/getApprovedReviews?restaurantId=' + this.config.restaurantId);
+      const data = await resp.json();
+      const container = document.getElementById('cp-reviews-list');
+      if (!container) return;
+
+      if (data.success && data.reviews && data.reviews.length > 0) {
+        container.innerHTML = data.reviews.map(r => {
+          const stars = Array.from({length: 5}, (_, i) =>
+            `<i class="bi bi-star${i < r.rating ? '-fill' : ''}" style="color:${i < r.rating ? '#f59e0b' : '#d1d5db'};font-size:0.9rem"></i>`
+          ).join('');
+          const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+          return `
+            <div class="cp-review-card">
+              <div class="cp-review-card-header">
+                <strong>${r.customerName}</strong>
+                <span class="cp-review-date">${dateStr}</span>
+              </div>
+              <div class="cp-review-card-stars">${stars}</div>
+              <p class="cp-review-card-text">${r.reviewText}</p>
+            </div>
+          `;
+        }).join('');
+      } else {
+        container.innerHTML = '<div class="cp-review-empty"><i class="bi bi-chat-quote" style="font-size:2.5rem;color:#d1d5db;display:block;margin-bottom:0.75rem"></i>No reviews yet. Be the first to share your experience!</div>';
+      }
+    } catch (e) {
+      const container = document.getElementById('cp-reviews-list');
+      if (container) {
+        container.innerHTML = '<div class="cp-review-empty"><i class="bi bi-chat-quote" style="font-size:2.5rem;color:#d1d5db;display:block;margin-bottom:0.75rem"></i>No reviews yet. Be the first to share your experience!</div>';
+      }
+    }
+  }
+
   attachDashboardListeners() {
     // Nav item clicks
     const navItems = this.modal.querySelectorAll('.cp-nav-item');
@@ -1482,6 +1629,11 @@ class CustomerPortal {
     navItems.forEach(item => {
       item.classList.toggle('active', item.dataset.view === this.currentView);
     });
+
+    // Load reviews data if on reviews tab
+    if (this.currentView === 'reviews') {
+      this.loadApprovedReviews();
+    }
   }
 
   // =========================================
@@ -1601,7 +1753,18 @@ class CustomerPortal {
 
           if (result.data.success) {
             this.spinInfo.streak = result.data.streak;
-            console.log('Spin saved! Streak:', result.data.streak);
+            // Add reward to local list so it appears immediately in My Rewards
+            if (selectedPrize.type !== 'none' && result.data.rewardCode) {
+              this.customerRewards.push({
+                prizeName: selectedPrize.name,
+                prizeType: selectedPrize.type,
+                prizeValue: selectedPrize.value,
+                rewardCode: result.data.rewardCode,
+                used: false,
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                source: 'daily_spin'
+              });
+            }
           }
         } catch (err) {
           console.error('Error saving spin result:', err);

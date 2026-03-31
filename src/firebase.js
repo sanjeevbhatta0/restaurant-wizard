@@ -13,7 +13,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyACOWtwR1QMedvnzMxzlh4JZU2buNl-vO0",
   authDomain: "restaurant-portal-6b147.firebaseapp.com",
   projectId: "restaurant-portal-6b147",
-  storageBucket: "restaurant-portal-6b147.appspot.com",
+  storageBucket: "restaurant-portal-6b147.firebasestorage.app",
   messagingSenderId: "767096499289",
   appId: "1:767096499289:web:00be3ea1e69fe0ea709548",
   measurementId: "G-Y6SJVWSKHM"

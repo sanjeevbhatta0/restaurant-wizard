@@ -1,4 +1,8 @@
 /**
+ * @jest-environment node
+ */
+
+/**
  * E2E Tests — Promotions Flow
  *
  * These tests simulate the full promotions lifecycle using Firebase emulators:
@@ -11,39 +15,12 @@
  *   FIRESTORE_EMULATOR_HOST=localhost:8080 npx react-scripts test --testPathPattern=e2e
  */
 
-const { initializeApp } = require('firebase/app');
-const {
-  getFirestore,
-  connectFirestoreEmulator,
-  collection,
-  addDoc,
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  query,
-  where,
-  getDocs,
-  deleteDoc
-} = require('firebase/firestore');
-
-// Firebase test config
-const firebaseConfig = {
-  apiKey: 'test-api-key',
-  authDomain: 'test.firebaseapp.com',
-  projectId: 'restaurant-portal-6b147'
-};
-
-// Check if emulator is available
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
-const isEmulatorAvailable = !!process.env.FIRESTORE_EMULATOR_HOST;
+const { db, isEmulatorAvailable } = require('../helpers/e2eFirebase');
 
 // ==========================================
 // Setup
 // ==========================================
 
-let app;
-let db;
 const TEST_RESTAURANT_ID = 'e2e-promo-test-' + Date.now();
 const TEST_CUSTOMER_ID = 'e2e-customer-' + Date.now();
 
@@ -54,31 +31,21 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
   let createdClaimIds = [];
   let createdOrderIds = [];
 
-  beforeAll(() => {
-    app = initializeApp(firebaseConfig, 'e2e-promo-test-' + Date.now());
-    db = getFirestore(app);
-
-    if (isEmulatorAvailable) {
-      const [host, port] = EMULATOR_HOST.split(':');
-      connectFirestoreEmulator(db, host, parseInt(port));
-    }
-  });
-
   afterAll(async () => {
     // Cleanup test data
     for (const promoId of createdPromoIds) {
       try {
-        await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotions/${promoId}`));
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotions/${promoId}`).delete();
       } catch (e) { /* ignore */ }
     }
     for (const claimId of createdClaimIds) {
       try {
-        await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${claimId}`));
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${claimId}`).delete();
       } catch (e) { /* ignore */ }
     }
     for (const orderId of createdOrderIds) {
       try {
-        await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).delete();
       } catch (e) { /* ignore */ }
     }
   });
@@ -110,15 +77,14 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
         createdAt: new Date()
       };
 
-      const promosRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/promotions`);
-      const docRef = await addDoc(promosRef, promoData);
+      const docRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/promotions`).add(promoData);
       promoId = docRef.id;
       createdPromoIds.push(promoId);
 
       expect(promoId).toBeTruthy();
 
-      const promoDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotions/${promoId}`));
-      expect(promoDoc.exists()).toBe(true);
+      const promoDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotions/${promoId}`).get();
+      expect(promoDoc.exists).toBe(true);
       expect(promoDoc.data().title).toBe('E2E Grand Opening');
       expect(promoDoc.data().discountValue).toBe(20);
       expect(promoDoc.data().isPublished).toBe(true);
@@ -151,35 +117,32 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
         used: false
       };
 
-      const claimRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${claimId}`);
-      await setDoc(claimRef, claimData);
+      const claimRef = db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${claimId}`);
+      await claimRef.set(claimData);
 
       // Increment claimCount on promo
-      const promoRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotions/${promoId}`);
-      const promoSnap = await getDoc(promoRef);
-      await updateDoc(promoRef, { claimCount: (promoSnap.data().claimCount || 0) + 1 });
+      const promoRef = db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotions/${promoId}`);
+      const promoSnap = await promoRef.get();
+      await promoRef.update({ claimCount: (promoSnap.data().claimCount || 0) + 1 });
 
       // Verify claim
-      const claimDoc = await getDoc(claimRef);
-      expect(claimDoc.exists()).toBe(true);
+      const claimDoc = await claimRef.get();
+      expect(claimDoc.exists).toBe(true);
       expect(claimDoc.data().uniqueCode).toBe(uniqueCode);
       expect(claimDoc.data().used).toBe(false);
       expect(claimDoc.data().discountValue).toBe(20);
 
       // Verify claimCount incremented
-      const updatedPromo = await getDoc(promoRef);
+      const updatedPromo = await promoRef.get();
       expect(updatedPromo.data().claimCount).toBe(1);
     });
 
     test('Step 3 — Validate promo code (by unique code)', async () => {
-      const claimsRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims`);
-      const q = query(
-        claimsRef,
-        where('uniqueCode', '==', uniqueCode),
-        where('used', '==', false)
-      );
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims`)
+        .where('uniqueCode', '==', uniqueCode)
+        .where('used', '==', false)
+        .get();
 
-      const snapshot = await getDocs(q);
       expect(snapshot.empty).toBe(false);
 
       const claim = snapshot.docs[0].data();
@@ -188,7 +151,7 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
       expect(claim.used).toBe(false);
 
       // Check not expired
-      const validUntil = claim.validUntil instanceof Date ? claim.validUntil : claim.validUntil.toDate();
+      const validUntil = claim.validUntil.toDate ? claim.validUntil.toDate() : new Date(claim.validUntil);
       expect(validUntil > new Date()).toBe(true);
     });
 
@@ -220,14 +183,13 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
         createdAt: new Date()
       };
 
-      const ordersRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`);
-      const docRef = await addDoc(ordersRef, orderData);
+      const docRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add(orderData);
       orderId = docRef.id;
       createdOrderIds.push(orderId);
 
       // Verify order has promo data
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`));
-      expect(orderDoc.exists()).toBe(true);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).get();
+      expect(orderDoc.exists).toBe(true);
       const data = orderDoc.data();
       expect(data.promoCode).toBe(uniqueCode);
       expect(data.promotionId).toBe(promoId);
@@ -237,14 +199,14 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
 
     test('Step 5 — Verify claim is marked as used', async () => {
       // Mark claim as used (simulating what submitOrder does)
-      const claimRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${claimId}`);
-      await updateDoc(claimRef, {
+      const claimRef = db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${claimId}`);
+      await claimRef.update({
         used: true,
         usedAt: new Date(),
         usedInOrder: orderId
       });
 
-      const claimDoc = await getDoc(claimRef);
+      const claimDoc = await claimRef.get();
       const data = claimDoc.data();
       expect(data.used).toBe(true);
       expect(data.usedAt).toBeDefined();
@@ -253,14 +215,11 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
 
     test('Step 6 — Reject reuse of used claim', async () => {
       // Try to find the claim by uniqueCode where used == false
-      const claimsRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims`);
-      const q = query(
-        claimsRef,
-        where('uniqueCode', '==', uniqueCode),
-        where('used', '==', false)
-      );
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims`)
+        .where('uniqueCode', '==', uniqueCode)
+        .where('used', '==', false)
+        .get();
 
-      const snapshot = await getDocs(q);
       // Should be empty — claim is already used
       expect(snapshot.empty).toBe(true);
     });
@@ -292,8 +251,7 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
         createdAt: new Date()
       };
 
-      const promosRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/promotions`);
-      const docRef = await addDoc(promosRef, promoData);
+      const docRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/promotions`).add(promoData);
       posPromoId = docRef.id;
       createdPromoIds.push(posPromoId);
 
@@ -307,7 +265,7 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
       posClaimId = `${posPromoId}_pos-customer`;
       createdClaimIds.push(posClaimId);
 
-      await setDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${posClaimId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${posClaimId}`).set({
         userId: 'pos-customer',
         promotionId: posPromoId,
         promotionTitle: 'E2E POS Promo',
@@ -324,14 +282,11 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
     });
 
     test('Step 2 — POS staff validates customer unique code', async () => {
-      const claimsRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims`);
-      const q = query(
-        claimsRef,
-        where('uniqueCode', '==', posUniqueCode),
-        where('used', '==', false)
-      );
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims`)
+        .where('uniqueCode', '==', posUniqueCode)
+        .where('used', '==', false)
+        .get();
 
-      const snapshot = await getDocs(q);
       expect(snapshot.empty).toBe(false);
 
       const claim = snapshot.docs[0].data();
@@ -340,24 +295,21 @@ describeE2E('E2E: Promotions Full Lifecycle', () => {
     });
 
     test('Step 3 — Mark claim used after POS payment', async () => {
-      const claimRef = doc(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${posClaimId}`);
-      await updateDoc(claimRef, {
+      const claimRef = db.doc(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims/${posClaimId}`);
+      await claimRef.update({
         used: true,
         usedAt: new Date(),
         usedInOrder: 'pos-order-e2e'
       });
 
-      const claimDoc = await getDoc(claimRef);
+      const claimDoc = await claimRef.get();
       expect(claimDoc.data().used).toBe(true);
 
       // Verify can't reuse
-      const claimsRef = collection(db, `restaurants/${TEST_RESTAURANT_ID}/promotionClaims`);
-      const q = query(
-        claimsRef,
-        where('uniqueCode', '==', posUniqueCode),
-        where('used', '==', false)
-      );
-      const snapshot = await getDocs(q);
+      const snapshot = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/promotionClaims`)
+        .where('uniqueCode', '==', posUniqueCode)
+        .where('used', '==', false)
+        .get();
       expect(snapshot.empty).toBe(true);
     });
   });

@@ -13,7 +13,7 @@ import './PageHeader.css';
 import './Kitchen.css';
 
 const Kitchen = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +59,7 @@ const Kitchen = () => {
   }, []);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !restaurantUid) return;
 
     // Multi-location but no location selected
     if (isMultiLocation && !selectedLocation) {
@@ -69,10 +69,10 @@ const Kitchen = () => {
     }
 
     // Query for orders that are new (from website), sent to kitchen, or being prepared
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
     // Build query based on location
-    // Note: For single-location, we still filter by locationId (currentUser.uid) to ensure consistency
+    // Note: For single-location, we still filter by locationId (restaurantUid) to ensure consistency
     // Include 'new' status to capture website orders
     let q;
     try {
@@ -85,11 +85,11 @@ const Kitchen = () => {
           orderBy('createdAt', 'asc') // Oldest first (FIFO)
         );
       } else {
-        // Single-location: filter by currentUser.uid (which is what POS sets as locationId)
+        // Single-location: filter by restaurantUid (which is what POS sets as locationId)
         // This ensures consistency between POS and Kitchen
         q = query(
           ordersRef,
-          where('locationId', '==', currentUser.uid),
+          where('locationId', '==', restaurantUid),
           where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready']),
           orderBy('createdAt', 'asc')
         );
@@ -107,7 +107,7 @@ const Kitchen = () => {
         } else {
           q = query(
             ordersRef,
-            where('locationId', '==', currentUser.uid),
+            where('locationId', '==', restaurantUid),
             where('status', 'in', ['new', 'sent_to_kitchen', 'preparing', 'ready'])
           );
         }
@@ -182,7 +182,7 @@ const Kitchen = () => {
         } else {
           setError('Firestore index required. Please create the composite index for orders query. Check console for details.');
           console.error('Missing Firestore index. Create index with:', {
-            collection: `restaurants/${currentUser.uid}/orders`,
+            collection: `restaurants/${restaurantUid}/orders`,
             fields: [
               { fieldPath: 'locationId', order: 'ASCENDING' },
               { fieldPath: 'status', order: 'ASCENDING' },
@@ -253,12 +253,12 @@ const Kitchen = () => {
       unsubRelayStatus();
       unsubRelaySync();
     };
-  }, [currentUser, selectedLocation, isMultiLocation]);
+  }, [currentUser, restaurantUid, selectedLocation, isMultiLocation]);
 
   const handleStatusChange = async (orderId, newStatus) => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${orderId}`);
 
       // Get order data for activity logging
       const order = orders.find(o => o.id === orderId);
@@ -283,12 +283,12 @@ const Kitchen = () => {
         const tableNumber = Array.isArray(order.tableNumber)
           ? order.tableNumber.join(' and ')
           : order.tableNumber;
-        await activityService.logOrderActivity(currentUser.uid, 'status_changed', {
+        await activityService.logOrderActivity(restaurantUid, 'status_changed', {
           orderNumber: order.orderNumber || orderId,
           orderId: orderId,
           tableNumber: tableNumber || 'N/A',
           status: newStatus,
-          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
         });
       }
     } catch (error) {
@@ -340,7 +340,7 @@ const Kitchen = () => {
   const handleOrderPickedUp = async (orderId) => {
     setUpdatingOrders(prev => new Set(prev).add(orderId));
     try {
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+      const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${orderId}`);
       const order = orders.find(o => o.id === orderId);
 
       const updateData = {
@@ -357,12 +357,12 @@ const Kitchen = () => {
         const tableNumber = Array.isArray(order.tableNumber)
           ? order.tableNumber.join(' and ')
           : order.tableNumber;
-        await activityService.logOrderActivity(currentUser.uid, 'picked_up', {
+        await activityService.logOrderActivity(restaurantUid, 'picked_up', {
           orderNumber: order.orderNumber || orderId,
           orderId: orderId,
           tableNumber: tableNumber || 'Counter',
           status: 'completed',
-          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+          locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
         });
       }
     } catch (error) {

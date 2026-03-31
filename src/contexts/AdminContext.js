@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useAuth } from './AuthContext';
+import { onAuthStateChanged } from 'firebase/auth';
+import { adminAuth } from '../adminFirebase';
 import {
     getDraftConfig,
     getPublishedConfig,
@@ -19,7 +20,8 @@ export function useAdmin() {
 }
 
 export function AdminProvider({ children }) {
-    const { currentUser } = useAuth();
+    const [currentUser, setCurrentUser] = useState(null);
+    const [authLoading, setAuthLoading] = useState(true);
     const [isAdmin, setIsAdmin] = useState(false);
     const [loading, setLoading] = useState(true);
     const [draftConfig, setDraftConfig] = useState(DEFAULT_CONFIG);
@@ -28,6 +30,15 @@ export function AdminProvider({ children }) {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saving, setSaving] = useState(false);
     const [publishing, setPublishing] = useState(false);
+
+    // Listen to admin auth state (separate from restaurant auth)
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(adminAuth, (user) => {
+            setCurrentUser(user);
+            setAuthLoading(false);
+        });
+        return unsubscribe;
+    }, []);
 
     // Check if current user is admin
     useEffect(() => {
@@ -41,8 +52,10 @@ export function AdminProvider({ children }) {
             setLoading(false);
         };
 
-        checkAdmin();
-    }, [currentUser]);
+        if (!authLoading) {
+            checkAdmin();
+        }
+    }, [currentUser, authLoading]);
 
     // Load configurations
     useEffect(() => {
@@ -217,8 +230,9 @@ export function AdminProvider({ children }) {
     };
 
     const value = {
+        currentUser,
         isAdmin,
-        loading,
+        loading: loading || authLoading,
         draftConfig,
         publishedConfig,
         scheduledChanges,

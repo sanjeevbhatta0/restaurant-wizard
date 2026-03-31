@@ -24,7 +24,7 @@ export function MenuProvider({ children }) {
     const [allCategories, setAllCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
-    const { currentUser } = useAuth();
+    const { currentUser, restaurantUid } = useAuth();
     const { isMultiLocation, selectedLocation } = useLocation();
 
     // Try to load from cache on initial mount
@@ -32,7 +32,7 @@ export function MenuProvider({ children }) {
         if (!currentUser) return;
 
         try {
-            const cached = localStorage.getItem(`${MENU_CACHE_KEY}_${currentUser.uid}`);
+            const cached = localStorage.getItem(`${MENU_CACHE_KEY}_${restaurantUid}`);
             if (cached) {
                 const { data, timestamp } = JSON.parse(cached);
                 const age = Date.now() - timestamp;
@@ -54,7 +54,7 @@ export function MenuProvider({ children }) {
         if (!currentUser || !data || data.length === 0) return;
 
         try {
-            localStorage.setItem(`${MENU_CACHE_KEY}_${currentUser.uid}`, JSON.stringify({
+            localStorage.setItem(`${MENU_CACHE_KEY}_${restaurantUid}`, JSON.stringify({
                 data,
                 timestamp: Date.now()
             }));
@@ -68,7 +68,7 @@ export function MenuProvider({ children }) {
         if (!currentUser) return;
 
         try {
-            const categoriesRef = collection(db, `restaurants/${currentUser.uid}/menuCategories`);
+            const categoriesRef = collection(db, `restaurants/${restaurantUid}/menuCategories`);
             const q = query(categoriesRef, orderBy('name'));
             const categoriesSnapshot = await getDocs(q);
 
@@ -78,7 +78,7 @@ export function MenuProvider({ children }) {
                     const category = { id: categoryDoc.id, ...categoryDoc.data() };
 
                     // Fetch items for this category
-                    const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${category.id}/items`);
+                    const itemsRef = collection(db, `restaurants/${restaurantUid}/menuCategories/${category.id}/items`);
                     const itemsQuery = query(itemsRef, orderBy('name'));
                     const itemsSnapshot = await getDocs(itemsQuery);
 
@@ -115,7 +115,7 @@ export function MenuProvider({ children }) {
         loadMenuData();
 
         // Listen for category changes to trigger refresh
-        const categoriesRef = collection(db, `restaurants/${currentUser.uid}/menuCategories`);
+        const categoriesRef = collection(db, `restaurants/${restaurantUid}/menuCategories`);
         const q = query(categoriesRef, orderBy('name'));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -159,7 +159,7 @@ export function MenuProvider({ children }) {
     // Clear cache (useful when user logs out)
     const clearCache = useCallback(() => {
         if (currentUser) {
-            localStorage.removeItem(`${MENU_CACHE_KEY}_${currentUser.uid}`);
+            localStorage.removeItem(`${MENU_CACHE_KEY}_${restaurantUid}`);
         }
     }, [currentUser]);
 

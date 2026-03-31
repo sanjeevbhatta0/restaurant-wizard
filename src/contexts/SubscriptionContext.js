@@ -144,13 +144,13 @@ export const useSubscription = () => {
 };
 
 export const SubscriptionProvider = ({ children }) => {
-    const { currentUser } = useAuth();
+    const { currentUser, restaurantUid } = useAuth();
     const [subscription, setSubscription] = useState(null);
     const [serviceMode, setServiceMode] = useState('full_service');
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!currentUser?.uid) {
+        if (!restaurantUid) {
             setSubscription(null);
             setLoading(false);
             return;
@@ -158,7 +158,7 @@ export const SubscriptionProvider = ({ children }) => {
 
         // Listen to subscription changes in real-time
         const unsubscribe = onSnapshot(
-            doc(db, 'restaurants', currentUser.uid),
+            doc(db, 'restaurants', restaurantUid),
             (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
@@ -177,7 +177,7 @@ export const SubscriptionProvider = ({ children }) => {
         );
 
         return () => unsubscribe();
-    }, [currentUser]);
+    }, [restaurantUid]);
 
     // Get current tier (default to 'ally' if no subscription)
     const getCurrentTier = () => {

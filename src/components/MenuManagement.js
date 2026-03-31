@@ -27,7 +27,7 @@ const MenuManagement = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [saving, setSaving] = useState(false);
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { isMultiLocation, locations, selectedLocation } = useLocation();
   const { getCurrentTier, getMenuLimit } = useSubscription();
 
@@ -93,7 +93,7 @@ const MenuManagement = () => {
 
     try {
       setError('');
-      const categoryRef = doc(collection(db, `restaurants/${currentUser.uid}/menuCategories`));
+      const categoryRef = doc(collection(db, `restaurants/${restaurantUid}/menuCategories`));
       await setDoc(categoryRef, {
         name,
         createdAt: new Date()
@@ -114,7 +114,7 @@ const MenuManagement = () => {
     try {
       setError('');
       // Delete all items in the category first
-      const itemsRef = collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`);
+      const itemsRef = collection(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items`);
       const itemsSnapshot = await getDocs(itemsRef);
 
       for (const itemDoc of itemsSnapshot.docs) {
@@ -123,11 +123,11 @@ const MenuManagement = () => {
           const imageRef = ref(storage, itemData.imageStoragePath);
           await deleteObject(imageRef);
         }
-        await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemDoc.id}`));
+        await deleteDoc(doc(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items/${itemDoc.id}`));
       }
 
       // Then delete the category
-      await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}`));
+      await deleteDoc(doc(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}`));
       setSuccess('Category and all its items deleted successfully');
 
       // Select first category if available
@@ -222,7 +222,7 @@ const MenuManagement = () => {
         }
 
         const fileName = `${Date.now()}-${itemForm.image.name}`;
-        imageStoragePath = `restaurants/${currentUser.uid}/menuItems/${currentCategory.id}/${fileName}`;
+        imageStoragePath = `restaurants/${restaurantUid}/menuItems/${currentCategory.id}/${fileName}`;
         const storageRef = ref(storage, imageStoragePath);
         await uploadBytes(storageRef, itemForm.image);
         imageUrl = await getDownloadURL(storageRef);
@@ -242,13 +242,13 @@ const MenuManagement = () => {
 
       if (editingItem) {
         // Update existing item
-        const itemRef = doc(db, `restaurants/${currentUser.uid}/menuCategories/${currentCategory.id}/items/${editingItem.id}`);
+        const itemRef = doc(db, `restaurants/${restaurantUid}/menuCategories/${currentCategory.id}/items/${editingItem.id}`);
         await updateDoc(itemRef, itemData);
         setSuccess('Item updated successfully');
       } else {
         // Add new item
         itemData.createdAt = new Date();
-        await addDoc(collection(db, `restaurants/${currentUser.uid}/menuCategories/${currentCategory.id}/items`), itemData);
+        await addDoc(collection(db, `restaurants/${restaurantUid}/menuCategories/${currentCategory.id}/items`), itemData);
         setSuccess('Item added successfully');
       }
 
@@ -285,7 +285,7 @@ const MenuManagement = () => {
         await deleteObject(imageRef);
       }
 
-      await deleteDoc(doc(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items/${itemId}`));
+      await deleteDoc(doc(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items/${itemId}`));
       setSuccess('Item deleted successfully');
       refreshMenu(); // Refresh cached menu data
       setTimeout(() => setSuccess(''), 3000);
@@ -354,7 +354,7 @@ const MenuManagement = () => {
                 categoryId = existingCategory.id;
               } else {
                 // Create new category
-                const categoryRef = doc(collection(db, `restaurants/${currentUser.uid}/menuCategories`));
+                const categoryRef = doc(collection(db, `restaurants/${restaurantUid}/menuCategories`));
                 await setDoc(categoryRef, {
                   name: category.name,
                   createdAt: new Date()
@@ -365,7 +365,7 @@ const MenuManagement = () => {
               // Create items in the category
               for (const item of category.items) {
                 await addDoc(
-                  collection(db, `restaurants/${currentUser.uid}/menuCategories/${categoryId}/items`),
+                  collection(db, `restaurants/${restaurantUid}/menuCategories/${categoryId}/items`),
                   {
                     name: item.name,
                     description: item.description || '',

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Nav, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation as useLocationContext } from '../contexts/LocationContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
@@ -22,7 +24,27 @@ const ROUTE_TO_FEATURE = {
   '/seo-social': 'seo-social',
   '/website-integration': 'website-integration',
   '/website-builder': 'website-builder',
+  '/reviews': 'menu-management', // Reviews is accessible to all tiers
   '/account': 'menu-management' // Account is always accessible
+};
+
+// Maps sidebar routes to staff permission keys
+const ROUTE_TO_PERMISSION = {
+  '/home': 'home',
+  '/analytics': 'analytics',
+  '/menu-management': 'menu-management',
+  '/pos': 'pos',
+  '/kitchen': 'kitchen',
+  '/server': 'server',
+  '/table-layout': 'table-layout',
+  '/payments': 'payments',
+  '/orders': 'orders',
+  '/promotions': 'promotions',
+  '/seo-social': 'seo-social',
+  '/website-integration': 'website-integration',
+  '/website-builder': 'website-builder',
+  '/reviews': 'reviews',
+  '/account': 'account'
 };
 
 // Tier names for upgrade prompts
@@ -34,7 +56,7 @@ const TIER_NAMES = {
 };
 
 const Layout = ({ children }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isStaff, staffPermissions } = useAuth();
   const { isMultiLocation, locations, selectedLocation, setSelectedLocation } = useLocationContext();
   const { hasFeatureAccess, getMinimumTierForFeature, getCurrentTier, getServiceMode } = useSubscription();
   const location = useLocation();
@@ -92,6 +114,7 @@ const Layout = ({ children }) => {
     { to: '/payments', icon: 'credit-card', text: 'Payments' },
     { to: '/orders', icon: 'cart', text: 'Orders' },
     { to: '/promotions', icon: 'gift', text: 'Promotions' },
+    { to: '/reviews', icon: 'chat-quote', text: 'Reviews' },
     { to: '/seo-social', icon: 'share', text: 'SEO & Social' },
     { to: '/website-integration', icon: 'code-slash', text: 'Website Integration' },
     { to: '/website-builder', icon: 'brush', text: 'Website Builder' },
@@ -172,6 +195,13 @@ const Layout = ({ children }) => {
           </div>
           <Nav className="flex-column sidebar-nav">
             {sidebarLinks.filter(link => {
+              // Staff permission filter — hide routes staff don't have access to
+              if (isStaff) {
+                const permKey = ROUTE_TO_PERMISSION[link.to];
+                // Staff never see Account page (admin only)
+                if (link.to === '/account') return false;
+                if (permKey && !staffPermissions.includes(permKey)) return false;
+              }
               const mode = getServiceMode();
               if (link.to === '/server' && mode !== 'full_service') return false;
               if (link.to === '/table-layout' && mode === 'food_truck') return false;
@@ -229,6 +259,14 @@ const Layout = ({ children }) => {
             })}
           </Nav>
           <div className="sidebar-footer">
+            <button
+              className="sidebar-logout-btn"
+              onClick={async () => { await signOut(auth); navigate('/login'); }}
+              aria-label="Sign out"
+            >
+              <i className="bi bi-box-arrow-right"></i>
+              {!isCollapsed && <span>Sign Out</span>}
+            </button>
             <button
               className="sidebar-collapse-btn"
               onClick={toggleCollapse}

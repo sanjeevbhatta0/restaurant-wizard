@@ -38,7 +38,8 @@ class EmbedApp {
     const key = this.config.stripeKey;
     if (key && key.startsWith('pk_') && typeof Stripe !== 'undefined') {
       try {
-        this.stripe = Stripe(key);
+        const opts = this.config.stripeConnectedAccountId ? { stripeAccount: this.config.stripeConnectedAccountId } : {};
+        this.stripe = Stripe(key, opts);
       } catch (err) {
         console.error('Stripe init error:', err);
       }
@@ -729,12 +730,17 @@ class EmbedApp {
         'orders': 'orders',
         'active_orders': 'active_orders',
         'promotions': 'promotions',
-        'rewards': 'rewards'
+        'rewards': 'rewards',
+        'reviews': 'reviews'
       };
       const portalView = viewMap[tab] || 'account';
 
       if (this.portal) {
-        if (this.portal.isAuthenticated) {
+        // Reviews are accessible without authentication
+        if (portalView === 'reviews') {
+          this.portal.currentView = portalView;
+          this.portal.showDashboard();
+        } else if (this.portal.isAuthenticated) {
           this.portal.currentView = portalView;
           // Load portal data (orders, promotions, rewards) if not yet loaded
           if (!this.portalDataLoaded) {

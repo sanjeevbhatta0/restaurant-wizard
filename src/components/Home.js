@@ -12,7 +12,7 @@ const Home = () => {
   const [recentActivities, setRecentActivities] = useState([]);
   const [todayStats, setTodayStats] = useState({ orders: 0, revenue: 0, pendingOrders: 0 });
   const [loading, setLoading] = useState(true);
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
 
   const getGreeting = () => {
@@ -32,11 +32,11 @@ const Home = () => {
   };
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || !restaurantUid) return;
 
     const fetchRestaurantData = async () => {
       try {
-        const docRef = doc(db, "restaurants", currentUser.uid);
+        const docRef = doc(db, "restaurants", restaurantUid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setRestaurantData(docSnap.data());
@@ -53,7 +53,7 @@ const Home = () => {
     // Listen to recent activities
     // Use simple query without locationId filter for backward compatibility
     // Then filter client-side to handle both old activities (no locationId) and new ones
-    const activitiesRef = collection(db, `restaurants/${currentUser.uid}/activities`);
+    const activitiesRef = collection(db, `restaurants/${restaurantUid}/activities`);
     const activitiesQuery = query(
       activitiesRef,
       orderBy('createdAt', 'desc'),
@@ -77,10 +77,10 @@ const Home = () => {
           return activity.locationId === selectedLocation;
         });
       } else {
-        // Single-location: include all activities (old ones without locationId + new ones with currentUser.uid)
+        // Single-location: include all activities (old ones without locationId + new ones with restaurantUid)
         activities = activities.filter(activity => {
-          // Include if no locationId (old data) or if locationId matches currentUser.uid
-          return !activity.locationId || activity.locationId === currentUser.uid;
+          // Include if no locationId (old data) or if locationId matches restaurantUid
+          return !activity.locationId || activity.locationId === restaurantUid;
         });
       }
 
@@ -99,7 +99,7 @@ const Home = () => {
     });
 
     // Still listen to orders for stats calculation
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
     const ordersQuery = query(ordersRef, orderBy('createdAt', 'desc'), limit(50));
 
     const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
@@ -141,7 +141,7 @@ const Home = () => {
       unsubscribeActivities();
       unsubscribeOrders();
     };
-  }, [currentUser, isMultiLocation, selectedLocation]);
+  }, [currentUser, restaurantUid, isMultiLocation, selectedLocation]);
 
   const quickActions = [
     {

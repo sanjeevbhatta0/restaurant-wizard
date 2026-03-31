@@ -1,0 +1,18 @@
+[debug] [2026-03-28T05:20:28.869Z] ----------------------------------------------------------------------
+[debug] [2026-03-28T05:20:28.872Z] Command:       /Users/sanjeevbhatta/.nvm/versions/node/v23.10.0/bin/node /usr/local/bin/firebase functions:list --project restaurant-portal-6b147
+[debug] [2026-03-28T05:20:28.872Z] CLI Version:   13.34.0
+[debug] [2026-03-28T05:20:28.873Z] Platform:      darwin
+[debug] [2026-03-28T05:20:28.873Z] Node Version:  v23.10.0
+[debug] [2026-03-28T05:20:28.874Z] Time:          Sat Mar 28 2026 00:20:28 GMT-0500 (Central Daylight Time)
+[debug] [2026-03-28T05:20:28.874Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-28T05:20:28.876Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-03-28T05:20:29.057Z] Object "" in "firebase.json" has unknown property: {"additionalProperty":"ignore"}
+[debug] [2026-03-28T05:20:29.063Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-28T05:20:29.064Z] > authorizing via signed-in user (sanjivbhatta100@gmail.com)
+[debug] [2026-03-28T05:20:29.064Z] [iam] checking project restaurant-portal-6b147 for permissions ["cloudfunctions.functions.list","firebase.projects.get"]
+[debug] [2026-03-28T05:20:29.065Z] Checked if tokens are valid: false, expires at: 1774590331711
+[debug] [2026-03-28T05:20:29.066Z] Checked if tokens are valid: false, expires at: 1774590331711
+[debug] [2026-03-28T05:20:29.066Z] > refreshing access token with scopes: []
+[debug] [2026-03-28T05:20:29.066Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-03-28T05:20:29.066Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]

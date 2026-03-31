@@ -1,4 +1,8 @@
 /**
+ * @jest-environment node
+ */
+
+/**
  * E2E Tests — Widget Embed Flow
  *
  * Tests the complete widget flow using Firebase Firestore emulator:
@@ -11,36 +15,8 @@
  *   FIRESTORE_EMULATOR_HOST=localhost:8080 npx react-scripts test --testPathPattern=e2e/widgetE2E
  */
 
-const { initializeApp } = require('firebase/app');
-const {
-  getFirestore,
-  connectFirestoreEmulator,
-  collection,
-  addDoc,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  query,
-  where,
-  getDocs,
-  deleteDoc,
-  orderBy
-} = require('firebase/firestore');
+const { db, isEmulatorAvailable } = require('../helpers/e2eFirebase');
 
-// Firebase test config
-const firebaseConfig = {
-  apiKey: 'test-api-key',
-  authDomain: 'test.firebaseapp.com',
-  projectId: 'restaurant-portal-6b147'
-};
-
-// Check if emulator is available
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080';
-const isEmulatorAvailable = !!process.env.FIRESTORE_EMULATOR_HOST;
-
-let app;
-let db;
 const TEST_RESTAURANT_ID = 'widget-e2e-test-' + Date.now();
 const TEST_LOCATION_A = 'loc-a-' + Date.now();
 const TEST_LOCATION_B = 'loc-b-' + Date.now();
@@ -53,14 +29,8 @@ describeE2E('E2E: Widget Embed Flow', () => {
   let createdCategoryIds = [];
 
   beforeAll(async () => {
-    app = initializeApp(firebaseConfig, 'widget-e2e-' + Date.now());
-    db = getFirestore(app);
-
-    const [host, port] = EMULATOR_HOST.split(':');
-    connectFirestoreEmulator(db, host, parseInt(port));
-
     // Create test restaurant
-    await setDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}`), {
+    await db.doc(`restaurants/${TEST_RESTAURANT_ID}`).set({
       restaurantName: 'Widget Test Restaurant',
       slug: 'widget-test-' + Date.now(),
       isMultiLocation: true,
@@ -68,13 +38,13 @@ describeE2E('E2E: Widget Embed Flow', () => {
     });
 
     // Create menu categories with items
-    const cat1Ref = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories`));
-    await setDoc(cat1Ref, { name: 'Appetizers', order: 1 });
+    const cat1Ref = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories`).doc();
+    await cat1Ref.set({ name: 'Appetizers', order: 1 });
     createdCategoryIds.push(cat1Ref.id);
 
     // Add items to category
-    const item1Ref = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat1Ref.id}/items`));
-    await setDoc(item1Ref, {
+    const item1Ref = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat1Ref.id}/items`).doc();
+    await item1Ref.set({
       name: 'Spring Rolls',
       price: 8.99,
       discount: 0,
@@ -82,8 +52,8 @@ describeE2E('E2E: Widget Embed Flow', () => {
       locations: [TEST_LOCATION_A, TEST_LOCATION_B]
     });
 
-    const item2Ref = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat1Ref.id}/items`));
-    await setDoc(item2Ref, {
+    const item2Ref = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat1Ref.id}/items`).doc();
+    await item2Ref.set({
       name: 'Edamame',
       price: 6.99,
       discount: 1,
@@ -91,8 +61,8 @@ describeE2E('E2E: Widget Embed Flow', () => {
       locations: [TEST_LOCATION_A]
     });
 
-    const item3Ref = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat1Ref.id}/items`));
-    await setDoc(item3Ref, {
+    const item3Ref = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat1Ref.id}/items`).doc();
+    await item3Ref.set({
       name: 'Gyoza',
       price: 9.99,
       discount: 0,
@@ -100,12 +70,12 @@ describeE2E('E2E: Widget Embed Flow', () => {
       locations: [TEST_LOCATION_B]
     });
 
-    const cat2Ref = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories`));
-    await setDoc(cat2Ref, { name: 'Drinks', order: 2 });
+    const cat2Ref = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories`).doc();
+    await cat2Ref.set({ name: 'Drinks', order: 2 });
     createdCategoryIds.push(cat2Ref.id);
 
-    const drink1Ref = doc(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat2Ref.id}/items`));
-    await setDoc(drink1Ref, {
+    const drink1Ref = db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${cat2Ref.id}/items`).doc();
+    await drink1Ref.set({
       name: 'Green Tea',
       price: 3.50,
       discount: 0,
@@ -117,18 +87,18 @@ describeE2E('E2E: Widget Embed Flow', () => {
   afterAll(async () => {
     // Cleanup
     for (const orderId of createdOrderIds) {
-      try { await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`)); } catch (e) {}
+      try { await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderId}`).delete(); } catch (e) {}
     }
     for (const catId of createdCategoryIds) {
       try {
-        const itemsSnap = await getDocs(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}/items`));
+        const itemsSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}/items`).get();
         for (const itemDoc of itemsSnap.docs) {
-          await deleteDoc(itemDoc.ref);
+          await itemDoc.ref.delete();
         }
-        await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}`));
+        await db.doc(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catId}`).delete();
       } catch (e) {}
     }
-    try { await deleteDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}`)); } catch (e) {}
+    try { await db.doc(`restaurants/${TEST_RESTAURANT_ID}`).delete(); } catch (e) {}
   });
 
   // ==========================================
@@ -137,17 +107,13 @@ describeE2E('E2E: Widget Embed Flow', () => {
 
   describe('Menu Fetch via Firestore', () => {
     it('should return categories with items for the test restaurant', async () => {
-      const catSnap = await getDocs(
-        query(collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories`), orderBy('name'))
-      );
+      const catSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories`).orderBy('name').get();
 
       expect(catSnap.docs.length).toBeGreaterThanOrEqual(2);
 
       const categories = [];
       for (const catDoc of catSnap.docs) {
-        const itemsSnap = await getDocs(
-          collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catDoc.id}/items`)
-        );
+        const itemsSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catDoc.id}/items`).get();
         if (itemsSnap.docs.length > 0) {
           categories.push({
             id: catDoc.id,
@@ -165,15 +131,11 @@ describeE2E('E2E: Widget Embed Flow', () => {
     });
 
     it('should filter items by location for multi-location setup', async () => {
-      const catSnap = await getDocs(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories`)
-      );
+      const catSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories`).get();
 
       const categories = [];
       for (const catDoc of catSnap.docs) {
-        const itemsSnap = await getDocs(
-          collection(db, `restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catDoc.id}/items`)
-        );
+        const itemsSnap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/menuCategories/${catDoc.id}/items`).get();
 
         const filteredItems = itemsSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
@@ -199,9 +161,7 @@ describeE2E('E2E: Widget Embed Flow', () => {
     });
 
     it('should return empty for non-existent restaurant', async () => {
-      const catSnap = await getDocs(
-        collection(db, `restaurants/nonexistent-restaurant-xyz/menuCategories`)
-      );
+      const catSnap = await db.collection(`restaurants/nonexistent-restaurant-xyz/menuCategories`).get();
       expect(catSnap.docs).toHaveLength(0);
     });
   });
@@ -231,15 +191,12 @@ describeE2E('E2E: Widget Embed Flow', () => {
         createdAt: new Date().toISOString()
       };
 
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        orderData
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add(orderData);
       createdOrderIds.push(orderRef.id);
 
       // Read back
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`));
-      expect(orderDoc.exists()).toBe(true);
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).get();
+      expect(orderDoc.exists).toBe(true);
 
       const saved = orderDoc.data();
       expect(saved.source).toBe('widget');
@@ -251,26 +208,19 @@ describeE2E('E2E: Widget Embed Flow', () => {
 
     it('should track widget orders by source field', async () => {
       // Create another widget order
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        {
-          orderNumber: `WE2E-track-${Date.now()}`,
-          source: 'widget',
-          status: 'new',
-          customer: { name: 'Tracker' },
-          items: [{ id: 'x', name: 'Test', quantity: 1, price: 10 }],
-          total: 10,
-          createdAt: new Date().toISOString()
-        }
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
+        orderNumber: `WE2E-track-${Date.now()}`,
+        source: 'widget',
+        status: 'new',
+        customer: { name: 'Tracker' },
+        items: [{ id: 'x', name: 'Test', quantity: 1, price: 10 }],
+        total: 10,
+        createdAt: new Date().toISOString()
+      });
       createdOrderIds.push(orderRef.id);
 
       // Query widget orders
-      const q = query(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        where('source', '==', 'widget')
-      );
-      const snap = await getDocs(q);
+      const snap = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).where('source', '==', 'widget').get();
       expect(snap.docs.length).toBeGreaterThanOrEqual(2);
       snap.docs.forEach(d => {
         expect(d.data().source).toBe('widget');
@@ -286,48 +236,45 @@ describeE2E('E2E: Widget Embed Flow', () => {
     let lifecycleOrderId;
 
     it('should create order with status "new"', async () => {
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        {
-          orderNumber: `WE2E-lifecycle-${Date.now()}`,
-          source: 'widget',
-          status: 'new',
-          customer: { name: 'Lifecycle Tester' },
-          items: [{ id: 'lc1', name: 'Test Item', quantity: 1, price: 15 }],
-          total: 15,
-          createdAt: new Date().toISOString()
-        }
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
+        orderNumber: `WE2E-lifecycle-${Date.now()}`,
+        source: 'widget',
+        status: 'new',
+        customer: { name: 'Lifecycle Tester' },
+        items: [{ id: 'lc1', name: 'Test Item', quantity: 1, price: 15 }],
+        total: 15,
+        createdAt: new Date().toISOString()
+      });
       lifecycleOrderId = orderRef.id;
       createdOrderIds.push(lifecycleOrderId);
 
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`));
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).get();
       expect(orderDoc.data().status).toBe('new');
     });
 
     it('should transition through preparing → ready → completed', async () => {
       // Kitchen picks up: new → preparing
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).update({
         status: 'preparing',
         preparingAt: new Date().toISOString()
       });
-      let orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`));
+      let orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).get();
       expect(orderDoc.data().status).toBe('preparing');
 
       // Kitchen marks ready
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).update({
         status: 'ready',
         readyAt: new Date().toISOString()
       });
-      orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`));
+      orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).get();
       expect(orderDoc.data().status).toBe('ready');
 
       // Payment completes
-      await updateDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`), {
+      await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).update({
         status: 'completed',
         completedAt: new Date().toISOString()
       });
-      orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`));
+      orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${lifecycleOrderId}`).get();
       expect(orderDoc.data().status).toBe('completed');
     });
   });
@@ -343,24 +290,21 @@ describeE2E('E2E: Widget Embed Flow', () => {
       const tax = Math.round(subtotal * (taxRate / 100) * 100) / 100;
       const total = Math.round((subtotal + tax) * 100) / 100;
 
-      const orderRef = await addDoc(
-        collection(db, `restaurants/${TEST_RESTAURANT_ID}/orders`),
-        {
-          orderNumber: `WE2E-tax-${Date.now()}`,
-          source: 'widget',
-          status: 'new',
-          customer: { name: 'Tax Tester' },
-          items: [{ id: 't1', name: 'Expensive Item', quantity: 1, price: 45.97 }],
-          subtotal,
-          tax,
-          total,
-          taxRate,
-          createdAt: new Date().toISOString()
-        }
-      );
+      const orderRef = await db.collection(`restaurants/${TEST_RESTAURANT_ID}/orders`).add({
+        orderNumber: `WE2E-tax-${Date.now()}`,
+        source: 'widget',
+        status: 'new',
+        customer: { name: 'Tax Tester' },
+        items: [{ id: 't1', name: 'Expensive Item', quantity: 1, price: 45.97 }],
+        subtotal,
+        tax,
+        total,
+        taxRate,
+        createdAt: new Date().toISOString()
+      });
       createdOrderIds.push(orderRef.id);
 
-      const orderDoc = await getDoc(doc(db, `restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`));
+      const orderDoc = await db.doc(`restaurants/${TEST_RESTAURANT_ID}/orders/${orderRef.id}`).get();
       const data = orderDoc.data();
 
       expect(data.subtotal).toBe(subtotal);

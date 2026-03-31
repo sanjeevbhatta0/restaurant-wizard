@@ -10,14 +10,14 @@ import CardPaymentForm from './CardPaymentForm';
 import activityService from '../services/activityService';
 import lanSyncService from '../services/lanSyncService';
 import offlineService from '../services/offlineService';
-import { getStripe, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
+import { getStripe, getStripeConnectStatus, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
 import { initializeNotifications, notifyPayments, unlockAudio } from '../services/notificationService';
 import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
 import './Payments.css';
 
 const Payments = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { isPayFirst, getServiceMode } = useSubscription();
   const [selectedTable, setSelectedTable] = useState(null);
   const [tablesWithOrders, setTablesWithOrders] = useState({}); // { tableNumber: [orders] }
@@ -91,7 +91,7 @@ const Payments = () => {
     const fetchRestaurantData = async () => {
       if (!currentUser) return;
       try {
-        const docRef = doc(db, 'restaurants', currentUser.uid);
+        const docRef = doc(db, 'restaurants', restaurantUid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
@@ -106,14 +106,19 @@ const Payments = () => {
     fetchRestaurantData();
   }, [currentUser]);
 
-  // Initialize Stripe
+  // Initialize Stripe (with connected account if available)
   useEffect(() => {
     const initStripe = async () => {
       try {
-        const stripe = await getStripe();
+        const connectStatus = await getStripeConnectStatus();
+        const connectedId = connectStatus.connected ? connectStatus.stripeAccountId : null;
+        const stripe = await getStripe(connectedId);
         setStripePromise(stripe);
       } catch (error) {
         console.error('Error initializing Stripe:', error);
+        // Fallback to platform Stripe
+        const stripe = await getStripe();
+        setStripePromise(stripe);
       }
     };
     initStripe();
@@ -123,7 +128,7 @@ const Payments = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
     let q = query(ordersRef, where('status', '==', 'served'));
 
@@ -228,7 +233,7 @@ const Payments = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
     // Query for website orders - they have source='website' or orderType in ['pickup', 'delivery']
     let q = query(
@@ -275,7 +280,7 @@ const Payments = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
     let q;
     if (isMultiLocation && selectedLocation) {
@@ -328,7 +333,7 @@ const Payments = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
     let q = query(ordersRef, where('status', '==', 'completed'));
 
@@ -392,7 +397,7 @@ const Payments = () => {
       setLoading(true);
       setError('');
 
-      const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+      const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
       // Get table numbers - handle both single table and array
       const tableNumbers = Array.isArray(selectedTable) ? selectedTable : [selectedTable];
@@ -540,7 +545,7 @@ const Payments = () => {
       const functions = getFunctions(app);
       const validatePromoCodeFn = httpsCallable(functions, 'validatePromoCode');
       const result = await validatePromoCodeFn({
-        restaurantId: currentUser.uid,
+        restaurantId: restaurantUid,
         promoCode: promoCode.trim(),
         subtotal
       });
@@ -603,7 +608,7 @@ const Payments = () => {
 
       // Update all selected orders to "completed" status
       const updatePromises = selectedOrders.map(orderId => {
-        const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${orderId}`);
+        const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${orderId}`);
         return updateDoc(orderRef, {
           status: 'completed',
           paymentDate: new Date(),
@@ -631,7 +636,7 @@ const Payments = () => {
       // Mark promo claim as used after successful payment
       if (promoValidation?.claimId) {
         try {
-          const claimRef = doc(db, `restaurants/${currentUser.uid}/promotionClaims/${promoValidation.claimId}`);
+          const claimRef = doc(db, `restaurants/${restaurantUid}/promotionClaims/${promoValidation.claimId}`);
           await updateDoc(claimRef, { used: true, usedAt: new Date(), usedInOrder: selectedOrders[0] });
         } catch (promoErr) {
           console.error('Error marking promo as used:', promoErr);
@@ -648,13 +653,13 @@ const Payments = () => {
       });
 
       // Log payment activity
-      await activityService.logPaymentActivity(currentUser.uid, {
+      await activityService.logPaymentActivity(restaurantUid, {
         orderNumbers,
         tableNumbers: Array.from(tableNumbers),
         total,
         orderCount: selectedOrders.length,
         paymentMethod: 'cash',
-        locationId: isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid
+        locationId: isMultiLocation && selectedLocation ? selectedLocation : restaurantUid
       });
 
       // Release tables
@@ -698,7 +703,7 @@ const Payments = () => {
       // Mark promo claim as used after successful card payment
       if (promoValidation?.claimId) {
         try {
-          const claimRef = doc(db, `restaurants/${currentUser.uid}/promotionClaims/${promoValidation.claimId}`);
+          const claimRef = doc(db, `restaurants/${restaurantUid}/promotionClaims/${promoValidation.claimId}`);
           await updateDoc(claimRef, { used: true, usedAt: new Date(), usedInOrder: selectedOrders[0] });
         } catch (promoErr) {
           console.error('Error marking promo as used:', promoErr);
@@ -706,14 +711,14 @@ const Payments = () => {
       }
 
       // Log payment activity
-      await activityService.logPaymentActivity(currentUser.uid, {
+      await activityService.logPaymentActivity(restaurantUid, {
         orderNumbers,
         tableNumbers: Array.from(tableNumbers),
         total,
         orderCount: selectedOrders.length,
         paymentMethod: 'card',
         stripePaymentIntentId: paymentIntentId,
-        locationId: isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid
+        locationId: isMultiLocation && selectedLocation ? selectedLocation : restaurantUid
       });
 
       // Release tables
@@ -745,8 +750,8 @@ const Payments = () => {
     try {
       // For multi-location, use location-specific layout path
       const layoutPath = isMultiLocation && selectedLocation
-        ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/layout/floorPlan`
-        : `restaurants/${currentUser.uid}/layout/floorPlan`;
+        ? `restaurants/${restaurantUid}/locations/${selectedLocation}/layout/floorPlan`
+        : `restaurants/${restaurantUid}/layout/floorPlan`;
 
       const layoutRef = doc(db, layoutPath);
       const layoutSnap = await getDoc(layoutRef);
@@ -804,7 +809,7 @@ const Payments = () => {
     setError('');
 
     try {
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${selectedOnlineOrder.id}`);
+      const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${selectedOnlineOrder.id}`);
 
       await updateDoc(orderRef, {
         status: 'completed',
@@ -820,14 +825,14 @@ const Payments = () => {
       });
 
       // Log activity
-      await activityService.logPaymentActivity(currentUser.uid, {
+      await activityService.logPaymentActivity(restaurantUid, {
         orderNumbers: [selectedOnlineOrder.orderNumber || selectedOnlineOrder.id],
         tableNumbers: ['Online Order'],
         total: selectedOnlineOrder.total,
         orderCount: 1,
         paymentMethod: 'card (online)',
         orderType: selectedOnlineOrder.orderType,
-        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
       });
 
       setSuccess(`Online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)} verified and completed!`);
@@ -849,7 +854,7 @@ const Payments = () => {
     setError('');
 
     try {
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${selectedOnlineOrder.id}`);
+      const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${selectedOnlineOrder.id}`);
 
       await updateDoc(orderRef, {
         status: 'completed',
@@ -866,14 +871,14 @@ const Payments = () => {
       });
 
       // Log activity
-      await activityService.logPaymentActivity(currentUser.uid, {
+      await activityService.logPaymentActivity(restaurantUid, {
         orderNumbers: [selectedOnlineOrder.orderNumber || selectedOnlineOrder.id],
         tableNumbers: ['Online Order'],
         total: selectedOnlineOrder.total,
         orderCount: 1,
         paymentMethod: 'cash',
         orderType: selectedOnlineOrder.orderType,
-        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
       });
 
       setSuccess(`Cash payment received for online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)}!`);
@@ -894,7 +899,7 @@ const Payments = () => {
 
     try {
       // Log activity
-      await activityService.logPaymentActivity(currentUser.uid, {
+      await activityService.logPaymentActivity(restaurantUid, {
         orderNumbers: [selectedOnlineOrder.orderNumber || selectedOnlineOrder.id],
         tableNumbers: ['Online Order'],
         total: selectedOnlineOrder.total,
@@ -902,7 +907,7 @@ const Payments = () => {
         paymentMethod: 'card',
         stripePaymentIntentId: paymentIntentId,
         orderType: selectedOnlineOrder.orderType,
-        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        locationId: selectedOnlineOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
       });
 
       setSuccess(`Card payment processed for online order #${selectedOnlineOrder.orderNumber || selectedOnlineOrder.id.slice(0, 8)}!`);
@@ -1016,13 +1021,13 @@ const Payments = () => {
         // Process refund through Stripe (only if we have a payment intent ID)
         await stripeProcessRefund(
           reimbursementOrder,
-          currentUser.uid,
+          restaurantUid,
           refundAmount,
           reimbursementType
         );
 
         // Log reimbursement activity
-        await activityService.logReimbursementActivity(currentUser.uid, {
+        await activityService.logReimbursementActivity(restaurantUid, {
           orderNumber: selectedOrder.orderNumber || reimbursementOrder,
           orderId: reimbursementOrder,
           tableNumber: orderTableNumber || 'Online Order',
@@ -1030,13 +1035,13 @@ const Payments = () => {
           refundType: reimbursementType,
           paymentMethod: 'card',
           isOnlineOrder: isOnlineOrder,
-          locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+          locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
         });
 
         setSuccess(`Card refund processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);
       } else {
         // Cash refund (or online card payment without Stripe intent) - update order status locally
-        const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${reimbursementOrder}`);
+        const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${reimbursementOrder}`);
         await updateDoc(orderRef, {
           status: 'reimbursed',
           reimbursement: {
@@ -1050,11 +1055,11 @@ const Payments = () => {
         });
 
         // Create reimbursement record for analytics
-        const reimbursementsRef = collection(db, `restaurants/${currentUser.uid}/reimbursements`);
+        const reimbursementsRef = collection(db, `restaurants/${restaurantUid}/reimbursements`);
         const reimbursementData = {
           orderId: reimbursementOrder,
           orderNumber: selectedOrder.orderNumber || reimbursementOrder,
-          locationId: selectedOrder.locationId || selectedLocation || currentUser.uid,
+          locationId: selectedOrder.locationId || selectedLocation || restaurantUid,
           amount: refundAmount,
           type: reimbursementType,
           originalOrderTotal: selectedOrder.total || 0,
@@ -1073,7 +1078,7 @@ const Payments = () => {
         await setDoc(doc(reimbursementsRef), reimbursementData);
 
         // Log reimbursement activity
-        await activityService.logReimbursementActivity(currentUser.uid, {
+        await activityService.logReimbursementActivity(restaurantUid, {
           orderNumber: selectedOrder.orderNumber || reimbursementOrder,
           orderId: reimbursementOrder,
           tableNumber: orderTableNumber || 'Online Order',
@@ -1081,7 +1086,7 @@ const Payments = () => {
           refundType: reimbursementType,
           paymentMethod: actualPaymentMethod,
           isOnlineOrder: isOnlineOrder,
-          locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+          locationId: selectedOrder.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
         });
 
         setSuccess(`${actualPaymentMethod === 'card' ? 'Card' : 'Cash'} refund recorded. Refund amount: $${refundAmount.toFixed(2)}`);
@@ -1106,7 +1111,7 @@ const Payments = () => {
 
     const fetchRestaurantData = async () => {
       try {
-        const docRef = doc(db, "restaurants", currentUser.uid);
+        const docRef = doc(db, "restaurants", restaurantUid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setRestaurantData(docSnap.data());
@@ -1781,7 +1786,7 @@ const Payments = () => {
                     setProcessing={setProcessing}
                     orderIds={selectedOrders}
                     tableNumbers={getTableNumbersForPayment()}
-                    restaurantId={currentUser.uid}
+                    restaurantId={restaurantUid}
                     paymentDetails={{
                       subtotal,
                       taxRate,
@@ -2042,7 +2047,7 @@ const Payments = () => {
                             setProcessing={setProcessing}
                             orderIds={[selectedOnlineOrder.id]}
                             tableNumbers={['Online']}
-                            restaurantId={currentUser.uid}
+                            restaurantId={restaurantUid}
                             paymentDetails={{
                               subtotal: selectedOnlineOrder.subtotal || selectedOnlineOrder.total,
                               taxRate: 0,

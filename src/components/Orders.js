@@ -11,7 +11,7 @@ const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
 
   // Search state
@@ -41,7 +41,7 @@ const Orders = () => {
 
     const fetchRestaurantData = async () => {
       try {
-        const docRef = doc(db, "restaurants", currentUser.uid);
+        const docRef = doc(db, "restaurants", restaurantUid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setRestaurantData(docSnap.data());
@@ -52,12 +52,12 @@ const Orders = () => {
     };
 
     fetchRestaurantData();
-  }, [currentUser]);
+  }, [currentUser, restaurantUid]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !restaurantUid) return;
 
-    const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+    const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
     const q = query(ordersRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -78,7 +78,7 @@ const Orders = () => {
     });
 
     return () => unsubscribe();
-  }, [currentUser, isMultiLocation, selectedLocation]);
+  }, [currentUser, restaurantUid, isMultiLocation, selectedLocation]);
 
   const filterOrders = (ordersData, status) => {
     if (status === 'all') {
@@ -186,7 +186,7 @@ const Orders = () => {
     setSearchResults([]);
 
     try {
-      const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+      const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
       // Search through all orders and filter client-side
       const snapshot = await getDocs(ordersRef);
@@ -231,7 +231,7 @@ const Orders = () => {
     setSearchResults([]);
 
     try {
-      const ordersRef = collection(db, `restaurants/${currentUser.uid}/orders`);
+      const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
       const snapshot = await getDocs(ordersRef);
 
       const selectedDate = new Date(searchDate);
@@ -372,7 +372,7 @@ const Orders = () => {
       const isOnlineOrder = order.source === 'website';
 
       // Update order status
-      const orderRef = doc(db, `restaurants/${currentUser.uid}/orders/${order.id}`);
+      const orderRef = doc(db, `restaurants/${restaurantUid}/orders/${order.id}`);
       await updateDoc(orderRef, {
         status: 'reimbursed',
         reimbursement: {
@@ -386,11 +386,11 @@ const Orders = () => {
       });
 
       // Create reimbursement record
-      const reimbursementsRef = collection(db, `restaurants/${currentUser.uid}/reimbursements`);
+      const reimbursementsRef = collection(db, `restaurants/${restaurantUid}/reimbursements`);
       const reimbursementData = {
         orderId: order.id,
         orderNumber: order.orderNumber || order.id,
-        locationId: order.locationId || selectedLocation || currentUser.uid,
+        locationId: order.locationId || selectedLocation || restaurantUid,
         amount: refundAmount,
         type: reimbursementType,
         originalOrderTotal: order.total || 0,
@@ -408,7 +408,7 @@ const Orders = () => {
       await setDoc(doc(reimbursementsRef), reimbursementData);
 
       // Log activity
-      await activityService.logReimbursementActivity(currentUser.uid, {
+      await activityService.logReimbursementActivity(restaurantUid, {
         orderNumber: order.orderNumber || order.id,
         orderId: order.id,
         tableNumber: orderTableNumber || 'Online Order',
@@ -416,7 +416,7 @@ const Orders = () => {
         refundType: reimbursementType,
         paymentMethod: actualPaymentMethod,
         isOnlineOrder: isOnlineOrder,
-        locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : currentUser.uid)
+        locationId: order.locationId || (isMultiLocation && selectedLocation ? selectedLocation : restaurantUid)
       });
 
       setSuccess(`Reimbursement processed successfully. Refund amount: $${refundAmount.toFixed(2)}`);

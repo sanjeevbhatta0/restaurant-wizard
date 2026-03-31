@@ -13,7 +13,7 @@ const WebsiteIntegration = () => {
   const [loading, setLoading] = useState(true);
   const [websitePublished, setWebsitePublished] = useState(false);
   const [restaurantSlug, setRestaurantSlug] = useState('');
-  const { currentUser } = useAuth();
+  const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation, locations } = useLocation();
 
   useEffect(() => {
@@ -24,8 +24,8 @@ const WebsiteIntegration = () => {
       try {
         // Determine config path based on multi-location
         const configPath = isMultiLocation && selectedLocation
-          ? `restaurants/${currentUser.uid}/locations/${selectedLocation}/website/config`
-          : `restaurants/${currentUser.uid}/website/config`;
+          ? `restaurants/${restaurantUid}/locations/${selectedLocation}/website/config`
+          : `restaurants/${restaurantUid}/website/config`;
         
         const configDoc = await getDoc(doc(db, configPath));
         
@@ -34,13 +34,13 @@ const WebsiteIntegration = () => {
           setWebsitePublished(data.isPublished || false);
           
           // Get restaurant/location data for slug
-          const restaurantDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}`));
+          const restaurantDoc = await getDoc(doc(db, `restaurants/${restaurantUid}`));
           const restaurantData = restaurantDoc.data() || {};
           
-          let slug = restaurantData.slug || currentUser.uid;
+          let slug = restaurantData.slug || restaurantUid;
           
           if (isMultiLocation && selectedLocation) {
-            const locationDoc = await getDoc(doc(db, `restaurants/${currentUser.uid}/locations/${selectedLocation}`));
+            const locationDoc = await getDoc(doc(db, `restaurants/${restaurantUid}/locations/${selectedLocation}`));
             const locationData = locationDoc.data() || {};
             const locationSlug = locationData.slug || selectedLocation;
             slug = `${slug}-${locationSlug}`;
@@ -350,25 +350,28 @@ Or use the HTML embed widget with this code: -->
                 </p>
               </Alert>
 
-              <Tab.Container defaultActiveKey="widget-inline">
+              <Tab.Container defaultActiveKey="widget-float">
                 <Row>
                   <Col md={3}>
                     <Nav variant="pills" className="flex-column integration-nav">
                       <Nav.Item>
-                        <Nav.Link eventKey="widget-inline">
-                          <i className="bi bi-layout-text-window me-2"></i>Inline Embed
-                          <small className="d-block text-muted mt-1" style={{fontSize: '0.7rem'}}>Best for most websites</small>
+                        <Nav.Link eventKey="widget-float">
+                          <i className="bi bi-chat-square-dots me-2"></i>Floating Button
+                          <Badge bg="success" className="ms-1" style={{fontSize: '0.6rem'}}>Active</Badge>
+                          <small className="d-block text-muted mt-1" style={{fontSize: '0.7rem'}}>Always-visible button</small>
                         </Nav.Link>
                       </Nav.Item>
                       <Nav.Item>
-                        <Nav.Link eventKey="widget-float">
-                          <i className="bi bi-chat-square-dots me-2"></i>Floating Button
-                          <small className="d-block text-muted mt-1" style={{fontSize: '0.7rem'}}>Always-visible button</small>
+                        <Nav.Link eventKey="widget-inline">
+                          <i className="bi bi-layout-text-window me-2"></i>Inline Embed
+                          <Badge bg="secondary" className="ms-1" style={{fontSize: '0.6rem'}}>Coming Soon</Badge>
+                          <small className="d-block text-muted mt-1" style={{fontSize: '0.7rem'}}>Embed in a page section</small>
                         </Nav.Link>
                       </Nav.Item>
                       <Nav.Item>
                         <Nav.Link eventKey="widget-page">
                           <i className="bi bi-fullscreen me-2"></i>Full Page Section
+                          <Badge bg="secondary" className="ms-1" style={{fontSize: '0.6rem'}}>Coming Soon</Badge>
                           <small className="d-block text-muted mt-1" style={{fontSize: '0.7rem'}}>Dedicated ordering page</small>
                         </Nav.Link>
                       </Nav.Item>
@@ -382,44 +385,20 @@ Or use the HTML embed widget with this code: -->
                   </Col>
                   <Col md={9}>
                     <Tab.Content>
-                      {/* ---- INLINE EMBED ---- */}
+                      {/* ---- INLINE EMBED (Coming Soon) ---- */}
                       <Tab.Pane eventKey="widget-inline">
-                        <h5><i className="bi bi-layout-text-window me-2"></i>Inline Embed</h5>
-                        <p className="text-muted">
-                          Embeds the full ordering experience directly into a section of your page.
-                          Great for adding a "Menu" or "Order Online" section to your existing website.
-                        </p>
-                        <Alert variant="success" className="mb-3">
-                          <strong>How it works:</strong> You place a small container (<code>&lt;div&gt;</code>) anywhere on your page,
-                          and the widget fills it with your menu, cart, checkout, and customer account features.
-                        </Alert>
-
-                        <h6 className="mt-4 mb-3">Step-by-step instructions:</h6>
-                        <ol className="instruction-list">
-                          <li>
-                            <strong>Open your website's HTML file</strong>
-                            <p className="text-muted">This is the page where you want the menu and ordering to appear (e.g., your "Menu" page or "Order Online" page).</p>
-                          </li>
-                          <li>
-                            <strong>Find the spot where you want the menu to show up</strong>
-                            <p className="text-muted">Look for the section in your HTML where you'd like the ordering widget to appear. This could be below your header, in a main content area, etc.</p>
-                          </li>
-                          <li>
-                            <strong>Copy and paste this code:</strong>
-                            <div className="code-box mt-2">
-                              <div className="d-flex justify-content-end mb-2">
-                                <Button size="sm" variant={copied === 'widget-inline' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetInlineCode(), 'widget-inline')}>
-                                  {copied === 'widget-inline' ? 'Copied!' : 'Copy Code'}
-                                </Button>
-                              </div>
-                              <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '12px', maxHeight: '250px', overflow: 'auto'}}><code>{getWidgetInlineCode()}</code></pre>
-                            </div>
-                          </li>
-                          <li>
-                            <strong>Save and publish your page</strong>
-                            <p className="text-muted">That's it! Your customers can now browse your menu, add items to cart, create accounts, and place orders — all without leaving your website.</p>
-                          </li>
-                        </ol>
+                        <div className="text-center py-5">
+                          <i className="bi bi-layout-text-window display-4 text-muted mb-3 d-block"></i>
+                          <h5>Inline Embed</h5>
+                          <p className="text-muted mb-3">
+                            Embed the full ordering experience directly into a section of your page — your menu, cart, checkout,
+                            and customer accounts all appear seamlessly within your website layout.
+                          </p>
+                          <Badge bg="secondary" className="px-3 py-2" style={{fontSize: '0.85rem'}}>Coming Soon</Badge>
+                          <p className="text-muted mt-3 small">
+                            In the meantime, use the <strong>Floating Button</strong> to add ordering to your website instantly.
+                          </p>
+                        </div>
                       </Tab.Pane>
 
                       {/* ---- FLOATING BUTTON ---- */}
@@ -463,43 +442,27 @@ Or use the HTML embed widget with this code: -->
                         </Alert>
                       </Tab.Pane>
 
-                      {/* ---- FULL PAGE SECTION ---- */}
+                      {/* ---- FULL PAGE SECTION (Coming Soon) ---- */}
                       <Tab.Pane eventKey="widget-page">
-                        <h5><i className="bi bi-fullscreen me-2"></i>Full Page Section</h5>
-                        <p className="text-muted">
-                          Creates a full-width ordering section that spans your entire page.
-                          Ideal for a dedicated "Order Online" page on your website.
-                        </p>
-
-                        <h6 className="mt-4 mb-3">Step-by-step instructions:</h6>
-                        <ol className="instruction-list">
-                          <li>
-                            <strong>Create a new page on your website</strong> (or use an existing one)
-                            <p className="text-muted">Name it "Order Online", "Menu", or whatever fits your site.</p>
-                          </li>
-                          <li>
-                            <strong>Paste this code into the page:</strong>
-                            <div className="code-box mt-2">
-                              <div className="d-flex justify-content-end mb-2">
-                                <Button size="sm" variant={copied === 'widget-page' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetPageCode(), 'widget-page')}>
-                                  {copied === 'widget-page' ? 'Copied!' : 'Copy Code'}
-                                </Button>
-                              </div>
-                              <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '12px', maxHeight: '250px', overflow: 'auto'}}><code>{getWidgetPageCode()}</code></pre>
-                            </div>
-                          </li>
-                          <li>
-                            <strong>Save and publish</strong>
-                            <p className="text-muted">The widget will fill the entire width of that section with your menu and ordering system.</p>
-                          </li>
-                        </ol>
+                        <div className="text-center py-5">
+                          <i className="bi bi-fullscreen display-4 text-muted mb-3 d-block"></i>
+                          <h5>Full Page Section</h5>
+                          <p className="text-muted mb-3">
+                            Create a full-width ordering section that spans your entire page —
+                            ideal for a dedicated "Order Online" page on your website.
+                          </p>
+                          <Badge bg="secondary" className="px-3 py-2" style={{fontSize: '0.85rem'}}>Coming Soon</Badge>
+                          <p className="text-muted mt-3 small">
+                            In the meantime, use the <strong>Floating Button</strong> to add ordering to your website instantly.
+                          </p>
+                        </div>
                       </Tab.Pane>
 
                       {/* ---- PLATFORM GUIDES ---- */}
                       <Tab.Pane eventKey="widget-platforms">
                         <h5><i className="bi bi-laptop me-2"></i>Platform-Specific Guides</h5>
                         <p className="text-muted mb-4">
-                          Select your website platform for step-by-step instructions on embedding the widget.
+                          Select your website platform for step-by-step instructions on adding the floating order button.
                         </p>
 
                         <Accordion>
@@ -513,25 +476,24 @@ Or use the HTML embed widget with this code: -->
                               <ol className="instruction-list">
                                 <li><strong>Log in to your WordPress admin panel</strong> (yourdomain.com/wp-admin)</li>
                                 <li><strong>Go to</strong> Pages &rarr; Add New (or edit an existing page like "Menu" or "Order Online")</li>
-                                <li><strong>Click the + button</strong> and search for <strong>"Custom HTML"</strong> block</li>
+                                <li><strong>Use a plugin like "Insert Headers and Footers"</strong>, or go to Appearance &rarr; Theme File Editor &rarr; footer.php</li>
                                 <li>
-                                  <strong>Paste this code into the HTML block:</strong>
+                                  <strong>Paste this code before the closing <code>&lt;/body&gt;</code> tag:</strong>
                                   <div className="code-box mt-2">
                                     <div className="d-flex justify-content-end mb-2">
-                                      <Button size="sm" variant={copied === 'widget-wp' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetWordPressCode(), 'widget-wp')}>
+                                      <Button size="sm" variant={copied === 'widget-wp' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetFloatCode(), 'widget-wp')}>
                                         {copied === 'widget-wp' ? 'Copied!' : 'Copy'}
                                       </Button>
                                     </div>
-                                    <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '11px'}}><code>{getWidgetWordPressCode()}</code></pre>
+                                    <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '11px'}}><code>{getWidgetFloatCode()}</code></pre>
                                   </div>
                                 </li>
-                                <li><strong>Click "Publish"</strong> or "Update" to save your page</li>
-                                <li><strong>Visit the page</strong> — you should see your full menu and ordering system embedded right there!</li>
+                                <li><strong>Click "Publish"</strong> or "Update" to save</li>
+                                <li><strong>Visit your site</strong> — a floating "Order Online" button will appear on every page!</li>
                               </ol>
                               <Alert variant="info" className="mt-3">
-                                <strong>Note:</strong> Some WordPress themes may block external scripts. If the widget doesn't load,
-                                try adding the code through your theme's footer (Appearance &rarr; Theme File Editor &rarr; footer.php) or use a
-                                plugin like "Insert Headers and Footers" to add the script tag.
+                                <strong>Tip:</strong> Adding the code to your footer makes the floating button appear on all pages.
+                                To show it on a specific page only, add it as a Custom HTML block on that page instead.
                               </Alert>
                             </Accordion.Body>
                           </Accordion.Item>
@@ -545,25 +507,23 @@ Or use the HTML embed widget with this code: -->
                             <Accordion.Body>
                               <ol className="instruction-list">
                                 <li><strong>Log in to Squarespace</strong> and edit your site</li>
-                                <li><strong>Go to the page</strong> where you want the ordering widget (or create a new page)</li>
-                                <li><strong>Click the + button</strong> to add a block, then select <strong>"Code"</strong> (under "More")</li>
+                                <li><strong>Go to</strong> Settings &rarr; Advanced &rarr; <strong>Code Injection</strong></li>
                                 <li>
-                                  <strong>Paste this code:</strong>
+                                  <strong>Paste this code in the "Footer" section:</strong>
                                   <div className="code-box mt-2">
                                     <div className="d-flex justify-content-end mb-2">
-                                      <Button size="sm" variant={copied === 'widget-ss' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetSquarespaceCode(), 'widget-ss')}>
+                                      <Button size="sm" variant={copied === 'widget-ss' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetFloatCode(), 'widget-ss')}>
                                         {copied === 'widget-ss' ? 'Copied!' : 'Copy'}
                                       </Button>
                                     </div>
-                                    <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '11px'}}><code>{getWidgetSquarespaceCode()}</code></pre>
+                                    <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '11px'}}><code>{getWidgetFloatCode()}</code></pre>
                                   </div>
                                 </li>
-                                <li><strong>Make sure</strong> the "Display Source" toggle is <strong>OFF</strong></li>
-                                <li><strong>Click "Apply"</strong> and save your page</li>
+                                <li><strong>Click "Save"</strong></li>
                               </ol>
                               <Alert variant="warning" className="mt-3">
-                                <strong>Important:</strong> Squarespace's free plan may not support code injection.
-                                You need a Business plan or higher to use custom code blocks.
+                                <strong>Important:</strong> Squarespace's free plan may not support Code Injection.
+                                You need a Business plan or higher to use this feature.
                               </Alert>
                             </Accordion.Body>
                           </Accordion.Item>
@@ -577,20 +537,20 @@ Or use the HTML embed widget with this code: -->
                             <Accordion.Body>
                               <ol className="instruction-list">
                                 <li><strong>Open the Wix Editor</strong> for your site</li>
-                                <li><strong>Navigate</strong> to the page where you want the ordering widget</li>
-                                <li><strong>Click Add (+)</strong> &rarr; <strong>Embed Code</strong> &rarr; <strong>Embed HTML</strong></li>
+                                <li><strong>Go to</strong> Settings &rarr; <strong>Custom Code</strong> (under Advanced)</li>
+                                <li><strong>Click "Add Custom Code"</strong> and select placement: <strong>Body - end</strong></li>
                                 <li>
-                                  <strong>Click "Enter Code"</strong> and paste this:
+                                  <strong>Paste this code:</strong>
                                   <div className="code-box mt-2">
                                     <div className="d-flex justify-content-end mb-2">
-                                      <Button size="sm" variant={copied === 'widget-wix' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetWixCode(), 'widget-wix')}>
+                                      <Button size="sm" variant={copied === 'widget-wix' ? 'success' : 'outline-secondary'} onClick={() => handleCopy(getWidgetFloatCode(), 'widget-wix')}>
                                         {copied === 'widget-wix' ? 'Copied!' : 'Copy'}
                                       </Button>
                                     </div>
-                                    <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '11px'}}><code>{getWidgetWixCode()}</code></pre>
+                                    <pre className="bg-dark text-light p-3 rounded" style={{fontSize: '11px'}}><code>{getWidgetFloatCode()}</code></pre>
                                   </div>
                                 </li>
-                                <li><strong>Resize the HTML element</strong> to fill the width of your page and set a good height (we recommend at least 600px)</li>
+                                <li><strong>Apply to "All pages"</strong> and click Save</li>
                                 <li><strong>Publish</strong> your site</li>
                               </ol>
                             </Accordion.Body>
@@ -607,7 +567,7 @@ Or use the HTML embed widget with this code: -->
                                 <li><strong>Log in to GoDaddy</strong> and open your website builder</li>
                                 <li><strong>Edit the page</strong> where you want the widget</li>
                                 <li><strong>Add a section</strong> &rarr; choose <strong>"HTML"</strong> or <strong>"Embed"</strong></li>
-                                <li><strong>Paste the Inline Embed code</strong> from the "Inline Embed" tab above</li>
+                                <li><strong>Paste the Floating Button code</strong> from the "Floating Button" tab above</li>
                                 <li><strong>Publish</strong> your changes</li>
                               </ol>
                             </Accordion.Body>
@@ -622,16 +582,16 @@ Or use the HTML embed widget with this code: -->
                             <Accordion.Body>
                               <ol className="instruction-list">
                                 <li><strong>Open your HTML file</strong> in your code editor (VS Code, Sublime, etc.)</li>
-                                <li><strong>Pick a mode</strong> from the tabs above (Inline, Floating Button, or Full Page)</li>
-                                <li><strong>Copy the code snippet</strong> and paste it into your HTML file</li>
+                                <li><strong>Copy the Floating Button code</strong> from the "Floating Button" tab above</li>
+                                <li><strong>Paste it before the closing <code>&lt;/body&gt;</code> tag</strong></li>
                                 <li><strong>Upload your updated file</strong> to your hosting provider (via FTP, cPanel, Netlify, Vercel, etc.)</li>
                               </ol>
                               <Alert variant="success" className="mt-3">
                                 <strong>Developer tip:</strong> You can listen for events from the widget by passing callback functions:
                                 <pre className="bg-dark text-light p-2 rounded mt-2" style={{fontSize: '11px'}}><code>{`KodaCarte.init({
   restaurantId: '${restaurantSlug}',
-  mode: 'inline',
-  target: '#koda-menu',
+  mode: 'float',
+  buttonText: 'Order Online',
   onOrderPlaced: function(data) {
     console.log('Order placed!', data);
   },
