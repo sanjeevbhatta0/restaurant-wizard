@@ -11,6 +11,14 @@ import activityService from '../services/activityService';
 import lanSyncService from '../services/lanSyncService';
 import offlineService from '../services/offlineService';
 import { getStripe, getStripeConnectStatus, createPaymentIntent, confirmPayment, processRefund as stripeProcessRefund } from '../services/stripeService';
+import {
+  getTerminalConfig,
+  listReaders,
+  collectServerDrivenPayment,
+  cancelServerDrivenAction,
+  simulateCardPresent,
+  getReaderConnectionType
+} from '../services/terminalService';
 import { initializeNotifications, notifyPayments, unlockAudio } from '../services/notificationService';
 import useFullscreen from '../hooks/useFullscreen';
 import './PageHeader.css';
@@ -83,8 +91,15 @@ const Payments = () => {
   const [promoError, setPromoError] = useState('');
 
   // Payment method selection
-  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash' or 'card'
+  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', or 'terminal'
   const [stripePromise, setStripePromise] = useState(null);
+
+  // Terminal state
+  const [terminalAvailable, setTerminalAvailable] = useState(false);
+  const [terminalReaderId, setTerminalReaderId] = useState(null);
+  const [terminalReaderLabel, setTerminalReaderLabel] = useState('');
+  const [terminalReaderType, setTerminalReaderType] = useState('');
+  const [terminalStatus, setTerminalStatus] = useState('');
 
   // Load restaurant settings (tax rate)
   useEffect(() => {
@@ -123,6 +138,29 @@ const Payments = () => {
     };
     initStripe();
   }, []);
+
+  // Check if Stripe Terminal is configured and find the reader
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const checkTerminal = async () => {
+      try {
+        const config = await getTerminalConfig();
+        if (config.configured) {
+          const readersResult = await listReaders();
+          const readers = readersResult.readers || [];
+          if (readers.length > 0) {
+            setTerminalAvailable(true);
+            setTerminalReaderId(readers[0].id);
+            setTerminalReaderLabel(readers[0].label || readers[0].deviceType || 'Reader');
+            setTerminalReaderType(readers[0].connectionType || getReaderConnectionType(readers[0].deviceType));
+          }
+        }
+      } catch (err) {
+        console.error('Terminal config check failed:', err);
+      }
+    };
+    checkTerminal();
+  }, [currentUser]);
 
   // Load all served orders grouped by table (EXCLUDING online orders)
   useEffect(() => {
@@ -741,6 +779,115 @@ const Payments = () => {
   // Handle card payment error
   const handleCardPaymentError = (errorMessage) => {
     setError('Card payment failed: ' + errorMessage);
+  };
+
+  // Handle terminal payment — server-driven
+  const handleTerminalPayment = async () => {
+    if (!terminalReaderId) {
+      setError('No terminal reader configured. Go to Account > Stripe Terminal to set up.');
+      return;
+    }
+
+    setProcessing(true);
+    setError('');
+    setTerminalStatus('');
+
+    try {
+      const isSimulated = terminalReaderType === 'simulated';
+
+      // Collect payment via server-driven flow
+      const paymentPromise = collectServerDrivenPayment(
+        terminalReaderId,
+        total,
+        selectedOrders,
+        getTableNumbersForPayment(),
+        restaurantUid,
+        (status) => setTerminalStatus(status)
+      );
+
+      // For simulated readers, auto-present a card after a short delay
+      if (isSimulated) {
+        setTimeout(async () => {
+          try { await simulateCardPresent(terminalReaderId); } catch (e) { /* ignore */ }
+        }, 2000);
+      }
+
+      const { paymentIntentId } = await paymentPromise;
+
+      // Process like a card payment success — confirm orders, log activity, release tables
+      const tableNumbers = new Set();
+      selectedOrders.forEach(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        if (order) {
+          if (Array.isArray(order.tableNumber)) {
+            order.tableNumber.forEach(t => tableNumbers.add(String(t)));
+          } else if (order.tableNumber) {
+            tableNumbers.add(String(order.tableNumber));
+          }
+        }
+      });
+
+      const orderNumbers = selectedOrders.map(orderId => {
+        const order = orders.find(o => o.id === orderId);
+        return order?.orderNumber || orderId;
+      });
+
+      // Update each order as completed with terminal payment details
+      for (const orderId of selectedOrders) {
+        const orderRef = doc(db, `restaurants/${restaurantUid}/orders`, orderId);
+        await updateDoc(orderRef, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          paymentDetails: {
+            subtotal,
+            taxRate,
+            taxAmount,
+            discountAmount,
+            tipAmount,
+            total,
+            paymentMethod: 'terminal',
+            stripePaymentIntentId: paymentIntentId,
+            status: 'completed',
+            paidAt: new Date().toISOString()
+          }
+        });
+      }
+
+      // Mark promo claim as used
+      if (promoValidation?.claimId) {
+        try {
+          const claimRef = doc(db, `restaurants/${restaurantUid}/promotionClaims/${promoValidation.claimId}`);
+          await updateDoc(claimRef, { used: true, usedAt: new Date(), usedInOrder: selectedOrders[0] });
+        } catch (promoErr) {
+          console.error('Error marking promo as used:', promoErr);
+        }
+      }
+
+      await activityService.logPaymentActivity(restaurantUid, {
+        orderNumbers,
+        tableNumbers: Array.from(tableNumbers),
+        total,
+        orderCount: selectedOrders.length,
+        paymentMethod: 'terminal',
+        stripePaymentIntentId: paymentIntentId,
+        locationId: isMultiLocation && selectedLocation ? selectedLocation : restaurantUid
+      });
+
+      await releaseTableStatus(tableNumbers);
+
+      setSuccess(`Terminal payment processed for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}.`);
+      setShowPaymentModal(false);
+      resetPaymentForm();
+    } catch (err) {
+      if (err.message?.includes('canceled')) {
+        setError('Payment was canceled.');
+      } else {
+        setError('Terminal payment failed: ' + err.message);
+      }
+    } finally {
+      setProcessing(false);
+      setTerminalStatus('');
+    }
   };
 
   // Release table status
@@ -1724,6 +1871,18 @@ const Payments = () => {
                 <i className="bi bi-credit-card-2-front"></i>
                 <span>Card</span>
               </Button>
+              {terminalAvailable && (
+                <Button
+                  variant={paymentMethod === 'terminal' ? 'primary' : 'outline-secondary'}
+                  className="payment-method-btn ms-3"
+                  onClick={() => setPaymentMethod('terminal')}
+                  disabled={processing}
+                  style={paymentMethod === 'terminal' ? { background: 'linear-gradient(135deg, #635BFF, #7B73FF)', borderColor: '#635BFF' } : {}}
+                >
+                  <i className={`bi ${terminalReaderType === 'bluetooth' ? 'bi-bluetooth' : 'bi-phone'}`}></i>
+                  <span>Terminal</span>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1768,13 +1927,14 @@ const Payments = () => {
           </div>
 
           {/* Payment Form based on method */}
-          {paymentMethod === 'cash' ? (
+          {paymentMethod === 'cash' && (
             <div className="cash-payment-section">
               <Alert variant="info">
                 <i className="bi bi-cash"></i> Collect <strong>${total.toFixed(2)}</strong> in cash from the customer.
               </Alert>
             </div>
-          ) : (
+          )}
+          {paymentMethod === 'card' && (
             <div className="card-payment-section">
               {stripePromise ? (
                 <Elements stripe={stripePromise}>
@@ -1807,6 +1967,76 @@ const Payments = () => {
               )}
             </div>
           )}
+          {paymentMethod === 'terminal' && (
+            <div className="terminal-payment-section">
+              {terminalStatus === '' && !processing && (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <div style={{ fontSize: '3rem', marginBottom: '12px' }}>
+                    <i className="bi bi-phone" style={{ color: '#635BFF' }}></i>
+                  </div>
+                  <p style={{ fontWeight: 500, marginBottom: '16px' }}>
+                    Charge <strong>${total.toFixed(2)}</strong> to the card reader
+                  </p>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={handleTerminalPayment}
+                    style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', border: 'none', borderRadius: '10px', padding: '12px 32px' }}
+                  >
+                    <i className="bi bi-phone me-2"></i> Charge Terminal
+                  </Button>
+                </div>
+              )}
+
+              {(terminalStatus || processing) && (
+                <div style={{ textAlign: 'center', padding: '30px' }}>
+                  {(terminalStatus === 'connecting' || terminalStatus === 'creating_intent') && (
+                    <>
+                      <Spinner animation="border" variant="primary" />
+                      <p style={{ marginTop: '12px', fontWeight: 500 }}>Connecting to reader...</p>
+                    </>
+                  )}
+                  {terminalStatus === 'waiting_for_card' && (
+                    <>
+                      <div style={{ fontSize: '3.5rem', marginBottom: '12px' }}>
+                        <i className="bi bi-credit-card-2-front" style={{ color: '#635BFF' }}></i>
+                      </div>
+                      <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '4px' }}>
+                        Waiting for Customer
+                      </p>
+                      <p style={{ color: '#666' }}>
+                        {terminalReaderType === 'bluetooth'
+                          ? 'Ask customer to tap, insert, or swipe card on the Bluetooth reader'
+                          : 'Ask customer to tap, insert, or swipe card on the reader'}
+                      </p>
+                      {terminalReaderType === 'bluetooth' && (
+                        <p style={{ color: '#999', fontSize: '0.85rem' }}>
+                          <i className="bi bi-bluetooth me-1"></i>Ensure reader is powered on and connected via Stripe app
+                        </p>
+                      )}
+                      <Button
+                        variant="outline-secondary"
+                        onClick={async () => {
+                          try { await cancelServerDrivenAction(terminalReaderId); } catch (e) { /* ignore */ }
+                          setTerminalStatus('');
+                          setProcessing(false);
+                        }}
+                        style={{ marginTop: '8px' }}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                  {terminalStatus === 'processing' && (
+                    <>
+                      <Spinner animation="border" variant="success" />
+                      <p style={{ marginTop: '12px', fontWeight: 500, color: '#28a745' }}>Processing payment...</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </Modal.Body>
         {paymentMethod === 'cash' && (
           <Modal.Footer>
@@ -1824,6 +2054,13 @@ const Payments = () => {
                   <i className="bi bi-check-circle"></i> Confirm Cash Payment
                 </>
               )}
+            </Button>
+          </Modal.Footer>
+        )}
+        {paymentMethod === 'terminal' && !terminalStatus && !processing && (
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowPaymentModal(false)}>
+              Cancel
             </Button>
           </Modal.Footer>
         )}

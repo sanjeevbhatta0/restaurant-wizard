@@ -15,6 +15,15 @@ import { getUsageStats } from '../services/orderUsageService';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import TwoFactorSetup from './admin/TwoFactorSetup';
 import AccessControl from './AccessControl';
+import {
+  getTerminalConfig,
+  createTerminalLocation,
+  registerReader,
+  listReaders,
+  deleteReader,
+  createSimulatedReader,
+  getReaderConnectionType
+} from '../services/terminalService';
 import './Account.css';
 
 const Account = () => {
@@ -81,6 +90,20 @@ const Account = () => {
   // Stripe Connect state
   const [stripeConnectStatus, setStripeConnectStatus] = useState(null);
   const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
+
+  // Stripe Terminal state
+  const [terminalConfig, setTerminalConfig] = useState(null);
+  const [terminalLoading, setTerminalLoading] = useState(false);
+  const [terminalReaders, setTerminalReaders] = useState([]);
+  const [showLocationForm, setShowLocationForm] = useState(false);
+  const [terminalLocationForm, setTerminalLocationForm] = useState({
+    displayName: '', addressLine1: '', city: '', state: '', postalCode: '', country: 'US'
+  });
+  const [showReaderForm, setShowReaderForm] = useState(false);
+  const [readerAddMode, setReaderAddMode] = useState(null); // 'code', 'simulated', or null (shows picker)
+  const [readerRegistrationCode, setReaderRegistrationCode] = useState('');
+  const [readerLabel, setReaderLabel] = useState('');
+  const [terminalSaving, setTerminalSaving] = useState(false);
 
   const functions = getFunctions();
 
@@ -264,6 +287,114 @@ const Account = () => {
       setError('Failed to disconnect Stripe account.');
     } finally {
       setStripeConnectLoading(false);
+    }
+  };
+
+  // ---- Stripe Terminal handlers ----
+
+  const loadTerminalConfig = async () => {
+    try {
+      setTerminalLoading(true);
+      const config = await getTerminalConfig();
+      setTerminalConfig(config);
+      if (config.configured) {
+        const readersResult = await listReaders();
+        setTerminalReaders(readersResult.readers || []);
+      }
+    } catch (err) {
+      console.error('Error loading terminal config:', err);
+    } finally {
+      setTerminalLoading(false);
+    }
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeSection === 'terminal' && currentUser?.uid) {
+      loadTerminalConfig();
+    }
+  }, [activeSection, currentUser]);
+
+  const handleCreateTerminalLocation = async (e) => {
+    e.preventDefault();
+    setError('');
+    setTerminalSaving(true);
+    try {
+      await createTerminalLocation(terminalLocationForm);
+      setSuccess('Terminal location created successfully!');
+      setShowLocationForm(false);
+      await loadTerminalConfig();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError('Failed to create terminal location: ' + (err.message || err));
+    } finally {
+      setTerminalSaving(false);
+    }
+  };
+
+  const handleRegisterReader = async (e) => {
+    e.preventDefault();
+    setError('');
+    setTerminalSaving(true);
+    try {
+      await registerReader(readerRegistrationCode, readerLabel);
+      setSuccess('Reader registered successfully!');
+      setShowReaderForm(false);
+      setReaderRegistrationCode('');
+      setReaderLabel('');
+      const readersResult = await listReaders();
+      setTerminalReaders(readersResult.readers || []);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError('Failed to register reader: ' + (err.message || err));
+    } finally {
+      setTerminalSaving(false);
+    }
+  };
+
+  const handleDeleteReader = async (readerId, label) => {
+    if (!window.confirm(`Remove reader "${label || readerId}"? The reader will need to be re-registered to use again.`)) return;
+    setError('');
+    try {
+      await deleteReader(readerId);
+      setTerminalReaders(prev => prev.filter(r => r.id !== readerId));
+      setSuccess('Reader removed.');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError('Failed to remove reader: ' + (err.message || err));
+    }
+  };
+
+  const handleCreateSimulatedReader = async () => {
+    setError('');
+    setTerminalSaving(true);
+    try {
+      await createSimulatedReader();
+      setSuccess('Simulated reader created! You can now test terminal payments.');
+      setShowReaderForm(false);
+      setReaderAddMode(null);
+      const readersResult = await listReaders();
+      setTerminalReaders(readersResult.readers || []);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError('Failed to create simulated reader: ' + (err.message || err));
+    } finally {
+      setTerminalSaving(false);
+    }
+  };
+
+  const handleRefreshReaders = async () => {
+    setError('');
+    setTerminalSaving(true);
+    try {
+      const readersResult = await listReaders();
+      setTerminalReaders(readersResult.readers || []);
+      setSuccess('Reader list refreshed.');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError('Failed to refresh readers: ' + (err.message || err));
+    } finally {
+      setTerminalSaving(false);
     }
   };
 
@@ -2128,6 +2259,498 @@ const Account = () => {
           </Card>
         );
 
+      case 'terminal': {
+        const locationDone = terminalConfig?.configured;
+        const readerDone = terminalReaders.length > 0;
+        const currentStep = !locationDone ? 1 : !readerDone ? 2 : 3;
+
+        const stepStyle = (num, done) => ({
+          width: '36px', height: '36px', borderRadius: '50%', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem',
+          flexShrink: 0,
+          background: done ? '#28a745' : num === currentStep ? '#635BFF' : '#dee2e6',
+          color: done || num === currentStep ? '#fff' : '#666',
+          transition: 'all 0.3s'
+        });
+
+        const stepLine = (done) => ({
+          width: '2px', height: '24px', margin: '4px auto',
+          background: done ? '#28a745' : '#dee2e6', transition: 'all 0.3s'
+        });
+
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-phone"></i> Stripe Terminal Setup</h3>
+            </Card.Header>
+            <Card.Body>
+              <div style={{ maxWidth: '740px' }}>
+
+                {terminalLoading && (
+                  <div className="text-center py-4">
+                    <Spinner animation="border" variant="primary" />
+                    <p className="mt-2 text-muted">Loading terminal configuration...</p>
+                  </div>
+                )}
+
+                {!terminalLoading && (
+                  <div>
+                    {/* ── Progress indicator ── */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px', padding: '16px 20px', background: '#f8f9fa', borderRadius: '12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div style={stepStyle(1, locationDone)}>
+                          {locationDone ? <i className="bi bi-check-lg"></i> : '1'}
+                        </div>
+                        <div style={stepLine(locationDone)}></div>
+                      </div>
+                      <div style={{ flex: 1, marginBottom: '20px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Create Location</div>
+                        <small style={{ color: '#888' }}>Restaurant address for Stripe</small>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div style={stepStyle(2, readerDone)}>
+                          {readerDone ? <i className="bi bi-check-lg"></i> : '2'}
+                        </div>
+                        <div style={stepLine(readerDone)}></div>
+                      </div>
+                      <div style={{ flex: 1, marginBottom: '20px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Add Reader</div>
+                        <small style={{ color: '#888' }}>Register your card reader</small>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div style={stepStyle(3, readerDone)}>
+                          {readerDone ? <i className="bi bi-check-lg"></i> : '3'}
+                        </div>
+                        <div style={stepLine(readerDone)}></div>
+                      </div>
+                      <div style={{ flex: 1, marginBottom: '20px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Accept Payments</div>
+                        <small style={{ color: '#888' }}>Use Terminal in POS</small>
+                      </div>
+                    </div>
+
+                    {/* ══════════════════════════════════════ */}
+                    {/* STEP 1 — Create Terminal Location     */}
+                    {/* ══════════════════════════════════════ */}
+                    <div style={{
+                      border: currentStep === 1 ? '2px solid #635BFF' : '1px solid #e9ecef',
+                      borderRadius: '14px', padding: '24px', marginBottom: '20px',
+                      background: currentStep === 1 ? '#fafaff' : '#fff',
+                      opacity: locationDone && currentStep !== 1 ? 0.85 : 1,
+                      transition: 'all 0.3s'
+                    }}>
+                      <div className="d-flex align-items-start gap-3 mb-3">
+                        <div style={stepStyle(1, locationDone)}>
+                          {locationDone ? <i className="bi bi-check-lg"></i> : '1'}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <h5 style={{ fontWeight: 700, marginBottom: '4px' }}>Create Your Terminal Location</h5>
+                          <p style={{ color: '#666', marginBottom: 0, fontSize: '0.9rem' }}>
+                            Enter your restaurant's physical address. Stripe needs this to associate your card readers with a location.
+                          </p>
+                        </div>
+                      </div>
+
+                      {locationDone && (
+                        <Alert variant="success" className="mb-0" style={{ borderRadius: '10px' }}>
+                          <i className="bi bi-check-circle-fill me-2"></i>
+                          <strong>{terminalConfig.locationDisplayName}</strong>
+                          {terminalConfig.address && (
+                            <span style={{ color: '#555' }}>
+                              {' '}&mdash; {terminalConfig.address.line1}, {terminalConfig.address.city}, {terminalConfig.address.state} {terminalConfig.address.postalCode}
+                            </span>
+                          )}
+                        </Alert>
+                      )}
+
+                      {!locationDone && !showLocationForm && (
+                        <Button
+                          onClick={() => {
+                            setShowLocationForm(true);
+                            if (restaurantData) {
+                              setTerminalLocationForm(prev => ({ ...prev, displayName: restaurantData.restaurantName || '' }));
+                            }
+                          }}
+                          style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', border: 'none', borderRadius: '10px', padding: '10px 24px', fontWeight: 600 }}
+                        >
+                          <i className="bi bi-geo-alt me-2"></i> Enter Restaurant Address
+                        </Button>
+                      )}
+
+                      {!locationDone && showLocationForm && (
+                        <Form onSubmit={handleCreateTerminalLocation} className="mt-2">
+                          <Form.Group className="mb-3">
+                            <Form.Label>Location Name</Form.Label>
+                            <Form.Control type="text" placeholder="e.g., Main Street Location" value={terminalLocationForm.displayName}
+                              onChange={e => setTerminalLocationForm(prev => ({ ...prev, displayName: e.target.value }))} required />
+                          </Form.Group>
+                          <Form.Group className="mb-3">
+                            <Form.Label>Street Address</Form.Label>
+                            <Form.Control type="text" placeholder="123 Main St" value={terminalLocationForm.addressLine1}
+                              onChange={e => setTerminalLocationForm(prev => ({ ...prev, addressLine1: e.target.value }))} required />
+                          </Form.Group>
+                          <div className="d-flex gap-3">
+                            <Form.Group className="mb-3 flex-fill">
+                              <Form.Label>City</Form.Label>
+                              <Form.Control type="text" value={terminalLocationForm.city}
+                                onChange={e => setTerminalLocationForm(prev => ({ ...prev, city: e.target.value }))} required />
+                            </Form.Group>
+                            <Form.Group className="mb-3" style={{ width: '100px' }}>
+                              <Form.Label>State</Form.Label>
+                              <Form.Control type="text" placeholder="CA" maxLength={2} value={terminalLocationForm.state}
+                                onChange={e => setTerminalLocationForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))} required />
+                            </Form.Group>
+                            <Form.Group className="mb-3" style={{ width: '130px' }}>
+                              <Form.Label>ZIP Code</Form.Label>
+                              <Form.Control type="text" value={terminalLocationForm.postalCode}
+                                onChange={e => setTerminalLocationForm(prev => ({ ...prev, postalCode: e.target.value }))} required />
+                            </Form.Group>
+                          </div>
+                          <div className="d-flex gap-2">
+                            <Button type="submit" disabled={terminalSaving}
+                              style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', border: 'none', borderRadius: '8px', fontWeight: 600 }}>
+                              {terminalSaving ? <><Spinner animation="border" size="sm" className="me-2" />Creating...</> : 'Create Location'}
+                            </Button>
+                            <Button variant="outline-secondary" onClick={() => setShowLocationForm(false)}>Cancel</Button>
+                          </div>
+                        </Form>
+                      )}
+                    </div>
+
+                    {/* ══════════════════════════════════════ */}
+                    {/* STEP 2 — Add a Card Reader             */}
+                    {/* ══════════════════════════════════════ */}
+                    <div style={{
+                      border: currentStep === 2 ? '2px solid #635BFF' : '1px solid #e9ecef',
+                      borderRadius: '14px', padding: '24px', marginBottom: '20px',
+                      background: currentStep === 2 ? '#fafaff' : '#fff',
+                      opacity: !locationDone ? 0.5 : 1,
+                      pointerEvents: !locationDone ? 'none' : 'auto',
+                      transition: 'all 0.3s'
+                    }}>
+                      <div className="d-flex align-items-start gap-3 mb-3">
+                        <div style={stepStyle(2, readerDone)}>
+                          {readerDone ? <i className="bi bi-check-lg"></i> : '2'}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <h5 style={{ fontWeight: 700, marginBottom: '4px' }}>Add Your Card Reader</h5>
+                          <p style={{ color: '#666', marginBottom: 0, fontSize: '0.9rem' }}>
+                            Choose the option that matches your reader type. Don't have hardware yet? Use the simulated reader to test.
+                          </p>
+                        </div>
+                        {readerDone && (
+                          <Button variant="outline-primary" size="sm" onClick={() => { setShowReaderForm(true); setReaderAddMode(null); }}
+                            style={{ borderRadius: '8px', flexShrink: 0 }}>
+                            <i className="bi bi-plus me-1"></i> Add Another
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Registered readers table */}
+                      {readerDone && (
+                        <div className="mb-3">
+                          <Table responsive hover size="sm" className="mb-2" style={{ borderRadius: '8px', overflow: 'hidden' }}>
+                            <thead>
+                              <tr style={{ background: '#f0f0f0' }}>
+                                <th>Label</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {terminalReaders.map(reader => (
+                                <tr key={reader.id}>
+                                  <td style={{ fontWeight: 500 }}>{reader.label || '—'}</td>
+                                  <td>
+                                    <Badge bg="light" text="dark" style={{ fontSize: '0.75rem' }}>
+                                      <i className={`bi ${(reader.connectionType || getReaderConnectionType(reader.deviceType)) === 'bluetooth' ? 'bi-bluetooth' : 'bi-wifi'} me-1`}></i>
+                                      {reader.deviceType || 'unknown'}
+                                    </Badge>
+                                  </td>
+                                  <td>
+                                    <Badge bg={reader.status === 'online' ? 'success' : 'secondary'}>
+                                      {reader.status || 'offline'}
+                                    </Badge>
+                                  </td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    <Button variant="outline-danger" size="sm" onClick={() => handleDeleteReader(reader.id, reader.label)}>
+                                      <i className="bi bi-trash"></i>
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </Table>
+                          <Button variant="link" size="sm" className="p-0 text-muted" onClick={handleRefreshReaders} disabled={terminalSaving}>
+                            <i className="bi bi-arrow-clockwise me-1"></i> Refresh reader status
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Add reader panel */}
+                      {!readerDone && !showReaderForm && (
+                        <Button onClick={() => { setShowReaderForm(true); setReaderAddMode(null); }}
+                          style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', border: 'none', borderRadius: '10px', padding: '10px 24px', fontWeight: 600 }}>
+                          <i className="bi bi-plus-circle me-2"></i> Add Reader
+                        </Button>
+                      )}
+
+                      {showReaderForm && (
+                        <Card style={{ borderRadius: '12px', border: '1px solid #e0e0ff', background: '#fafaff' }} className="mt-2">
+                          <Card.Body>
+                            <div className="d-flex justify-content-between align-items-center mb-3">
+                              <h6 style={{ fontWeight: 600, marginBottom: 0 }}>Choose Your Reader Type</h6>
+                              <Button variant="link" size="sm" className="text-muted p-0"
+                                onClick={() => { setShowReaderForm(false); setReaderAddMode(null); setReaderRegistrationCode(''); setReaderLabel(''); }}>
+                                <i className="bi bi-x-lg"></i>
+                              </Button>
+                            </div>
+
+                            {/* ── Option picker ── */}
+                            {!readerAddMode && (
+                              <div>
+                                {/* Smart reader (has screen) */}
+                                <div onClick={() => setReaderAddMode('code')} style={{
+                                  padding: '16px 20px', borderRadius: '10px', border: '1px solid #dee2e6',
+                                  cursor: 'pointer', marginBottom: '10px', transition: 'all 0.2s', background: '#fff'
+                                }} onMouseOver={e => { e.currentTarget.style.borderColor = '#635BFF'; e.currentTarget.style.background = '#f8f8ff'; }}
+                                   onMouseOut={e => { e.currentTarget.style.borderColor = '#dee2e6'; e.currentTarget.style.background = '#fff'; }}>
+                                  <div className="d-flex align-items-center gap-3">
+                                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#f0f0ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      <i className="bi bi-display" style={{ fontSize: '1.3rem', color: '#635BFF' }}></i>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <strong>My reader has a screen</strong>
+                                      <br />
+                                      <small style={{ color: '#888' }}>WisePOS E, Stripe Reader S700, Verifone P400 &mdash; shows a 3-word code on screen</small>
+                                    </div>
+                                    <i className="bi bi-chevron-right" style={{ color: '#aaa' }}></i>
+                                  </div>
+                                </div>
+
+                                {/* Screenless reader */}
+                                <div onClick={() => setReaderAddMode('screenless')} style={{
+                                  padding: '16px 20px', borderRadius: '10px', border: '1px solid #dee2e6',
+                                  cursor: 'pointer', marginBottom: '10px', transition: 'all 0.2s', background: '#fff'
+                                }} onMouseOver={e => { e.currentTarget.style.borderColor = '#635BFF'; e.currentTarget.style.background = '#f8f8ff'; }}
+                                   onMouseOut={e => { e.currentTarget.style.borderColor = '#dee2e6'; e.currentTarget.style.background = '#fff'; }}>
+                                  <div className="d-flex align-items-center gap-3">
+                                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#f0fff4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      <i className="bi bi-bluetooth" style={{ fontSize: '1.3rem', color: '#28a745' }}></i>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <strong>Bluetooth reader (no screen)</strong>
+                                      <br />
+                                      <small style={{ color: '#888' }}>Stripe Reader M2, BBPOS Chipper, BBPOS WisePad &mdash; connects via Bluetooth, uses pairing code</small>
+                                    </div>
+                                    <i className="bi bi-chevron-right" style={{ color: '#aaa' }}></i>
+                                  </div>
+                                </div>
+
+                                {/* Simulated / test */}
+                                <div onClick={() => setReaderAddMode('simulated')} style={{
+                                  padding: '16px 20px', borderRadius: '10px', border: '1px solid #dee2e6',
+                                  cursor: 'pointer', transition: 'all 0.2s', background: '#fff'
+                                }} onMouseOver={e => { e.currentTarget.style.borderColor = '#fd7e14'; e.currentTarget.style.background = '#fffaf5'; }}
+                                   onMouseOut={e => { e.currentTarget.style.borderColor = '#dee2e6'; e.currentTarget.style.background = '#fff'; }}>
+                                  <div className="d-flex align-items-center gap-3">
+                                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#fff8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      <i className="bi bi-bug" style={{ fontSize: '1.3rem', color: '#fd7e14' }}></i>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <strong>I don't have hardware yet</strong> <Badge bg="warning" text="dark" style={{ fontSize: '0.6rem', verticalAlign: 'middle' }}>TEST</Badge>
+                                      <br />
+                                      <small style={{ color: '#888' }}>Create a virtual simulated reader to test the full payment flow</small>
+                                    </div>
+                                    <i className="bi bi-chevron-right" style={{ color: '#aaa' }}></i>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ── Smart reader: registration code ── */}
+                            {readerAddMode === 'code' && (
+                              <div>
+                                <Alert variant="light" style={{ borderRadius: '10px', border: '1px solid #e0e0ff', background: '#f8f8ff' }}>
+                                  <strong>Follow these steps on your reader:</strong>
+                                  <ol style={{ marginBottom: 0, marginTop: '8px', paddingLeft: '18px', fontSize: '0.9rem' }}>
+                                    <li>Plug in and power on your reader</li>
+                                    <li>Connect it to your Wi-Fi network (the reader screen will guide you)</li>
+                                    <li>Once connected, the reader displays a <strong>3-word code</strong> like <code style={{ background: '#e8e5ff', padding: '2px 6px', borderRadius: '4px' }}>sepia-cerulean-deacon</code></li>
+                                    <li>Type that code below and click Register</li>
+                                  </ol>
+                                </Alert>
+                                <Form onSubmit={handleRegisterReader}>
+                                  <Form.Group className="mb-3">
+                                    <Form.Label><strong>Registration Code</strong></Form.Label>
+                                    <Form.Control type="text" placeholder="word-word-word" value={readerRegistrationCode}
+                                      onChange={e => setReaderRegistrationCode(e.target.value)} required
+                                      style={{ fontFamily: 'monospace', fontSize: '1.1rem', letterSpacing: '0.5px', padding: '12px' }} />
+                                  </Form.Group>
+                                  <Form.Group className="mb-3">
+                                    <Form.Label>Reader Label <span className="text-muted">(optional &mdash; helps identify it later)</span></Form.Label>
+                                    <Form.Control type="text" placeholder="e.g., Front Counter, Bar, Patio" value={readerLabel}
+                                      onChange={e => setReaderLabel(e.target.value)} />
+                                  </Form.Group>
+                                  <div className="d-flex gap-2">
+                                    <Button type="submit" disabled={terminalSaving}
+                                      style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', border: 'none', borderRadius: '8px', fontWeight: 600, padding: '10px 24px' }}>
+                                      {terminalSaving ? <><Spinner animation="border" size="sm" className="me-2" />Registering...</> : <><i className="bi bi-check-circle me-1"></i> Register Reader</>}
+                                    </Button>
+                                    <Button variant="outline-secondary" onClick={() => { setReaderAddMode(null); setReaderRegistrationCode(''); setReaderLabel(''); }}>Back</Button>
+                                  </div>
+                                </Form>
+                              </div>
+                            )}
+
+                            {/* ── Screenless reader: step-by-step guide ── */}
+                            {readerAddMode === 'screenless' && (
+                              <div>
+                                <Alert variant="light" style={{ borderRadius: '10px', border: '1px solid #d4edda', background: '#f0fff4' }}>
+                                  <strong><i className="bi bi-bluetooth me-1"></i>Bluetooth readers are registered using the serial number on the device.</strong>
+                                  <p style={{ marginTop: '8px', marginBottom: '8px', fontSize: '0.9rem', color: '#555' }}>
+                                    Follow these steps &mdash; it only takes a couple of minutes:
+                                  </p>
+                                  <ol style={{ marginBottom: 0, paddingLeft: '18px', fontSize: '0.9rem' }}>
+                                    <li style={{ marginBottom: '10px' }}>
+                                      <strong>Find the serial number</strong> &mdash; printed on a label on the back of your reader (e.g., <code style={{ background: '#e8f5e9', padding: '2px 6px', borderRadius: '4px' }}>STRM2DXXXXXXX</code>).
+                                    </li>
+                                    <li style={{ marginBottom: '10px' }}>
+                                      <strong>Make sure your Stripe account is in Live mode</strong> &mdash; physical readers cannot be registered in test mode.
+                                      <br />
+                                      <small style={{ color: '#dc3545' }}>
+                                        <i className="bi bi-exclamation-triangle me-1"></i>
+                                        If you see "No registerable readers" when entering the serial number, you are still in test mode. Toggle to <strong>Live mode</strong> in the Stripe Dashboard.
+                                      </small>
+                                    </li>
+                                    <li style={{ marginBottom: '10px' }}>
+                                      <strong>Open the Stripe Dashboard:</strong>
+                                      <br />
+                                      <a href="https://dashboard.stripe.com/terminal/readers" target="_blank" rel="noopener noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '6px', padding: '8px 16px',
+                                          background: '#635BFF', color: '#fff', borderRadius: '8px', textDecoration: 'none', fontWeight: 600, fontSize: '0.85rem' }}>
+                                        <i className="bi bi-box-arrow-up-right"></i> Open Stripe Terminal Readers
+                                      </a>
+                                    </li>
+                                    <li style={{ marginBottom: '10px' }}>
+                                      In the Stripe Dashboard, click <strong>"+ Register reader"</strong>
+                                      <ul style={{ marginTop: '4px', paddingLeft: '18px', color: '#666' }}>
+                                        <li>Choose the location you created in Step 1</li>
+                                        <li>Select <strong>"Serial number"</strong> as the registration method</li>
+                                        <li>Enter the serial number from the back of the reader and submit</li>
+                                      </ul>
+                                    </li>
+                                    <li style={{ marginBottom: '10px' }}>
+                                      <strong>Power on your reader</strong> and install the <strong>Stripe Terminal</strong> app on your phone/tablet. Pair the reader to your phone via Bluetooth in the app.
+                                    </li>
+                                    <li style={{ marginBottom: '4px' }}>
+                                      <strong>Come back here</strong> and click the button below to sync:
+                                    </li>
+                                  </ol>
+                                </Alert>
+                                <Alert variant="warning" style={{ borderRadius: '10px', fontSize: '0.85rem' }}>
+                                  <i className="bi bi-info-circle me-1"></i>
+                                  <strong>Important:</strong> During payment processing, the Stripe Terminal mobile app must be running on your phone and paired with the reader via Bluetooth. The app bridges the reader's Bluetooth connection to the internet.
+                                </Alert>
+                                <div className="d-flex gap-2">
+                                  <Button variant="success" onClick={async () => { await handleRefreshReaders(); setShowReaderForm(false); setReaderAddMode(null); }}
+                                    disabled={terminalSaving}
+                                    style={{ borderRadius: '8px', fontWeight: 600, padding: '10px 24px' }}>
+                                    {terminalSaving ? <><Spinner animation="border" size="sm" className="me-2" />Syncing...</> : <><i className="bi bi-arrow-repeat me-1"></i> Sync Readers from Stripe</>}
+                                  </Button>
+                                  <Button variant="outline-secondary" onClick={() => setReaderAddMode(null)}>Back</Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ── Simulated reader ── */}
+                            {readerAddMode === 'simulated' && (
+                              <div>
+                                <Alert variant="light" style={{ borderRadius: '10px', border: '1px solid #ffecd2', background: '#fffaf5' }}>
+                                  <strong>This is for testing only.</strong>
+                                  <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '0.9rem', color: '#555' }}>
+                                    A simulated reader behaves exactly like a real one &mdash; it appears in POS and Payments, and accepts test card payments.
+                                    No physical hardware needed. The simulated reader auto-accepts a test card when you process a payment.
+                                  </p>
+                                </Alert>
+                                <div className="d-flex gap-2">
+                                  <Button variant="warning" onClick={handleCreateSimulatedReader} disabled={terminalSaving}
+                                    style={{ borderRadius: '8px', fontWeight: 600, padding: '10px 24px' }}>
+                                    {terminalSaving ? <><Spinner animation="border" size="sm" className="me-2" />Creating...</> : <><i className="bi bi-bug me-1"></i> Create Simulated Reader</>}
+                                  </Button>
+                                  <Button variant="outline-secondary" onClick={() => setReaderAddMode(null)}>Back</Button>
+                                </div>
+                              </div>
+                            )}
+                          </Card.Body>
+                        </Card>
+                      )}
+                    </div>
+
+                    {/* ══════════════════════════════════════ */}
+                    {/* STEP 3 — Ready to accept payments     */}
+                    {/* ══════════════════════════════════════ */}
+                    <div style={{
+                      border: readerDone ? '2px solid #28a745' : '1px solid #e9ecef',
+                      borderRadius: '14px', padding: '24px',
+                      background: readerDone ? '#f0fff4' : '#fff',
+                      opacity: !readerDone ? 0.5 : 1,
+                      transition: 'all 0.3s'
+                    }}>
+                      <div className="d-flex align-items-start gap-3">
+                        <div style={stepStyle(3, readerDone)}>
+                          {readerDone ? <i className="bi bi-check-lg"></i> : '3'}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <h5 style={{ fontWeight: 700, marginBottom: '4px' }}>Accept Payments</h5>
+                          {readerDone ? (
+                            <div>
+                              <p style={{ color: '#28a745', fontWeight: 600, marginBottom: '12px', fontSize: '0.95rem' }}>
+                                You're all set! Terminal payments are now available.
+                              </p>
+                              <div style={{ background: '#fff', border: '1px solid #d4edda', borderRadius: '10px', padding: '16px' }}>
+                                <p style={{ fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem' }}>How to use it:</p>
+                                <ol style={{ paddingLeft: '18px', marginBottom: 0, color: '#555', fontSize: '0.9rem' }}>
+                                  <li style={{ marginBottom: '6px' }}>
+                                    Go to <strong>POS</strong> (for counter/food truck) or <strong>Payments</strong> (for table service)
+                                  </li>
+                                  <li style={{ marginBottom: '6px' }}>
+                                    Add items and proceed to payment &mdash; you'll see a <strong style={{ color: '#635BFF' }}>Terminal</strong> button alongside Cash and Card
+                                  </li>
+                                  <li style={{ marginBottom: '6px' }}>
+                                    Tap <strong style={{ color: '#635BFF' }}>Terminal</strong>, then <strong>Charge Terminal</strong>
+                                  </li>
+                                  <li>
+                                    The reader will light up &mdash; ask the customer to tap, insert, or swipe their card. Done!
+                                  </li>
+                                </ol>
+                                {terminalReaders.some(r => (r.connectionType || getReaderConnectionType(r.deviceType)) === 'bluetooth') && (
+                                  <Alert variant="info" className="mt-3 mb-0" style={{ borderRadius: '8px', fontSize: '0.85rem' }}>
+                                    <i className="bi bi-bluetooth me-1"></i>
+                                    <strong>Bluetooth reader tip:</strong> Make sure your reader is powered on and the Stripe Terminal mobile app is running on your phone before processing payments.
+                                  </Alert>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <p style={{ color: '#999', marginBottom: 0, fontSize: '0.9rem' }}>
+                              Complete steps 1 and 2 above to start accepting terminal payments.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card.Body>
+          </Card>
+        );
+      }
+
       case 'access_control':
         return <AccessControl />;
 
@@ -2197,6 +2820,16 @@ const Account = () => {
               <span>Payment Account</span>
               {stripeConnectStatus?.connected && (
                 <Badge bg="success" style={{ marginLeft: '8px', fontSize: '0.65rem' }}>Connected</Badge>
+              )}
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'terminal' ? 'active' : ''}`}
+              onClick={() => setActiveSection('terminal')}
+            >
+              <i className="bi bi-phone"></i>
+              <span>Stripe Terminal</span>
+              {terminalConfig?.configured && (
+                <Badge bg="success" style={{ marginLeft: '8px', fontSize: '0.65rem' }}>Active</Badge>
               )}
             </button>
             <button

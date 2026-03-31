@@ -17,6 +17,14 @@ import TableSelectionModal from './TableSelectionModal';
 import CardPaymentForm from './CardPaymentForm';
 import activityService from '../services/activityService';
 import { getStripe } from '../services/stripeService';
+import {
+  getTerminalConfig,
+  listReaders,
+  collectServerDrivenPayment,
+  cancelServerDrivenAction,
+  simulateCardPresent,
+  getReaderConnectionType
+} from '../services/terminalService';
 import { initializeWakeLock, cleanupWakeLock, isWakeLockSupported } from '../services/wakeLockService';
 import { incrementOrderCount } from '../services/orderUsageService';
 import useFullscreen from '../hooks/useFullscreen';
@@ -44,6 +52,14 @@ const POS = () => {
   const [paymentMethod, setPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [taxRate, setTaxRate] = useState(8);
+
+  // Terminal state
+  const [terminalAvailable, setTerminalAvailable] = useState(false);
+  const [terminalReaderId, setTerminalReaderId] = useState(null);
+  const [terminalReaderLabel, setTerminalReaderLabel] = useState('');
+  const [terminalReaderType, setTerminalReaderType] = useState(''); // 'bluetooth', 'internet', 'simulated'
+  const [terminalStatus, setTerminalStatus] = useState(''); // creating_intent, waiting_for_card, processing, succeeded
+  const [activePaymentIntentId, setActivePaymentIntentId] = useState(null);
 
   // Fullscreen mode
   const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
@@ -83,6 +99,80 @@ const POS = () => {
     };
     loadTaxRate();
   }, [currentUser, restaurantUid]);
+
+  // Check if Stripe Terminal is configured and find the reader
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const checkTerminal = async () => {
+      try {
+        const config = await getTerminalConfig();
+        if (config.configured) {
+          const readersResult = await listReaders();
+          const readers = readersResult.readers || [];
+          if (readers.length > 0) {
+            setTerminalAvailable(true);
+            setTerminalReaderId(readers[0].id);
+            setTerminalReaderLabel(readers[0].label || readers[0].deviceType || 'Reader');
+            setTerminalReaderType(readers[0].connectionType || getReaderConnectionType(readers[0].deviceType));
+          }
+        }
+      } catch (err) {
+        console.error('Terminal config check failed:', err);
+      }
+    };
+    checkTerminal();
+  }, [currentUser]);
+
+  // Handle terminal card payment (pay-first mode) — server-driven
+  const handleTerminalPayment = async () => {
+    if (orderItems.length === 0 || !terminalReaderId) return;
+
+    setSendingOrder(true);
+    setError('');
+    setTerminalStatus('');
+    setActivePaymentIntentId(null);
+
+    try {
+      const isSimulated = terminalReaderType === 'simulated';
+
+      // Collect payment via server-driven flow
+      const paymentPromise = collectServerDrivenPayment(
+        terminalReaderId,
+        calculateTotalWithTax(),
+        [],
+        selectedTables,
+        restaurantUid,
+        (status) => setTerminalStatus(status)
+      );
+
+      // For simulated readers, auto-present a card after a short delay
+      if (isSimulated) {
+        setTimeout(async () => {
+          try { await simulateCardPresent(terminalReaderId); } catch (e) { /* ignore */ }
+        }, 2000);
+      }
+
+      const { paymentIntentId } = await paymentPromise;
+
+      // Create the order after successful payment
+      const orderNumber = generateOrderNumber();
+      const { orderData, orderLocationId } = buildOrderData(orderNumber, {
+        method: 'terminal',
+        stripePaymentIntentId: paymentIntentId
+      });
+      await submitOrder(orderData, orderLocationId, orderNumber);
+    } catch (err) {
+      if (err.message?.includes('canceled')) {
+        setError('Payment was canceled.');
+      } else {
+        setError('Terminal payment failed: ' + err.message);
+      }
+    } finally {
+      setSendingOrder(false);
+      setTerminalStatus('');
+      setActivePaymentIntentId(null);
+    }
+  };
 
   // Auto-select first category when categories load
   useEffect(() => {
@@ -643,6 +733,16 @@ const POS = () => {
                       <i className="bi bi-credit-card"></i>
                       <span>Card</span>
                     </button>
+                    {terminalAvailable && (
+                      <button
+                        className="pos-payment-method-btn pos-terminal-btn"
+                        onClick={() => setPaymentMethod('terminal')}
+                        style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', color: 'white' }}
+                      >
+                        <i className={`bi ${terminalReaderType === 'bluetooth' ? 'bi-bluetooth' : 'bi-phone'}`}></i>
+                        <span>Terminal</span>
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -686,6 +786,77 @@ const POS = () => {
                         }}
                       />
                     </Elements>
+                  </div>
+                )}
+
+                {paymentMethod === 'terminal' && (
+                  <div className="pos-terminal-payment">
+                    <div className="pos-payment-amount" style={{ marginBottom: '16px' }}>
+                      <span>Amount Due:</span>
+                      <strong>${calculateTotalWithTax().toFixed(2)}</strong>
+                    </div>
+
+                    {terminalStatus === '' && !sendingOrder && (
+                      <button
+                        className="pos-send-button"
+                        onClick={handleTerminalPayment}
+                        disabled={sendingOrder}
+                        style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', border: 'none' }}
+                      >
+                        <i className="bi bi-phone"></i> Charge Terminal
+                      </button>
+                    )}
+
+                    {(terminalStatus || sendingOrder) && (
+                      <div style={{
+                        textAlign: 'center', padding: '20px',
+                        background: '#f8f9fa', borderRadius: '12px'
+                      }}>
+                        {(terminalStatus === 'connecting' || terminalStatus === 'creating_intent') && (
+                          <>
+                            <Spinner animation="border" variant="primary" />
+                            <p style={{ marginTop: '12px', fontWeight: 500 }}>Connecting to reader...</p>
+                          </>
+                        )}
+                        {terminalStatus === 'waiting_for_card' && (
+                          <>
+                            <div style={{ fontSize: '3rem', marginBottom: '8px' }}>
+                              <i className="bi bi-credit-card-2-front" style={{ color: '#635BFF' }}></i>
+                            </div>
+                            <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '4px' }}>
+                              Waiting for Customer
+                            </p>
+                            <p style={{ color: '#666' }}>
+                              {terminalReaderType === 'bluetooth'
+                                ? 'Ask customer to tap, insert, or swipe card on the Bluetooth reader'
+                                : 'Ask customer to tap, insert, or swipe card on the reader'}
+                            </p>
+                            {terminalReaderType === 'bluetooth' && (
+                              <p style={{ color: '#999', fontSize: '0.85rem' }}>
+                                <i className="bi bi-bluetooth me-1"></i>Ensure reader is powered on and connected via Stripe app
+                              </p>
+                            )}
+                            <button
+                              className="pos-clear-button"
+                              onClick={async () => {
+                                try { await cancelServerDrivenAction(terminalReaderId); } catch (e) { /* ignore */ }
+                                setTerminalStatus('');
+                                setSendingOrder(false);
+                              }}
+                              style={{ marginTop: '8px' }}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                        {terminalStatus === 'processing' && (
+                          <>
+                            <Spinner animation="border" variant="success" />
+                            <p style={{ marginTop: '12px', fontWeight: 500 }}>Processing payment...</p>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

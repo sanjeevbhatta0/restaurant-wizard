@@ -6075,3 +6075,502 @@ exports.getApprovedReviews = onRequest((req, res) => {
     }
   });
 });
+
+// ============================================
+// STRIPE TERMINAL FUNCTIONS
+// ============================================
+
+/**
+ * Create a Stripe Terminal connection token.
+ * Required by the Terminal JS SDK to authenticate with Stripe.
+ * If the restaurant has a connected Stripe account, the token is scoped to that account.
+ */
+exports.createTerminalConnectionToken = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = resolveRestaurantId(request);
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+
+    // Load the terminal location from restaurant settings
+    const db = admin.firestore();
+    const terminalDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`).get();
+    const terminalData = terminalDoc.exists ? terminalDoc.data() : {};
+    const locationId = terminalData.stripeLocationId || null;
+
+    const params = {};
+    if (locationId) {
+      params.location = locationId;
+    }
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    const token = await stripe.terminal.connectionTokens.create(params, stripeOptions);
+    return { secret: token.secret };
+  } catch (error) {
+    console.error('Error creating terminal connection token:', error);
+    throw new HttpsError('internal', error.message || 'Failed to create connection token');
+  }
+});
+
+/**
+ * Create a Stripe Terminal Location.
+ * Locations are required for internet-connected readers (e.g., WisePOS E, S700).
+ */
+exports.createTerminalLocation = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const { displayName, addressLine1, city, state, postalCode, country } = request.data;
+
+    if (!displayName || !addressLine1 || !city || !state || !postalCode) {
+      throw new HttpsError('invalid-argument', 'All address fields are required');
+    }
+
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    const location = await stripe.terminal.locations.create({
+      display_name: displayName,
+      address: {
+        line1: addressLine1,
+        city: city,
+        state: state,
+        postal_code: postalCode,
+        country: country || 'US'
+      },
+      metadata: {
+        restaurantId: restaurantId,
+        platform: 'kodacarte'
+      }
+    }, stripeOptions);
+
+    // Save location to Firestore
+    const db = admin.firestore();
+    await db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`).set({
+      stripeLocationId: location.id,
+      locationDisplayName: displayName,
+      address: { line1: addressLine1, city, state, postalCode, country: country || 'US' },
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    return {
+      success: true,
+      locationId: location.id,
+      displayName: location.display_name
+    };
+  } catch (error) {
+    console.error('Error creating terminal location:', error);
+    throw new HttpsError('internal', error.message || 'Failed to create terminal location');
+  }
+});
+
+/**
+ * Register a Stripe Terminal reader using a registration code.
+ * The registration code is displayed on the reader screen during setup.
+ */
+exports.registerTerminalReader = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const { registrationCode, label } = request.data;
+
+    if (!registrationCode) {
+      throw new HttpsError('invalid-argument', 'Registration code is required');
+    }
+
+    const db = admin.firestore();
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    // Get the terminal location
+    const terminalDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`).get();
+    if (!terminalDoc.exists || !terminalDoc.data().stripeLocationId) {
+      throw new HttpsError('failed-precondition', 'Terminal location must be set up first');
+    }
+
+    const locationId = terminalDoc.data().stripeLocationId;
+
+    const reader = await stripe.terminal.readers.create({
+      registration_code: registrationCode,
+      label: label || 'POS Reader',
+      location: locationId,
+      metadata: {
+        restaurantId: restaurantId,
+        platform: 'kodacarte'
+      }
+    }, stripeOptions);
+
+    return {
+      success: true,
+      readerId: reader.id,
+      label: reader.label,
+      deviceType: reader.device_type,
+      status: reader.status
+    };
+  } catch (error) {
+    console.error('Error registering terminal reader:', error);
+    throw new HttpsError('internal', error.message || 'Failed to register reader');
+  }
+});
+
+/**
+ * List all Stripe Terminal readers for a restaurant's location.
+ */
+exports.listTerminalReaders = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = resolveRestaurantId(request);
+    const db = admin.firestore();
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    const terminalDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`).get();
+    if (!terminalDoc.exists || !terminalDoc.data().stripeLocationId) {
+      return { readers: [] };
+    }
+
+    const locationId = terminalDoc.data().stripeLocationId;
+
+    const readers = await stripe.terminal.readers.list({
+      location: locationId,
+      limit: 100
+    }, stripeOptions);
+
+    const BLUETOOTH_TYPES = new Set(['bbpos_chipper2x', 'stripe_m2', 'bbpos_wisepad3']);
+
+    return {
+      readers: readers.data.map(r => ({
+        id: r.id,
+        label: r.label,
+        deviceType: r.device_type,
+        connectionType: BLUETOOTH_TYPES.has(r.device_type) ? 'bluetooth'
+                      : r.device_type?.startsWith('simulated_') ? 'simulated'
+                      : 'internet',
+        status: r.status,
+        ipAddress: r.ip_address,
+        serialNumber: r.serial_number
+      }))
+    };
+  } catch (error) {
+    console.error('Error listing terminal readers:', error);
+    throw new HttpsError('internal', error.message || 'Failed to list readers');
+  }
+});
+
+/**
+ * Delete a Stripe Terminal reader.
+ */
+exports.deleteTerminalReader = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { readerId } = request.data;
+    if (!readerId) {
+      throw new HttpsError('invalid-argument', 'Reader ID is required');
+    }
+
+    const restaurantId = request.auth.uid;
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    await stripe.terminal.readers.del(readerId, stripeOptions);
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting terminal reader:', error);
+    throw new HttpsError('internal', error.message || 'Failed to delete reader');
+  }
+});
+
+/**
+ * Get the Stripe Terminal configuration for a restaurant.
+ */
+exports.getTerminalConfig = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = resolveRestaurantId(request);
+    const db = admin.firestore();
+
+    const terminalDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`).get();
+    if (!terminalDoc.exists) {
+      return { configured: false };
+    }
+
+    const data = terminalDoc.data();
+    return {
+      configured: !!data.stripeLocationId,
+      stripeLocationId: data.stripeLocationId || null,
+      locationDisplayName: data.locationDisplayName || null,
+      address: data.address || null
+    };
+  } catch (error) {
+    console.error('Error getting terminal config:', error);
+    throw new HttpsError('internal', error.message || 'Failed to get terminal config');
+  }
+});
+
+/**
+ * Create a PaymentIntent for Stripe Terminal (server-driven).
+ * Terminal payments use `payment_method_types: ['card_present']`.
+ */
+exports.createTerminalPaymentIntent = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { amount, orderIds, tableNumbers, restaurantId: reqRestaurantId } = request.data;
+    const restaurantId = resolveRestaurantId(request) || reqRestaurantId;
+
+    if (!amount || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'Amount must be greater than 0');
+    }
+
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const amountInCents = Math.round(amount * 100);
+
+    const intentParams = {
+      amount: amountInCents,
+      currency: 'usd',
+      payment_method_types: ['card_present'],
+      capture_method: 'automatic',
+      metadata: {
+        restaurantId: restaurantId,
+        orderIds: (orderIds || []).join(','),
+        tableNumbers: (tableNumbers || []).join(','),
+        source: 'terminal',
+        platform: 'kodacarte'
+      }
+    };
+
+    if (connectedAccountId) {
+      intentParams.application_fee_amount = Math.round(amountInCents * 0.029);
+    }
+
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+    const paymentIntent = await stripe.paymentIntents.create(intentParams, stripeOptions);
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id
+    };
+  } catch (error) {
+    console.error('Error creating terminal payment intent:', error);
+    throw new HttpsError('internal', error.message || 'Failed to create terminal payment intent');
+  }
+});
+
+/**
+ * Server-driven: hand a PaymentIntent to a reader for collection.
+ * Used for smart readers (WisePOS E, S700) and screenless readers
+ * when operating in server-driven mode.
+ * The reader will prompt the customer to present their card.
+ */
+exports.processTerminalPayment = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { readerId, amount, orderIds, tableNumbers, restaurantId: reqRestaurantId } = request.data;
+    const restaurantId = resolveRestaurantId(request) || reqRestaurantId;
+
+    if (!readerId) {
+      throw new HttpsError('invalid-argument', 'Reader ID is required');
+    }
+    if (!amount || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'Amount must be greater than 0');
+    }
+
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+    const amountInCents = Math.round(amount * 100);
+
+    // 1. Create the PaymentIntent
+    const intentParams = {
+      amount: amountInCents,
+      currency: 'usd',
+      payment_method_types: ['card_present'],
+      capture_method: 'automatic',
+      metadata: {
+        restaurantId,
+        orderIds: (orderIds || []).join(','),
+        tableNumbers: (tableNumbers || []).join(','),
+        source: 'terminal_server_driven',
+        platform: 'kodacarte'
+      }
+    };
+
+    if (connectedAccountId) {
+      intentParams.application_fee_amount = Math.round(amountInCents * 0.029);
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(intentParams, stripeOptions);
+
+    // 2. Hand the PaymentIntent to the reader
+    const readerAction = await stripe.terminal.readers.processPaymentIntent(
+      readerId,
+      { payment_intent: paymentIntent.id },
+      stripeOptions
+    );
+
+    return {
+      paymentIntentId: paymentIntent.id,
+      readerId: readerAction.id,
+      readerAction: readerAction.action?.type || 'process_payment_intent',
+      status: readerAction.action?.status || 'in_progress'
+    };
+  } catch (error) {
+    console.error('Error processing terminal payment:', error);
+    throw new HttpsError('internal', error.message || 'Failed to process terminal payment');
+  }
+});
+
+/**
+ * Server-driven: cancel the current reader action.
+ */
+exports.cancelTerminalAction = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { readerId } = request.data;
+    if (!readerId) {
+      throw new HttpsError('invalid-argument', 'Reader ID is required');
+    }
+
+    const restaurantId = resolveRestaurantId(request);
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    await stripe.terminal.readers.cancelAction(readerId, stripeOptions);
+    return { success: true };
+  } catch (error) {
+    console.error('Error canceling terminal action:', error);
+    throw new HttpsError('internal', error.message || 'Failed to cancel reader action');
+  }
+});
+
+/**
+ * Server-driven: poll reader status to check if payment was collected.
+ * Returns the reader's current action state and, if done, the PaymentIntent status.
+ */
+exports.getTerminalReaderStatus = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { readerId, paymentIntentId } = request.data;
+    if (!readerId) {
+      throw new HttpsError('invalid-argument', 'Reader ID is required');
+    }
+
+    const restaurantId = resolveRestaurantId(request);
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    const reader = await stripe.terminal.readers.retrieve(readerId, stripeOptions);
+
+    const result = {
+      readerId: reader.id,
+      status: reader.status,
+      actionType: reader.action?.type || null,
+      actionStatus: reader.action?.status || null,
+    };
+
+    // If we have a paymentIntentId, check its status too
+    if (paymentIntentId) {
+      const pi = await stripe.paymentIntents.retrieve(paymentIntentId, stripeOptions);
+      result.paymentIntentStatus = pi.status;
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error getting reader status:', error);
+    throw new HttpsError('internal', error.message || 'Failed to get reader status');
+  }
+});
+
+/**
+ * Create a simulated reader at the restaurant's terminal location.
+ * Useful for testing the terminal flow without physical hardware.
+ */
+exports.createSimulatedReader = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const restaurantId = request.auth.uid;
+    const db = admin.firestore();
+
+    const terminalDoc = await db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`).get();
+    if (!terminalDoc.exists || !terminalDoc.data().stripeLocationId) {
+      throw new HttpsError('failed-precondition', 'Terminal location must be set up first');
+    }
+
+    const locationId = terminalDoc.data().stripeLocationId;
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    const reader = await stripe.testHelpers.terminal.readers.create({
+      label: 'Simulated Reader',
+      location: locationId,
+      metadata: { restaurantId, platform: 'kodacarte' }
+    }, stripeOptions);
+
+    return {
+      success: true,
+      readerId: reader.id,
+      label: reader.label,
+      deviceType: reader.device_type,
+      status: reader.status
+    };
+  } catch (error) {
+    console.error('Error creating simulated reader:', error);
+    throw new HttpsError('internal', error.message || 'Failed to create simulated reader');
+  }
+});
+
+/**
+ * Simulate a card present event on a simulated reader (test mode only).
+ */
+exports.simulateTerminalCardPresent = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { readerId } = request.data;
+    if (!readerId) {
+      throw new HttpsError('invalid-argument', 'Reader ID is required');
+    }
+
+    const restaurantId = resolveRestaurantId(request);
+    const connectedAccountId = await getStripeConnectAccountId(restaurantId);
+    const stripeOptions = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
+
+    await stripe.testHelpers.terminal.readers.presentPaymentMethod(readerId, stripeOptions);
+    return { success: true };
+  } catch (error) {
+    console.error('Error simulating card present:', error);
+    throw new HttpsError('internal', error.message || 'Failed to simulate card present');
+  }
+});
