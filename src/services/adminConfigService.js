@@ -13,6 +13,10 @@ import {
     updateDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { adminDb } from '../adminFirebase';
+
+// Use adminDb for admin-only operations (draft, publish, scheduled changes)
+// Use db for public reads (platformConfig for pricing display)
 
 // Default configuration (used as fallback and for initial setup)
 export const DEFAULT_CONFIG = {
@@ -101,7 +105,7 @@ export const subscribeToPublishedConfig = (callback) => {
 // Get draft configuration
 export const getDraftConfig = async () => {
     try {
-        const docRef = doc(db, 'platformConfigDraft', 'current');
+        const docRef = doc(adminDb, 'platformConfigDraft', 'current');
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -118,7 +122,7 @@ export const getDraftConfig = async () => {
 // Save draft configuration
 export const saveDraft = async (config, adminUid) => {
     try {
-        const docRef = doc(db, 'platformConfigDraft', 'current');
+        const docRef = doc(adminDb, 'platformConfigDraft', 'current');
         await setDoc(docRef, {
             ...config,
             updatedAt: Timestamp.now(),
@@ -134,7 +138,7 @@ export const saveDraft = async (config, adminUid) => {
 // Publish configuration immediately
 export const publishConfig = async (config, adminUid) => {
     try {
-        const docRef = doc(db, 'platformConfig', 'current');
+        const docRef = doc(adminDb, 'platformConfig', 'current');
         await setDoc(docRef, {
             ...config,
             publishedAt: Timestamp.now(),
@@ -142,7 +146,7 @@ export const publishConfig = async (config, adminUid) => {
         });
 
         // Clear draft after publishing
-        const draftRef = doc(db, 'platformConfigDraft', 'current');
+        const draftRef = doc(adminDb, 'platformConfigDraft', 'current');
         await setDoc(draftRef, {
             ...config,
             updatedAt: Timestamp.now(),
@@ -159,7 +163,7 @@ export const publishConfig = async (config, adminUid) => {
 // Schedule configuration publish
 export const schedulePublish = async (config, scheduledFor, adminUid) => {
     try {
-        const collectionRef = collection(db, 'scheduledChanges');
+        const collectionRef = collection(adminDb, 'scheduledChanges');
         await addDoc(collectionRef, {
             configSnapshot: config,
             scheduledFor: Timestamp.fromDate(new Date(scheduledFor)),
@@ -178,7 +182,7 @@ export const schedulePublish = async (config, scheduledFor, adminUid) => {
 export const getScheduledChanges = async () => {
     try {
         const q = query(
-            collection(db, 'scheduledChanges'),
+            collection(adminDb, 'scheduledChanges'),
             where('status', '==', 'pending'),
             orderBy('scheduledFor', 'asc')
         );
@@ -196,7 +200,7 @@ export const getScheduledChanges = async () => {
 // Cancel scheduled change
 export const cancelScheduledChange = async (changeId) => {
     try {
-        const docRef = doc(db, 'scheduledChanges', changeId);
+        const docRef = doc(adminDb, 'scheduledChanges', changeId);
         await updateDoc(docRef, {
             status: 'cancelled',
             cancelledAt: Timestamp.now()
@@ -211,7 +215,7 @@ export const cancelScheduledChange = async (changeId) => {
 // Check if user is admin
 export const checkIsAdmin = async (uid) => {
     try {
-        const docRef = doc(db, 'admins', uid);
+        const docRef = doc(adminDb, 'admins', uid);
         const docSnap = await getDoc(docRef);
         return docSnap.exists();
     } catch (error) {
@@ -228,7 +232,7 @@ export const getAnalytics = async (days = 30) => {
         startDate.setDate(startDate.getDate() - days);
 
         const q = query(
-            collection(db, 'platformAnalytics'),
+            collection(adminDb, 'platformAnalytics'),
             where('date', '>=', startDate.toISOString().split('T')[0]),
             orderBy('date', 'asc')
         );

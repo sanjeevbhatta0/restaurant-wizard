@@ -1227,6 +1227,10 @@
         .reviews-section h2 { text-align: center; font-size: 2.2rem; margin-bottom: 10px; color: var(--primary); }
         .reviews-section .section-subtitle { text-align: center; color: #666; margin-bottom: 40px; }
         .reviews-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto 40px; }
+        .reviews-summary { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 24px 28px; background: rgba(245,158,11,0.08); border-radius: 12px; flex-wrap: wrap; }
+        .reviews-summary-rating { font-size: 2.8rem; font-weight: 700; color: #f59e0b; line-height: 1; }
+        .reviews-summary-stars { color: #f59e0b; font-size: 1.3rem; margin-bottom: 4px; }
+        .reviews-summary-count { font-size: 0.85rem; color: #6b7280; }
         .review-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .review-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .review-card-name { font-weight: 600; font-size: 1rem; }
@@ -2405,7 +2409,25 @@
                 const data = await resp.json();
                 const grid = document.getElementById('reviewsGrid');
                 if (data.success && data.reviews && data.reviews.length > 0) {
-                    grid.innerHTML = data.reviews.map(function(r) {
+                    var reviews = data.reviews;
+                    var totalCount = reviews.length;
+                    var sum = 0;
+                    for (var j = 0; j < reviews.length; j++) { sum += reviews[j].rating; }
+                    var avgRating = (sum / totalCount).toFixed(1);
+                    var avgStars = '';
+                    for (var s = 0; s < 5; s++) {
+                        var diff = parseFloat(avgRating) - s;
+                        if (diff >= 0.75) avgStars += '<i class="bi bi-star-fill"></i>';
+                        else if (diff >= 0.25) avgStars += '<i class="bi bi-star-half"></i>';
+                        else avgStars += '<i class="bi bi-star"></i>';
+                    }
+                    var summaryHtml = '<div class="reviews-summary">' +
+                        '<div class="reviews-summary-rating">' + avgRating + '</div>' +
+                        '<div class="reviews-summary-details">' +
+                        '<div class="reviews-summary-stars">' + avgStars + '</div>' +
+                        '<div class="reviews-summary-count">Based on ' + totalCount + ' review' + (totalCount !== 1 ? 's' : '') + '</div>' +
+                        '</div></div>';
+                    grid.innerHTML = summaryHtml + reviews.map(function(r) {
                         var stars = '';
                         for (var i = 1; i <= 5; i++) {
                             stars += '<i class="bi bi-star' + (i <= r.rating ? '-fill' : '') + '"></i>';

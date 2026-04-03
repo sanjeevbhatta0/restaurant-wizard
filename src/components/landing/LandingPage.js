@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../firebase';
 import PricingTiers from './PricingTiers';
 import { trackPageView } from '../../services/platformAnalyticsService';
 import './LandingPage.css';
@@ -37,13 +39,23 @@ const LandingPage = () => {
         setMobileNavOpen(false);
     };
 
-    const handleContactSubmit = (e) => {
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleContactSubmit = async (e) => {
         e.preventDefault();
-        // In a real app, you'd send this to a backend
-        console.log('Contact form submitted:', contactForm);
-        setFormSubmitted(true);
-        setContactForm({ name: '', email: '', restaurant: '', message: '' });
-        setTimeout(() => setFormSubmitted(false), 5000);
+        setSubmitting(true);
+        try {
+            const submitContact = httpsCallable(functions, 'submitContactForm');
+            await submitContact(contactForm);
+            setFormSubmitted(true);
+            setContactForm({ name: '', email: '', restaurant: '', message: '' });
+            setTimeout(() => setFormSubmitted(false), 5000);
+        } catch (error) {
+            console.error('Error submitting contact form:', error);
+            alert('Failed to send message. Please try again or email us at support@kodacarte.com');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -120,7 +132,7 @@ const LandingPage = () => {
                                     <div className="stat-label">Powered Analytics</div>
                                 </div>
                                 <div className="stat-item">
-                                    <div className="stat-number">4</div>
+                                    <div className="stat-number">5</div>
                                     <div className="stat-label">Flexible Tiers</div>
                                 </div>
                             </div>
@@ -329,7 +341,7 @@ const LandingPage = () => {
                             <div className="contact-icon">📞</div>
                             <div>
                                 <h4>Call Us</h4>
-                                <p>1-800-KODA-CARTE<br />Mon-Fri, 9am-6pm CST</p>
+                                <p>(937) 361-9400<br />Mon-Fri, 9am-6pm CST</p>
                             </div>
                         </div>
 
@@ -337,7 +349,7 @@ const LandingPage = () => {
                             <div className="contact-icon">💬</div>
                             <div>
                                 <h4>Live Chat</h4>
-                                <p>Available in-app for all subscribers<br />24/7 for Elder tier members</p>
+                                <p>Coming Soon</p>
                             </div>
                         </div>
                     </div>
@@ -393,8 +405,8 @@ const LandingPage = () => {
                                 required
                             ></textarea>
                         </div>
-                        <button type="submit" className="contact-submit">
-                            Send Message
+                        <button type="submit" className="contact-submit" disabled={submitting}>
+                            {submitting ? 'Sending...' : 'Send Message'}
                         </button>
                     </form>
                 </div>

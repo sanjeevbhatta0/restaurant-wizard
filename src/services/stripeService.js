@@ -12,7 +12,11 @@ const stripeInstances = {};
 export const getStripe = async (connectedAccountId) => {
   const cacheKey = connectedAccountId || '__platform__';
   if (!stripeInstances[cacheKey]) {
-    const publishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15';
+    const isProd = process.env.REACT_APP_FIREBASE_ENV === 'production';
+    const publishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+      || (isProd
+        ? 'pk_live_51SkXBnKKkFGO1CjjN6pbM8w7XQLIe8RqXJMMND7mVFHcbFp6qjDTZwd3Q51hTzV4Qn6TaicxpKImFM3tAomhUpkN00nV5baEOk'
+        : 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15');
     const opts = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
     stripeInstances[cacheKey] = loadStripe(publishableKey, opts);
   }

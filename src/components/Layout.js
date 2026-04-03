@@ -148,12 +148,7 @@ const Layout = ({ children }) => {
             <i className="bi bi-list"></i>
           </button>
           <div className="logo">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M16 2L4 8V16C4 22.6 9.4 28 16 28C22.6 28 28 22.6 28 16V8L16 2Z" fill="#667eea" />
-              <path d="M16 6L8 10V16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16V10L16 6Z" fill="#764ba2" />
-              <circle cx="16" cy="16" r="4" fill="white" />
-              <path d="M14 14L16 16L18 14" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <img src="/koda-carte-logo.png" alt="Koda Carte" className="logo-icon" />
             <span className="logo-text">
               <span className="logo-word-koda">Koda</span>
               <span className="logo-word-carte"> Carte</span>

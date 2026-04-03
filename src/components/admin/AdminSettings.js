@@ -3,6 +3,7 @@ import { useAdmin } from '../../contexts/AdminContext';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { getFirebaseConsoleUrl } from '../../config';
 import { adminAuth, adminDb, adminFunctions } from '../../adminFirebase';
 import TwoFactorSetup from './TwoFactorSetup';
 
@@ -437,7 +438,7 @@ Each code can only be used once.
                         <h4>Firebase Console</h4>
                         <p>Manage database and authentication</p>
                         <a
-                            href="https://console.firebase.google.com/project/restaurant-portal-6b147/overview"
+                            href={getFirebaseConsoleUrl()}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="admin-btn admin-btn-secondary"

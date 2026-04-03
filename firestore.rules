@@ -245,5 +245,12 @@ service cloud.firestore {
     match /twitterAuth/{userId} {
       allow read, write: if false;
     }
+
+    // Contact form submissions — admins can read, writes handled by Cloud Function
+    match /contactSubmissions/{docId} {
+      allow read: if request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow write: if false;
+    }
   }
 }

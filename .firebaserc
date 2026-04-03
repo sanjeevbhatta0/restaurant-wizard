@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "restaurant-portal-6b147"
+    "default": "restaurant-portal-6b147",
+    "dev": "restaurant-portal-6b147",
+    "prod": "kodacarte-861d8"
   }
 }

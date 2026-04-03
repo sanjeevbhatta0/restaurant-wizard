@@ -209,7 +209,7 @@ class CustomerPortal {
   async loadPendingPromoAndShowAuth() {
     try {
       // Load the promo details so we can show title/discount on the auth form
-      const apiBaseUrl = this.config.apiBaseUrl || 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net';
+      const apiBaseUrl = this.config.apiBaseUrl || window.location.origin;
       const response = await fetch(`${apiBaseUrl}/getPromotions?restaurantId=${this.config.restaurantId}`);
       const data = await response.json();
       if (data.success && data.promotions) {
@@ -318,7 +318,7 @@ class CustomerPortal {
 
   async loadPromotions() {
     try {
-      const apiBaseUrl = this.config.apiBaseUrl || 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net';
+      const apiBaseUrl = this.config.apiBaseUrl || window.location.origin;
       const response = await fetch(`${apiBaseUrl}/getPromotions?restaurantId=${this.config.restaurantId}`);
       const data = await response.json();
 
@@ -1580,7 +1580,27 @@ class CustomerPortal {
       if (!container) return;
 
       if (data.success && data.reviews && data.reviews.length > 0) {
-        container.innerHTML = data.reviews.map(r => {
+        const reviews = data.reviews;
+        const totalCount = reviews.length;
+        const avgRating = (reviews.reduce((sum, r) => sum + r.rating, 0) / totalCount).toFixed(1);
+        const avgStars = Array.from({length: 5}, (_, i) => {
+          const diff = parseFloat(avgRating) - i;
+          if (diff >= 0.75) return `<i class="bi bi-star-fill" style="color:#f59e0b;font-size:1.3rem"></i>`;
+          if (diff >= 0.25) return `<i class="bi bi-star-half" style="color:#f59e0b;font-size:1.3rem"></i>`;
+          return `<i class="bi bi-star" style="color:#d1d5db;font-size:1.3rem"></i>`;
+        }).join('');
+
+        const summaryHtml = `
+          <div style="display:flex;align-items:center;gap:16px;padding:20px 24px;background:rgba(245,158,11,0.08);border-radius:12px;margin-bottom:20px;flex-wrap:wrap">
+            <div style="font-size:2.8rem;font-weight:700;color:#f59e0b;line-height:1">${avgRating}</div>
+            <div>
+              <div style="margin-bottom:4px">${avgStars}</div>
+              <div style="font-size:0.85rem;color:#6b7280">Based on ${totalCount} review${totalCount !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+        `;
+
+        const reviewCards = reviews.map(r => {
           const stars = Array.from({length: 5}, (_, i) =>
             `<i class="bi bi-star${i < r.rating ? '-fill' : ''}" style="color:${i < r.rating ? '#f59e0b' : '#d1d5db'};font-size:0.9rem"></i>`
           ).join('');
@@ -1596,6 +1616,8 @@ class CustomerPortal {
             </div>
           `;
         }).join('');
+
+        container.innerHTML = summaryHtml + reviewCards;
       } else {
         container.innerHTML = '<div class="cp-review-empty"><i class="bi bi-chat-quote" style="font-size:2.5rem;color:#d1d5db;display:block;margin-bottom:0.75rem"></i>No reviews yet. Be the first to share your experience!</div>';
       }

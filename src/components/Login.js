@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getApiBaseUrl } from '../config';
 import { auth, db } from '../firebase';
 import { Container, Card, Form, Button, Alert } from 'react-bootstrap';
 import PasswordInput from './PasswordInput';
@@ -30,10 +31,7 @@ const Login = () => {
   // Look up email by username using Cloud Function (checks restaurant owners + staff)
   const getEmailByUsername = async (username) => {
     try {
-      const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
-      const baseUrl = isEmulator
-        ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
-        : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net';
+      const baseUrl = getApiBaseUrl();
 
       // Try owner lookup first
       const ownerResponse = await fetch(`${baseUrl}/lookupEmailByUsername`, {
@@ -173,11 +171,8 @@ const Login = () => {
             <Card className="auth-card">
               <div className="auth-card-header">
                 <div className="auth-logo">
-                  <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M16 2L4 8V16C4 22.6 9.4 28 16 28C22.6 28 28 22.6 28 16V8L16 2Z" fill="white"/>
-                    <path d="M16 6L8 10V16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16V10L16 6Z" fill="rgba(255,255,255,0.8)"/>
-                    <circle cx="16" cy="16" r="4" fill="#667eea"/>
-                  </svg>
+                  <img src="/koda-carte-logo.png" alt="Koda Carte" style={{ height: '48px', width: 'auto' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                  <span className="auth-brand-name">Koda Carte</span>
                 </div>
                 <h2>Two-Factor Authentication</h2>
                 <p>{useBackupCode ? 'Enter one of your backup codes' : 'Enter the code from your authenticator app'}</p>
@@ -271,11 +266,8 @@ const Login = () => {
           <Card className="auth-card">
             <div className="auth-card-header">
               <div className="auth-logo">
-                <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M16 2L4 8V16C4 22.6 9.4 28 16 28C22.6 28 28 22.6 28 16V8L16 2Z" fill="white"/>
-                  <path d="M16 6L8 10V16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16V10L16 6Z" fill="rgba(255,255,255,0.8)"/>
-                  <circle cx="16" cy="16" r="4" fill="#667eea"/>
-                </svg>
+                <img src="/koda-carte-logo.png" alt="Koda Carte" style={{ height: '48px', width: 'auto' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                <span className="auth-brand-name">Koda Carte</span>
               </div>
               <h2>Welcome Back</h2>
               <p>Sign in to Koda Carte</p>

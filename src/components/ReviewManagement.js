@@ -17,6 +17,33 @@ const ReviewManagement = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [reviewStats, setReviewStats] = useState({ total: 0, approved: 0, pending: 0, rejected: 0, avgRating: 0 });
+
+  // Real-time listener for aggregate stats (all reviews)
+  useEffect(() => {
+    if (!restaurantUid) return;
+    const reviewsRef = collection(db, `restaurants/${restaurantUid}/reviews`);
+    const allQuery = query(reviewsRef, orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(allQuery, (snapshot) => {
+      let total = 0, approved = 0, pending = 0, rejected = 0, ratingSum = 0, ratingCount = 0;
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        total++;
+        if (data.status === 'approved') { approved++; ratingSum += (data.rating || 0); ratingCount++; }
+        else if (data.status === 'pending') pending++;
+        else if (data.status === 'rejected') rejected++;
+      });
+      setReviewStats({
+        total,
+        approved,
+        pending,
+        rejected,
+        avgRating: ratingCount > 0 ? (ratingSum / ratingCount) : 0
+      });
+    });
+    return () => unsubscribe();
+  }, [restaurantUid]);
 
   // Real-time listener for reviews
   useEffect(() => {
@@ -111,6 +138,18 @@ const ReviewManagement = () => {
     ));
   };
 
+  const renderHalfStars = (avg, size = '1.2rem') => {
+    return Array.from({ length: 5 }, (_, i) => {
+      const diff = avg - i;
+      let icon = 'bi-star';
+      if (diff >= 0.75) icon = 'bi-star-fill';
+      else if (diff >= 0.25) icon = 'bi-star-half';
+      return (
+        <i key={i} className={`bi ${icon}`} style={{ color: diff >= 0.25 ? '#f59e0b' : '#d1d5db', fontSize: size }}></i>
+      );
+    });
+  };
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'pending': return <Badge bg="warning" text="dark">Pending</Badge>;
@@ -177,6 +216,56 @@ const ReviewManagement = () => {
           All
         </Button>
       </div>
+
+      {/* Aggregated Review Summary */}
+      {reviewStats.total > 0 && (
+        <Card className="review-summary-card" style={{
+          borderRadius: '12px',
+          marginBottom: '20px',
+          border: '1px solid #e5e7eb',
+          background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(251,191,36,0.04) 100%)'
+        }}>
+          <Card.Body style={{ padding: '20px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+              {/* Average Rating */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '2.4rem', fontWeight: '700', color: '#f59e0b', lineHeight: 1 }}>
+                  {reviewStats.avgRating > 0 ? reviewStats.avgRating.toFixed(1) : '--'}
+                </span>
+                <div>
+                  <div>{renderHalfStars(reviewStats.avgRating, '1.1rem')}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '2px' }}>
+                    Based on {reviewStats.approved} approved {reviewStats.approved === 1 ? 'review' : 'reviews'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div style={{ width: '1px', height: '48px', background: '#e5e7eb' }}></div>
+
+              {/* Status Breakdown */}
+              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#374151' }}>{reviewStats.total}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Total</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#f59e0b' }}>{reviewStats.pending}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Pending</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#10b981' }}>{reviewStats.approved}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Approved</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '600', color: '#ef4444' }}>{reviewStats.rejected}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>Rejected</div>
+                </div>
+              </div>
+            </div>
+          </Card.Body>
+        </Card>
+      )}
 
       {loading ? (
         <div className="text-center py-5">

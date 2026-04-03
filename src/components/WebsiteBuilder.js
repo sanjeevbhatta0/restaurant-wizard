@@ -5,6 +5,7 @@ import { useLocation } from '../contexts/LocationContext';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
+import { getApiBaseUrl, getWebsiteUrl, getWebsitePreviewUrl, getAppBaseUrl } from '../config';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import './WebsiteBuilder.css';
@@ -143,17 +144,11 @@ export default function WebsiteBuilder() {
           const baseSlug = data.slug || restaurantUid;
           const slug = isMultiLocation ? `${baseSlug}-${locationSlug}` : baseSlug;
           
-          setWebsiteUrl(`https://${slug}.restaurant-portal-6b147.web.app`);
-          
-          // Use emulator URL when running locally
-          const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
-          const baseUrl = isEmulator 
-            ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/serveWebsite'
-            : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite';
-          
+          setWebsiteUrl(getWebsiteUrl(slug));
+
           // Include locationId in preview URL for multi-location
           const locationParam = isMultiLocation ? `&locationId=${selectedLocation}` : '';
-          setPreviewUrl(`${baseUrl}?restaurant=${slug}&preview=true${locationParam}`);
+          setPreviewUrl(getWebsitePreviewUrl(slug, locationParam));
           
           // Set defaults from restaurant/location data if not already set
           setConfig(prev => ({
@@ -213,11 +208,10 @@ export default function WebsiteBuilder() {
         setWebsiteUrl(result.data.websiteUrl);
         
         // Use emulator URL when running locally
-        const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
         const slug = result.data.slug;
         const locationParam = isMultiLocation ? `&locationId=${selectedLocation}` : '';
-        if (isEmulator && slug) {
-          setPreviewUrl(`http://localhost:5001/restaurant-portal-6b147/us-central1/serveWebsite?restaurant=${slug}&preview=true${locationParam}`);
+        if (slug) {
+          setPreviewUrl(getWebsitePreviewUrl(slug, locationParam));
         } else {
           setPreviewUrl(result.data.previewUrl);
         }

@@ -283,6 +283,7 @@ const SignupForm = () => {
                   style={{ height: '48px', width: 'auto' }}
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
+                <span className="auth-brand-name">Koda Carte</span>
               </div>
               <h2>{step === 1 ? 'Create Account' : 'Complete Payment'}</h2>
               <p>{step === 1 ? 'Join Koda Carte today' : 'Secure payment powered by Stripe'}</p>

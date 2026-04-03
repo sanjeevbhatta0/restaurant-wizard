@@ -34,6 +34,8 @@
     "start": "react-scripts start",
     "build": "CI=true react-scripts test --watchAll=false --passWithNoTests && react-scripts build",
     "build:only": "react-scripts build",
+    "build:prod": "REACT_APP_FIREBASE_ENV=production CI=true react-scripts test --watchAll=false --passWithNoTests && REACT_APP_FIREBASE_ENV=production react-scripts build",
+    "build:prod:only": "REACT_APP_FIREBASE_ENV=production react-scripts build",
     "test": "react-scripts test",
     "test:unit": "react-scripts test --watchAll=false --testPathPattern=__tests__/unit",
     "test:integration": "react-scripts test --watchAll=false --testPathPattern=__tests__/integration",
@@ -70,6 +72,12 @@
       "last 1 chrome version",
       "last 1 firefox version",
       "last 1 safari version"
+    ]
+  },
+  "jest": {
+    "testMatch": [
+      "<rootDir>/src/**/__tests__/**/*.test.{js,jsx}",
+      "<rootDir>/src/**/*.test.{js,jsx}"
     ]
   },
   "devDependencies": {

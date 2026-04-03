@@ -73,6 +73,26 @@
 
 .auth-logo {
   margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.auth-logo img {
+  height: 48px;
+  width: auto;
+}
+
+.auth-brand-name {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: 1.5px;
+  background: linear-gradient(135deg, #b87333 0%, #40e0d0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .auth-card-header h2 {

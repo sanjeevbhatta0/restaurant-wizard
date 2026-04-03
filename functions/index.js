@@ -11,6 +11,16 @@ const QRCode = require('qrcode');
 admin.initializeApp();
 
 // ============================================
+// ENVIRONMENT-AWARE CONFIGURATION
+// ============================================
+const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.FIREBASE_CONFIG
+  ? (JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId || PROJECT_ID)
+  : PROJECT_ID;
+
+const getApiBaseUrl = () => `https://us-central1-${PROJECT_ID}.cloudfunctions.net`;
+const getAppBaseUrl = () => `https://${PROJECT_ID}.web.app`;
+
+// ============================================
 // PROMOTIONS HELPER FUNCTIONS
 // ============================================
 
@@ -128,9 +138,26 @@ async function validatePromoInternal(db, restaurantId, promoCode, subtotal) {
   };
 }
 
-// Initialize Stripe with your secret key
-// For production, use Firebase Functions config or environment secrets
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_51SkXC0KckjWrEVo26MbeTN0GKkdb14sF3deZsHZt1CrCMFK0PR0su3CKJoa1rMUC4n0fo2nQcXNYJfdpwzOoRKMx00jKjdD6yZ');
+// Initialize Stripe - uses Firebase Secrets in production, falls back to test key for dev
+const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
+const stripePublishableKey = defineSecret('STRIPE_PUBLISHABLE_KEY');
+
+let _stripe = null;
+function getStripe() {
+  if (!_stripe) {
+    const key = stripeSecretKey.value() || process.env.STRIPE_SECRET_KEY || 'sk_test_51SkXC0KckjWrEVo26MbeTN0GKkdb14sF3deZsHZt1CrCMFK0PR0su3CKJoa1rMUC4n0fo2nQcXNYJfdpwzOoRKMx00jKjdD6yZ';
+    _stripe = require('stripe')(key);
+  }
+  return _stripe;
+}
+// Keep backward compat — `stripe` now calls through getter
+const stripe = new Proxy({}, {
+  get: (_, prop) => {
+    const s = getStripe();
+    const val = s[prop];
+    return typeof val === 'function' ? val.bind(s) : val;
+  }
+});
 
 // ============================================
 // AUTHENTICATION HELPER FUNCTIONS
@@ -196,7 +223,7 @@ exports.lookupEmailByUsername = onRequest(async (req, res) => {
  * Create a Stripe PaymentIntent for card payments
  * Called from the frontend when processing a card payment
  */
-exports.createPaymentIntent = onCall(async (request) => {
+exports.createPaymentIntent = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     // Check if user is authenticated
     if (!request.auth) {
@@ -266,7 +293,7 @@ exports.createPaymentIntent = onCall(async (request) => {
  * Confirm payment and update order status
  * Called after successful Stripe payment
  */
-exports.confirmStripePayment = onCall(async (request) => {
+exports.confirmStripePayment = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -328,7 +355,7 @@ exports.confirmStripePayment = onCall(async (request) => {
 /**
  * Process a Stripe refund for a completed order
  */
-exports.processStripeRefund = onCall(async (request) => {
+exports.processStripeRefund = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -454,7 +481,7 @@ exports.processStripeRefund = onCall(async (request) => {
 /**
  * Get Stripe publishable key for frontend
  */
-exports.getStripeConfig = onCall(async (request) => {
+exports.getStripeConfig = onCall({ secrets: [stripeSecretKey, stripePublishableKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -465,7 +492,7 @@ exports.getStripeConfig = onCall(async (request) => {
     const connectedAccountId = restaurantId ? await getStripeConnectAccountId(restaurantId) : null;
 
     return {
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_YOUR_STRIPE_PUBLISHABLE_KEY',
+      publishableKey: stripePublishableKey.value() || process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
       connectedAccountId: connectedAccountId || null
     };
   } catch (error) {
@@ -489,7 +516,7 @@ exports.getStripeConfig = onCall(async (request) => {
  * - restaurantName: Restaurant name for metadata
  * - email: Customer email
  */
-exports.createTierPayment = onCall(async (request) => {
+exports.createTierPayment = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     // Note: Allow unauthenticated calls since this is called during signup before user is created
     const { amount, currency = 'usd', tier, billingCycle, locationCount, restaurantName, email } = request.data;
@@ -892,7 +919,7 @@ function renderTemplate(template, data) {
     '{{taxRate}}': data.taxRate !== undefined ? data.taxRate : 8.5,
     '{{promoId}}': data.promoId || '',
     '{{year}}': new Date().getFullYear().toString(),
-    '{{apiBaseUrl}}': data.apiBaseUrl || 'https://restaurant-portal-6b147.web.app',
+    '{{apiBaseUrl}}': data.apiBaseUrl || getAppBaseUrl(),
     '{{stripePublishableKey}}': data.stripePublishableKey || '',
     '{{stripeConnectedAccountId}}': data.stripeConnectedAccountId || '',
     '{{hoursJson}}': JSON.stringify(data.hours || {
@@ -911,9 +938,9 @@ function renderTemplate(template, data) {
     // Firebase config for customer-facing auth
     '{{firebaseConfigJson}}': JSON.stringify({
       apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyACOWtwR1QMedvnzMxzlh4JZU2buNl-vO0',
-      authDomain: 'restaurant-portal-6b147.firebaseapp.com',
-      projectId: 'restaurant-portal-6b147',
-      storageBucket: 'restaurant-portal-6b147.appspot.com'
+      authDomain: `${PROJECT_ID}.firebaseapp.com`,
+      projectId: PROJECT_ID,
+      storageBucket: `${PROJECT_ID}.appspot.com`
     })
   };
 
@@ -932,7 +959,7 @@ function renderTemplate(template, data) {
 
 
 // Serve restaurant websites dynamically
-exports.serveWebsite = onRequest(async (req, res) => {
+exports.serveWebsite = onRequest({ secrets: [stripeSecretKey, stripePublishableKey] }, async (req, res) => {
   return cors(req, res, async () => {
     try {
       const host = req.hostname;
@@ -982,9 +1009,9 @@ exports.serveWebsite = onRequest(async (req, res) => {
       }
 
       // Handle subdomain or query param
-      if (host.includes('restaurant-portal-6b147.web.app') || host.includes('cloudfunctions.net')) {
+      if (host.includes(`${PROJECT_ID}.web.app`) || host.includes('cloudfunctions.net')) {
         const subdomain = host.split('.')[0];
-        if (subdomain !== 'restaurant-portal-6b147' && subdomain !== 'us-central1-restaurant-portal-6b147') {
+        if (subdomain !== PROJECT_ID && subdomain !== `us-central1-${PROJECT_ID}`) {
           const result = await findRestaurantBySlugOrId(subdomain);
           if (result.restaurantId) {
             restaurant = result.restaurant;
@@ -1196,9 +1223,9 @@ exports.serveWebsite = onRequest(async (req, res) => {
         },
         // Use emulator URL if running in emulator, otherwise production Cloud Functions URL
         apiBaseUrl: process.env.FUNCTIONS_EMULATOR === 'true'
-          ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
-          : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
-        stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
+          ? `http://localhost:5001/${PROJECT_ID}/us-central1`
+          : getApiBaseUrl(),
+        stripePublishableKey: stripePublishableKey.value() || process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15',
         stripeConnectedAccountId: await getStripeConnectAccountId(restaurantId) || '',
         taxRate: finalTaxRate,
         promoId: promoId
@@ -1244,9 +1271,9 @@ exports.serveWebsite = onRequest(async (req, res) => {
         const initialTab = req.query.tab || 'menu';
         const firebaseConfig = JSON.stringify({
           apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyACOWtwR1QMedvnzMxzlh4JZU2buNl-vO0',
-          authDomain: 'restaurant-portal-6b147.firebaseapp.com',
-          projectId: 'restaurant-portal-6b147',
-          storageBucket: 'restaurant-portal-6b147.appspot.com'
+          authDomain: `${PROJECT_ID}.firebaseapp.com`,
+          projectId: PROJECT_ID,
+          storageBucket: `${PROJECT_ID}.appspot.com`
         });
 
         const embedHtml = `<!DOCTYPE html>
@@ -1640,8 +1667,8 @@ exports.saveWebsiteConfig = onCall(async (request) => {
       success: true,
       slug: slug,
       locationId: effectiveLocationId,
-      websiteUrl: `https://${slug}.restaurant-portal-6b147.web.app`,
-      previewUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}&preview=true${locationParam}`
+      websiteUrl: `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}`,
+      previewUrl: `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}&preview=true${locationParam}`
     };
   } catch (error) {
     console.error('Error saving website config:', error);
@@ -1704,7 +1731,7 @@ exports.publishWebsite = onCall(async (request) => {
 
     return {
       success: true,
-      websiteUrl: `https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}`,
+      websiteUrl: `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}`,
       message: 'Website published successfully!'
     };
   } catch (error) {
@@ -2077,8 +2104,8 @@ exports.updateWebsite = onCall(async (request) => {
     await file.makePublic();
 
     const websiteUrl = slug
-      ? `https://${slug}.restaurant-portal-6b147.web.app`
-      : `https://${restaurantId}.restaurant-portal-6b147.web.app`;
+      ? `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}`
+      : `${getApiBaseUrl()}/serveWebsite?restaurant=${restaurantId}`;
 
     return {
       success: true,
@@ -3976,7 +4003,7 @@ exports.initiateGoogleAuth = onCall({ secrets: [googleBusinessClientId, googleBu
 
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(clientId)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri || 'https://restaurant-portal-6b147.web.app/auth/google-business/callback')}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri || `${getAppBaseUrl()}/auth/google-business/callback`)}` +
       `&response_type=code` +
       `&scope=${encodeURIComponent(scopes)}` +
       `&access_type=offline` +
@@ -4019,7 +4046,7 @@ exports.handleGoogleAuthCallback = onRequest({ secrets: [googleBusinessClientId,
         code,
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: req.query.redirect_uri || 'https://restaurant-portal-6b147.web.app/auth/google-business/callback',
+        redirect_uri: req.query.redirect_uri || `${getAppBaseUrl()}/auth/google-business/callback`,
         grant_type: 'authorization_code'
       });
 
@@ -4065,10 +4092,10 @@ exports.handleGoogleAuthCallback = onRequest({ secrets: [googleBusinessClientId,
       }, { merge: true });
 
       // Redirect back to the app
-      res.redirect('https://restaurant-portal-6b147.web.app/seo-social?google_connected=true');
+      res.redirect(`${getAppBaseUrl()}/seo-social?google_connected=true`);
     } catch (error) {
       console.error('Error in Google auth callback:', error.response?.data || error.message);
-      res.redirect('https://restaurant-portal-6b147.web.app/seo-social?google_error=true');
+      res.redirect(`${getAppBaseUrl()}/seo-social?google_error=true`);
     }
   });
 });
@@ -4438,7 +4465,7 @@ exports.getBusinessListingsOverview = onCall({ secrets: [yelpApiKeySecret, googl
  * Create a connection token for the Stripe Terminal SDK.
  * Called on app launch and whenever the SDK needs to reconnect.
  */
-exports.createTerminalConnectionToken = onCall(async (request) => {
+exports.createTerminalConnectionToken = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Must be signed in');
@@ -4463,7 +4490,7 @@ exports.createTerminalConnectionToken = onCall(async (request) => {
  * Create a Stripe Terminal Location for the restaurant.
  * A location is required to connect a Tap to Pay reader.
  */
-exports.createTerminalLocation = onCall(async (request) => {
+exports.createTerminalLocation = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Must be signed in');
@@ -4511,7 +4538,7 @@ exports.createTerminalLocation = onCall(async (request) => {
 /**
  * Retrieve the restaurant's Terminal Location from Stripe.
  */
-exports.getTerminalLocation = onCall(async (request) => {
+exports.getTerminalLocation = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Must be signed in');
@@ -5164,8 +5191,8 @@ exports.initiateTwitterAuth = onCall({ secrets: [twitterClientId, twitterClientS
   // Determine callback URL based on environment
   const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
   const callbackUrl = isEmulator
-    ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/handleTwitterCallback'
-    : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/handleTwitterCallback';
+    ? `http://localhost:5001/${PROJECT_ID}/us-central1/handleTwitterCallback`
+    : `${getApiBaseUrl()}/handleTwitterCallback`;
 
   const authUrl = `${TWITTER_AUTH_URL}?` + new URLSearchParams({
     response_type: 'code',
@@ -5223,8 +5250,8 @@ exports.handleTwitterCallback = onRequest({ secrets: [twitterClientId, twitterCl
     // Determine callback URL (must match what was used in authorize)
     const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
     const callbackUrl = isEmulator
-      ? 'http://localhost:5001/restaurant-portal-6b147/us-central1/handleTwitterCallback'
-      : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/handleTwitterCallback';
+      ? `http://localhost:5001/${PROJECT_ID}/us-central1/handleTwitterCallback`
+      : `${getApiBaseUrl()}/handleTwitterCallback`;
 
     const clientId = twitterClientId.value();
     const clientSecret = twitterClientSecret.value();
@@ -5274,13 +5301,13 @@ exports.handleTwitterCallback = onRequest({ secrets: [twitterClientId, twitterCl
     await db.doc(`twitterAuth/${uid}`).delete();
 
     // Redirect back to the app with success
-    const appUrl = isEmulator ? 'http://localhost:3000' : 'https://restaurant-portal-6b147.web.app';
+    const appUrl = isEmulator ? 'http://localhost:3000' : getAppBaseUrl();
     return res.redirect(`${appUrl}/seo-social?twitter_connected=true`);
   } catch (error) {
     console.error('Twitter OAuth callback error:', error.response?.data || error.message);
     const appUrl = process.env.FUNCTIONS_EMULATOR === 'true'
       ? 'http://localhost:3000'
-      : 'https://restaurant-portal-6b147.web.app';
+      : getAppBaseUrl();
     return res.redirect(`${appUrl}/seo-social?twitter_error=${encodeURIComponent(error.message)}`);
   }
 });
@@ -5290,7 +5317,7 @@ exports.handleTwitterCallback = onRequest({ secrets: [twitterClientId, twitterCl
  */
 function getAppUrl() {
   const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
-  return isEmulator ? 'http://localhost:3000' : 'https://restaurant-portal-6b147.web.app';
+  return isEmulator ? 'http://localhost:3000' : getAppBaseUrl();
 }
 
 /**
@@ -5722,7 +5749,7 @@ function resolveRestaurantId(request) {
  * Initiate Stripe Connect onboarding for a restaurant owner.
  * Creates a Standard connected account and returns an Account Link URL.
  */
-exports.initiateStripeConnect = onCall(async (request) => {
+exports.initiateStripeConnect = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -5763,7 +5790,7 @@ exports.initiateStripeConnect = onCall(async (request) => {
     }
 
     // Determine return/refresh URLs
-    const baseUrl = request.data?.returnUrl || 'https://restaurant-portal-6b147.web.app';
+    const baseUrl = request.data?.returnUrl || getAppBaseUrl();
     const returnUrl = `${baseUrl}/account?stripe_connect=success&account_id=${stripeAccountId}`;
     const refreshUrl = `${baseUrl}/account?stripe_connect=refresh`;
 
@@ -5798,7 +5825,7 @@ exports.initiateStripeConnect = onCall(async (request) => {
 /**
  * Refresh a Stripe Connect onboarding link (if the previous one expired).
  */
-exports.refreshStripeConnectLink = onCall(async (request) => {
+exports.refreshStripeConnectLink = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -5813,7 +5840,7 @@ exports.refreshStripeConnectLink = onCall(async (request) => {
     }
 
     const stripeAccountId = connectDoc.data().stripeAccountId;
-    const baseUrl = request.data?.returnUrl || 'https://restaurant-portal-6b147.web.app';
+    const baseUrl = request.data?.returnUrl || getAppBaseUrl();
     const returnUrl = `${baseUrl}/account?stripe_connect=success&account_id=${stripeAccountId}`;
     const refreshUrl = `${baseUrl}/account?stripe_connect=refresh`;
 
@@ -5839,7 +5866,7 @@ exports.refreshStripeConnectLink = onCall(async (request) => {
  * Check if a Stripe Connect account has completed onboarding.
  * Called after the user returns from Stripe onboarding.
  */
-exports.checkStripeConnectStatus = onCall(async (request) => {
+exports.checkStripeConnectStatus = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -5901,7 +5928,7 @@ exports.checkStripeConnectStatus = onCall(async (request) => {
 /**
  * Get current Stripe Connect status for the restaurant.
  */
-exports.getStripeConnectStatus = onCall(async (request) => {
+exports.getStripeConnectStatus = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -5935,7 +5962,7 @@ exports.getStripeConnectStatus = onCall(async (request) => {
 /**
  * Disconnect a restaurant's Stripe Connect account.
  */
-exports.disconnectStripeConnect = onCall(async (request) => {
+exports.disconnectStripeConnect = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6085,7 +6112,7 @@ exports.getApprovedReviews = onRequest((req, res) => {
  * Required by the Terminal JS SDK to authenticate with Stripe.
  * If the restaurant has a connected Stripe account, the token is scoped to that account.
  */
-exports.createTerminalConnectionToken = onCall(async (request) => {
+exports.createTerminalConnectionToken = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6118,7 +6145,7 @@ exports.createTerminalConnectionToken = onCall(async (request) => {
  * Create a Stripe Terminal Location.
  * Locations are required for internet-connected readers (e.g., WisePOS E, S700).
  */
-exports.createTerminalLocation = onCall(async (request) => {
+exports.createTerminalLocation = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6173,7 +6200,7 @@ exports.createTerminalLocation = onCall(async (request) => {
  * Register a Stripe Terminal reader using a registration code.
  * The registration code is displayed on the reader screen during setup.
  */
-exports.registerTerminalReader = onCall(async (request) => {
+exports.registerTerminalReader = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6224,7 +6251,7 @@ exports.registerTerminalReader = onCall(async (request) => {
 /**
  * List all Stripe Terminal readers for a restaurant's location.
  */
-exports.listTerminalReaders = onCall(async (request) => {
+exports.listTerminalReaders = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6271,7 +6298,7 @@ exports.listTerminalReaders = onCall(async (request) => {
 /**
  * Delete a Stripe Terminal reader.
  */
-exports.deleteTerminalReader = onCall(async (request) => {
+exports.deleteTerminalReader = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6297,7 +6324,7 @@ exports.deleteTerminalReader = onCall(async (request) => {
 /**
  * Get the Stripe Terminal configuration for a restaurant.
  */
-exports.getTerminalConfig = onCall(async (request) => {
+exports.getTerminalConfig = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6328,7 +6355,7 @@ exports.getTerminalConfig = onCall(async (request) => {
  * Create a PaymentIntent for Stripe Terminal (server-driven).
  * Terminal payments use `payment_method_types: ['card_present']`.
  */
-exports.createTerminalPaymentIntent = onCall(async (request) => {
+exports.createTerminalPaymentIntent = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6381,7 +6408,7 @@ exports.createTerminalPaymentIntent = onCall(async (request) => {
  * when operating in server-driven mode.
  * The reader will prompt the customer to present their card.
  */
-exports.processTerminalPayment = onCall(async (request) => {
+exports.processTerminalPayment = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6444,7 +6471,7 @@ exports.processTerminalPayment = onCall(async (request) => {
 /**
  * Server-driven: cancel the current reader action.
  */
-exports.cancelTerminalAction = onCall(async (request) => {
+exports.cancelTerminalAction = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6471,7 +6498,7 @@ exports.cancelTerminalAction = onCall(async (request) => {
  * Server-driven: poll reader status to check if payment was collected.
  * Returns the reader's current action state and, if done, the PaymentIntent status.
  */
-exports.getTerminalReaderStatus = onCall(async (request) => {
+exports.getTerminalReaderStatus = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6512,7 +6539,7 @@ exports.getTerminalReaderStatus = onCall(async (request) => {
  * Create a simulated reader at the restaurant's terminal location.
  * Useful for testing the terminal flow without physical hardware.
  */
-exports.createSimulatedReader = onCall(async (request) => {
+exports.createSimulatedReader = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6552,7 +6579,7 @@ exports.createSimulatedReader = onCall(async (request) => {
 /**
  * Simulate a card present event on a simulated reader (test mode only).
  */
-exports.simulateTerminalCardPresent = onCall(async (request) => {
+exports.simulateTerminalCardPresent = onCall({ secrets: [stripeSecretKey] }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -6572,5 +6599,34 @@ exports.simulateTerminalCardPresent = onCall(async (request) => {
   } catch (error) {
     console.error('Error simulating card present:', error);
     throw new HttpsError('internal', error.message || 'Failed to simulate card present');
+  }
+});
+
+// ============================================
+// CONTACT FORM SUBMISSION
+// ============================================
+exports.submitContactForm = onCall(async (request) => {
+  try {
+    const { name, email, restaurant, message } = request.data;
+
+    if (!name || !email || !message) {
+      throw new HttpsError('invalid-argument', 'Name, email, and message are required');
+    }
+
+    // Save to Firestore
+    const contactRef = admin.firestore().collection('contactSubmissions');
+    await contactRef.add({
+      name,
+      email,
+      restaurant: restaurant || '',
+      message,
+      status: 'new',
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error submitting contact form:', error);
+    throw new HttpsError('internal', error.message || 'Failed to submit contact form');
   }
 });

@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import './PageHeader.css';
+import { getWebsiteUrl, getWidgetScriptUrl } from '../config';
 import './WebsiteIntegration.css';
 
 const WebsiteIntegration = () => {
@@ -47,7 +48,7 @@ const WebsiteIntegration = () => {
           }
           
           setRestaurantSlug(slug);
-          setWebsiteUrl(`https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite?restaurant=${slug}`);
+          setWebsiteUrl(getWebsiteUrl(slug));
         } else {
           setWebsitePublished(false);
           setWebsiteUrl('');
@@ -75,7 +76,7 @@ const WebsiteIntegration = () => {
   };
 
   // Widget embed base URL
-  const widgetScriptUrl = 'https://restaurant-portal-6b147.web.app/widget.js';
+  const widgetScriptUrl = getWidgetScriptUrl();
 
   // Widget embed snippets
   const getWidgetInlineCode = () => `<!-- Step 1: Add this where you want the menu/ordering to appear -->

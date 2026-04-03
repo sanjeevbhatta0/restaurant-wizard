@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "restaurant-portal-6b147",
     "public": "build",
     "rewrites": [
       {

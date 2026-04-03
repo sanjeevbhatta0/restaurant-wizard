@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { getApiBaseUrl } from '../config';
 import './PromotionsRewards.css';
 
 /**
@@ -835,7 +836,7 @@ const PromotionsRewards = () => {
 
 const StoreLaunchFlyer = ({ promo, restaurantSlug, onClose }) => {
     const flyerRef = useRef(null);
-    const websiteBaseUrl = 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net/serveWebsite';
+    const websiteBaseUrl = `${getApiBaseUrl()}/serveWebsite`;
     const defaultUrl = `${websiteBaseUrl}?restaurant=${restaurantSlug}&promo=${promo.id}`;
     const [customUrl, setCustomUrl] = useState('');
     const [urlMode, setUrlMode] = useState('default'); // 'default' or 'custom'

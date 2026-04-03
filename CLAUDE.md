@@ -1,6 +1,6 @@
 # CLAUDE.md — Koda Carte (Restaurant Wizard) Project Guide
 
-> **Last Updated:** March 26, 2026
+> **Last Updated:** April 2, 2026
 
 ---
 
@@ -10,23 +10,84 @@
 
 **Brand Meaning:** "Koda" means **friend** in Lakota. The platform emphasizes community, collaboration, and modern technology.
 
-### Production URLs
+### Environments
 
-| Service | URL |
-|---------|-----|
-| **Live App** | https://restaurant-portal-6b147.web.app |
+The project uses **two separate Firebase projects** — one for development/testing and one for production.
+
+#### DEV Environment
+
+| Service | URL / Value |
+|---------|-------------|
+| **Dev App** | https://restaurant-portal-6b147.web.app |
 | **Firebase Console** | https://console.firebase.google.com/project/restaurant-portal-6b147/overview |
 | **Firebase Project ID** | `restaurant-portal-6b147` |
+| **Firebase Account** | `sanjivbhatta100@gmail.com` |
+| **Firebase Alias** | `dev` (also `default`) |
+| **Purpose** | Development, testing, QA — every code push is tested here first |
 
-### Admin Credentials
+#### PRODUCTION Environment
+
+| Service | URL / Value |
+|---------|-------------|
+| **Live App** | https://kodacarte-861d8.web.app |
+| **Firebase Console** | https://console.firebase.google.com/project/kodacarte-861d8/overview |
+| **Firebase Project ID** | `kodacarte-861d8` |
+| **GCP Project ID** | `kodacarte` |
+| **Firebase Account** | `sanjeev@kodacarte.com` |
+| **Firebase Alias** | `prod` |
+| **Billing** | Google Cloud credits ($300, expires July 2, 2026) |
+| **Stripe** | Test keys (to be switched to live before launch) |
+
+#### Environment Switching
+
+- **Code-level**: `src/firebase.js` reads `REACT_APP_FIREBASE_ENV` to select dev vs prod Firebase config
+- **Build scripts**: `npm run build` = dev config, `npm run build:prod` = production config
+- **Env files**: `.env` = development, `.env.production` = production
+- **Firebase CLI**: Use `.firebaserc` aliases (`firebase use dev` / `firebase use prod`)
+- **Account switching**: `firebase login:use <email>` before deploying to the correct project
+
+#### Deploy Commands
+
+```bash
+# Deploy to DEV
+firebase login:use sanjivbhatta100@gmail.com
+firebase use dev
+npm run build
+firebase deploy --only hosting
+
+# Deploy to PRODUCTION
+firebase login:use sanjeev@kodacarte.com
+firebase use prod
+npm run build:prod
+firebase deploy --only hosting --project kodacarte-861d8
+
+# Deploy functions to PRODUCTION
+firebase login:use sanjeev@kodacarte.com
+firebase deploy --only functions --project kodacarte-861d8
+
+# Deploy everything to PRODUCTION
+firebase login:use sanjeev@kodacarte.com
+firebase use prod
+npm run build:prod
+firebase deploy
+```
+
+### Admin Credentials (DEV)
 
 | Field | Value |
 |-------|-------|
 | **Email** | `sanjeev@admin.com` |
 | **Password** | `sanjeev` |
 | **UID** | `Jv3rd8hTJCRrwlG4w5OHFVGIzyK2` |
-| **Admin URL (prod)** | https://restaurant-portal-6b147.web.app/admin/login |
+| **Admin URL (dev)** | https://restaurant-portal-6b147.web.app/admin/login |
 | **Admin URL (local)** | http://localhost:3000/admin/login |
+
+### Admin Credentials (PRODUCTION)
+
+| Field | Value |
+|-------|-------|
+| **Admin URL** | https://kodacarte-861d8.web.app/admin/login |
+| **Note** | Admin must sign up first, then UID is added to `admins` collection in prod Firestore |
 
 ---
 
@@ -41,6 +102,15 @@
 | **Social** | Facebook SDK, Instagram Graph API |
 | **Build Tool** | Create React App (react-scripts 5.0.1) |
 | **Cloud Functions** | Node.js 20, Firebase Functions v2 |
+| **AI Agent Skills** | Firebase Agent skill available for Firebase-specific tasks |
+
+---
+
+## 🤖 AI Agent Skills
+
+The project has access to the following Claude Code agent skills:
+
+- **Firebase Agent** — Use for Firebase-specific tasks (Firestore queries, Auth management, Functions deployment, security rules, emulator setup). When working on Firebase infrastructure, Cloud Functions, or Firestore data operations, leverage this skill for best practices and accurate API usage.
 
 ---
 

@@ -4,7 +4,6 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { adminAuth, adminDb, adminFunctions } from '../../adminFirebase';
-import { checkIsAdmin } from '../../services/adminConfigService';
 import './AdminDashboard.css';
 
 const AdminLogin = () => {
@@ -26,7 +25,10 @@ const AdminLogin = () => {
 
         try {
             const userCredential = await signInWithEmailAndPassword(adminAuth, email, password);
-            const isAdmin = await checkIsAdmin(userCredential.user.uid);
+            // Check admin status using adminDb (same Firebase app instance as adminAuth)
+            const adminDocRef = doc(adminDb, 'admins', userCredential.user.uid);
+            const adminDocSnap = await getDoc(adminDocRef);
+            const isAdmin = adminDocSnap.exists();
 
             if (!isAdmin) {
                 setError('You do not have admin access.');

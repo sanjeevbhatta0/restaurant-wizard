@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { adminAuth } from '../adminFirebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { adminAuth, adminDb } from '../adminFirebase';
 import {
     getDraftConfig,
     getPublishedConfig,
@@ -9,7 +10,6 @@ import {
     schedulePublish as schedulePublishService,
     getScheduledChanges,
     cancelScheduledChange,
-    checkIsAdmin,
     DEFAULT_CONFIG
 } from '../services/adminConfigService';
 
@@ -44,7 +44,8 @@ export function AdminProvider({ children }) {
     useEffect(() => {
         const checkAdmin = async () => {
             if (currentUser) {
-                const adminStatus = await checkIsAdmin(currentUser.uid);
+                const adminDocSnap = await getDoc(doc(adminDb, 'admins', currentUser.uid));
+                const adminStatus = adminDocSnap.exists();
                 setIsAdmin(adminStatus);
             } else {
                 setIsAdmin(false);

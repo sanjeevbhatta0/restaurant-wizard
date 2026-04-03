@@ -102,7 +102,9 @@
   height: 100%;
 }
 
-.logo svg {
+.logo-icon {
+  height: 36px;
+  width: auto;
   flex-shrink: 0;
   display: block;
   align-self: center;
@@ -110,7 +112,7 @@
 
 .logo-text {
   font-style: italic;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 1.5px;
   display: flex;
   align-items: center;
@@ -120,20 +122,18 @@
   height: 100%;
   padding-top: 3px;
   transform: translateY(1px);
+  background: linear-gradient(135deg, #b87333 0%, #40e0d0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .logo-word-koda {
-  color: #8b9aff;
-  text-shadow: 0 2px 6px rgba(139, 154, 255, 0.5), 0 0 10px rgba(139, 154, 255, 0.3);
-  font-weight: 600;
   display: inline-block;
   margin-right: 4px;
 }
 
 .logo-word-carte {
-  color: #a78bfa;
-  text-shadow: 0 2px 6px rgba(167, 139, 250, 0.5), 0 0 10px rgba(167, 139, 250, 0.3);
-  font-weight: 600;
   display: inline-block;
 }
 

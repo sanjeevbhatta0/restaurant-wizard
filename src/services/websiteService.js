@@ -1,6 +1,7 @@
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
+import { getWebsiteUrl } from '../config';
 
 /**
  * Save website configuration to Firestore and get preview URL
@@ -82,7 +83,7 @@ export const getWebsiteUrl = async (restaurantId) => {
         if (restaurantDoc.exists()) {
             const data = restaurantDoc.data();
             const slug = data.slug || restaurantId;
-            return `https://${slug}.restaurant-portal-6b147.web.app`;
+            return getWebsiteUrl(slug);
         }
         return null;
     } catch (error) {
