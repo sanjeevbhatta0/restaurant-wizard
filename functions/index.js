@@ -324,9 +324,16 @@ exports.confirmStripePayment = onCall({ secrets: [stripeSecretKey] }, async (req
 
     for (const orderId of orderIds) {
       const orderRef = db.doc(`restaurants/${restaurantId}/orders/${orderId}`);
-      batch.update(orderRef, {
-        status: 'completed',
+      const orderSnap = await orderRef.get();
+      const orderData = orderSnap.exists ? orderSnap.data() : {};
+
+      // If this was a pending KodaPay order, mark as paid and send to kitchen
+      // Otherwise, mark as completed (normal dine-in payment flow)
+      const isPendingMobilePayment = orderData.pendingMobilePayment === true;
+
+      const updateData = {
         paymentDate: FieldValue.serverTimestamp(),
+        paidAtPOS: true,
         paymentDetails: {
           ...paymentDetails,
           stripePaymentIntentId: paymentIntentId,
@@ -334,7 +341,16 @@ exports.confirmStripePayment = onCall({ secrets: [stripeSecretKey] }, async (req
           paidAt: new Date().toISOString()
         },
         updatedAt: FieldValue.serverTimestamp()
-      });
+      };
+
+      if (isPendingMobilePayment) {
+        updateData.status = 'sent_to_kitchen';
+        updateData.pendingMobilePayment = false;
+      } else {
+        updateData.status = 'completed';
+      }
+
+      batch.update(orderRef, updateData);
     }
 
     await batch.commit();

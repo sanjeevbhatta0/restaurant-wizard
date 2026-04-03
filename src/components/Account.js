@@ -6,7 +6,7 @@ import lanSyncService from '../services/lanSyncService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useSubscription, TIER_FEATURES, PRICING, BILLING_MULTIPLIERS, ORDER_LIMITS } from '../contexts/SubscriptionContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge, ProgressBar } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
 import PasswordInput from './PasswordInput';
@@ -66,8 +66,10 @@ const Account = () => {
   // Service mode
   const [serviceMode, setServiceMode] = useState('full_service');
 
-  // Sidebar navigation
-  const [activeSection, setActiveSection] = useState('account');
+  // Sidebar navigation — deep-link via ?section=xxx query param
+  const [searchParams] = useSearchParams();
+  const initialSection = searchParams.get('section') || 'account';
+  const [activeSection, setActiveSection] = useState(initialSection);
 
   // Plan change modal state
   const [showPlanModal, setShowPlanModal] = useState(false);

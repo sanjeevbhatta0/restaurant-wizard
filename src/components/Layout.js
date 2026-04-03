@@ -7,6 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocation as useLocationContext } from '../contexts/LocationContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import NetworkStatus from './NetworkStatus';
+import PageTourWrapper from './onboarding/PageTourWrapper';
+import OnboardingChecklist from './onboarding/OnboardingChecklist';
 import './Layout.css';
 
 // Feature mapping: maps sidebar routes to feature IDs
@@ -273,8 +275,10 @@ const Layout = ({ children }) => {
           </div>
         </nav>
         <main className="content">
+          <PageTourWrapper />
           {children || <Outlet />}
         </main>
+        <OnboardingChecklist />
       </div>
     </div>
   );

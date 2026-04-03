@@ -4,7 +4,8 @@ import {
   collection,
   addDoc,
   doc,
-  getDoc
+  getDoc,
+  onSnapshot
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Elements } from '@stripe/react-stripe-js';
@@ -60,6 +61,11 @@ const POS = () => {
   const [terminalReaderType, setTerminalReaderType] = useState(''); // 'bluetooth', 'internet', 'simulated'
   const [terminalStatus, setTerminalStatus] = useState(''); // creating_intent, waiting_for_card, processing, succeeded
   const [activePaymentIntentId, setActivePaymentIntentId] = useState(null);
+
+  // KodaPay (mobile Tap to Pay) state
+  const [kodaPayPending, setKodaPayPending] = useState(false);
+  const [kodaPayOrderRef, setKodaPayOrderRef] = useState(null);
+  const kodaPayUnsubscribeRef = useRef(null);
 
   // Fullscreen mode
   const { isFullscreen, isFullscreenAvailable, toggleFullscreen } = useFullscreen();
@@ -415,6 +421,151 @@ const POS = () => {
     setError('Card payment failed: ' + errorMessage);
   };
 
+  // Handle KodaPay (mobile Tap to Pay) payment
+  const handleKodaPayPayment = async () => {
+    if (orderItems.length === 0) return;
+
+    setSendingOrder(true);
+    setError('');
+
+    try {
+      const orderNumber = generateOrderNumber();
+      const orderLocationId = isMultiLocation && selectedLocation
+        ? selectedLocation
+        : restaurantUid;
+
+      const tableNumber = selectedTables.length > 0
+        ? (selectedTables.length === 1 ? selectedTables[0] : selectedTables)
+        : null;
+
+      // Create order with pending_payment status — KodaPay will pick it up
+      const orderData = {
+        orderNumber,
+        locationId: orderLocationId,
+        items: orderItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          categoryName: item.categoryName,
+          price: calculateItemPrice(item),
+          originalPrice: item.price,
+          quantity: item.quantity,
+          subtotal: calculateItemPrice(item) * item.quantity
+        })),
+        status: 'pending_payment',
+        orderType: isPayFirst() ? 'counter' : 'dine_in',
+        subtotal: calculateSubtotal(),
+        total: calculateTotalWithTax(),
+        taxRate: taxRate,
+        taxAmount: calculateTaxAmount(),
+        pendingMobilePayment: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      if (tableNumber) {
+        orderData.tableNumber = tableNumber;
+      }
+
+      const docRef = await addDoc(
+        collection(db, `restaurants/${restaurantUid}/orders`),
+        orderData
+      );
+
+      // Show waiting screen
+      setKodaPayPending(true);
+      setKodaPayOrderRef({ id: docRef.id, orderNumber, tableNumber: tableNumber });
+      setShowPaymentStep(false);
+      setPaymentMethod(null);
+      setSendingOrder(false);
+
+      // Listen for payment completion from KodaPay
+      const unsubscribe = onSnapshot(
+        doc(db, `restaurants/${restaurantUid}/orders`, docRef.id),
+        (docSnap) => {
+          if (!docSnap.exists()) return;
+          const data = docSnap.data();
+
+          if (data.paidAtPOS === true && data.status === 'sent_to_kitchen') {
+            // Payment completed by KodaPay!
+            unsubscribe();
+            kodaPayUnsubscribeRef.current = null;
+            setKodaPayPending(false);
+            setKodaPayOrderRef(null);
+
+            const tableDisplay = selectedTables.length > 0
+              ? (selectedTables.length === 1
+                ? selectedTables[0]
+                : selectedTables.sort((a, b) => {
+                  const numA = parseInt(a);
+                  const numB = parseInt(b);
+                  if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                  return a.localeCompare(b);
+                }).join(' and '))
+              : null;
+
+            setOrderSuccess({
+              orderNumber,
+              tableNumber: tableDisplay,
+              paidAtPOS: true,
+              paidViaKodaPay: true,
+              total: data.paymentDetails?.total || data.total
+            });
+
+            setOrderItems([]);
+            setSelectedTables([]);
+
+            // Log activity
+            activityService.logOrderActivity(restaurantUid, 'received', {
+              orderNumber,
+              tableNumber: tableDisplay,
+              status: 'sent_to_kitchen',
+              locationId: orderLocationId,
+              paymentMethod: 'kodapay',
+              paidAtPOS: true
+            }).catch(err => console.error('Activity log failed:', err));
+          }
+        }
+      );
+
+      kodaPayUnsubscribeRef.current = unsubscribe;
+    } catch (err) {
+      setError('Failed to create order for KodaPay: ' + err.message);
+      setSendingOrder(false);
+    }
+  };
+
+  // Cancel KodaPay payment
+  const cancelKodaPayPayment = async () => {
+    if (kodaPayUnsubscribeRef.current) {
+      kodaPayUnsubscribeRef.current();
+      kodaPayUnsubscribeRef.current = null;
+    }
+
+    // Delete the pending order from Firestore
+    if (kodaPayOrderRef?.id) {
+      try {
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, `restaurants/${restaurantUid}/orders`, kodaPayOrderRef.id));
+      } catch (err) {
+        console.error('Failed to delete pending order:', err);
+      }
+    }
+
+    setKodaPayPending(false);
+    setKodaPayOrderRef(null);
+    setShowPaymentStep(true);
+    setPaymentMethod(null);
+  };
+
+  // Cleanup KodaPay listener on unmount
+  useEffect(() => {
+    return () => {
+      if (kodaPayUnsubscribeRef.current) {
+        kodaPayUnsubscribeRef.current();
+      }
+    };
+  }, []);
+
   // Initiate payment step (pay-first modes)
   const initiatePayment = () => {
     if (orderItems.length === 0) {
@@ -743,6 +894,14 @@ const POS = () => {
                         <span>Terminal</span>
                       </button>
                     )}
+                    <button
+                      className="pos-payment-method-btn pos-kodapay-btn"
+                      onClick={() => setPaymentMethod('kodapay')}
+                      style={{ background: 'linear-gradient(135deg, #1B5E20, #2E7D32)', color: 'white' }}
+                    >
+                      <i className="bi bi-phone-vibrate"></i>
+                      <span>KodaPay</span>
+                    </button>
                   </div>
                 )}
 
@@ -862,7 +1021,32 @@ const POS = () => {
               </div>
             )}
 
-            {orderItems.length > 0 && !showPaymentStep && (
+            {/* KodaPay payment method */}
+            {isPayFirst() && showPaymentStep && paymentMethod === 'kodapay' && (
+              <div className="pos-kodapay-payment">
+                <div className="pos-payment-amount" style={{ marginBottom: '16px' }}>
+                  <span>Amount Due:</span>
+                  <strong>${calculateTotalWithTax().toFixed(2)}</strong>
+                </div>
+                <button
+                  className="pos-send-button"
+                  onClick={handleKodaPayPayment}
+                  disabled={sendingOrder}
+                  style={{ background: 'linear-gradient(135deg, #1B5E20, #2E7D32)', border: 'none' }}
+                >
+                  {sendingOrder ? (
+                    <><Spinner animation="border" size="sm" /> Sending to KodaPay...</>
+                  ) : (
+                    <><i className="bi bi-phone-vibrate"></i> Send to KodaPay</>
+                  )}
+                </button>
+                <p style={{ textAlign: 'center', color: '#666', fontSize: '0.85rem', marginTop: '10px' }}>
+                  The order will appear on your KodaPay device for Tap to Pay
+                </p>
+              </div>
+            )}
+
+            {orderItems.length > 0 && !showPaymentStep && !kodaPayPending && (
               <button className="pos-clear-button" onClick={clearOrder}>
                 Clear Order
               </button>
@@ -870,16 +1054,51 @@ const POS = () => {
           </div>
         </div>
 
+        {/* KodaPay Waiting Overlay */}
+        {kodaPayPending && kodaPayOrderRef && (
+          <div className="pos-order-success" style={{ background: 'rgba(27, 94, 32, 0.95)' }}>
+            <div className="pos-order-success-content">
+              <div style={{ fontSize: '3.5rem', marginBottom: '16px' }}>
+                <i className="bi bi-phone-vibrate" style={{ color: '#fff' }}></i>
+              </div>
+              <h3 style={{ color: '#fff' }}>Waiting for KodaPay...</h3>
+              <div className="order-number pos-order-number-large" style={{ color: '#A5D6A7' }}>
+                {kodaPayOrderRef.orderNumber}
+              </div>
+              <div style={{ margin: '20px 0' }}>
+                <Spinner animation="border" variant="light" />
+              </div>
+              <p style={{ color: '#C8E6C9', fontSize: '1rem', maxWidth: '300px', margin: '0 auto 20px' }}>
+                Open KodaPay on your iPhone and tap the customer's card to complete payment
+              </p>
+              <button
+                onClick={cancelKodaPayPayment}
+                style={{
+                  background: 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  color: '#fff',
+                  padding: '10px 24px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Order Success Modal */}
         {orderSuccess && (
           <div className="pos-order-success">
             <div className="pos-order-success-content">
               <div className="pos-order-success-icon">
-                <i className={`bi ${orderSuccess.paidAtPOS ? 'bi-cash-coin' : 'bi-check-lg'}`}></i>
+                <i className={`bi ${orderSuccess.paidViaKodaPay ? 'bi-phone-vibrate' : orderSuccess.paidAtPOS ? 'bi-cash-coin' : 'bi-check-lg'}`}></i>
               </div>
               {orderSuccess.paidAtPOS ? (
                 <>
-                  <h3>Payment Received!</h3>
+                  <h3>{orderSuccess.paidViaKodaPay ? 'KodaPay Payment Received!' : 'Payment Received!'}</h3>
                   <div className="order-number pos-order-number-large">{orderSuccess.orderNumber}</div>
                   <div className="pos-success-detail">
                     Order sent to kitchen — ${orderSuccess.total?.toFixed(2)}

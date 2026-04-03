@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { getAnalytics } from '../../services/adminConfigService';
+import { getAnalytics, getRestaurantStats } from '../../services/adminConfigService';
 
 const MetricsDashboard = () => {
     const [analytics, setAnalytics] = useState([]);
+    const [restaurantStats, setRestaurantStats] = useState({ totalCount: 0, tierCounts: {} });
     const [loading, setLoading] = useState(true);
     const [timeRange, setTimeRange] = useState(30);
 
     useEffect(() => {
-        loadAnalytics();
+        loadData();
     }, [timeRange]);
 
-    const loadAnalytics = async () => {
+    const loadData = async () => {
         setLoading(true);
-        const data = await getAnalytics(timeRange);
-        setAnalytics(data);
+        const [analyticsData, stats] = await Promise.all([
+            getAnalytics(timeRange),
+            getRestaurantStats()
+        ]);
+        setAnalytics(analyticsData);
+        setRestaurantStats(stats);
         setLoading(false);
     };
 
@@ -44,14 +49,16 @@ const MetricsDashboard = () => {
         const firstHalf = analytics.slice(0, mid);
         const secondHalf = analytics.slice(mid);
 
-        const firstSum = firstHalf.reduce((sum, day) => sum + (key === 'pageViews' ? day.pageViews?.total : day[key]) || 0, 0);
-        const secondSum = secondHalf.reduce((sum, day) => sum + (key === 'pageViews' ? day.pageViews?.total : day[key]) || 0, 0);
+        const firstSum = firstHalf.reduce((sum, day) => sum + (key === 'pageViews' ? (day.pageViews?.total || 0) : (day[key] || 0)), 0);
+        const secondSum = secondHalf.reduce((sum, day) => sum + (key === 'pageViews' ? (day.pageViews?.total || 0) : (day[key] || 0)), 0);
 
+        if (firstSum === 0 && secondSum === 0) return 0;
         if (firstSum === 0) return 100;
         return Math.round(((secondSum - firstSum) / firstSum) * 100);
     };
 
     const stats = getSummaryStats();
+    const hasAnyData = stats.pageViews > 0 || stats.signups > 0 || stats.activeUsers > 0 || stats.orders > 0;
 
     // Simple sparkline component
     const Sparkline = ({ data, color, height = 50 }) => {
@@ -144,8 +151,11 @@ const MetricsDashboard = () => {
                         </div>
                     </div>
                     <div className="admin-stat-value">{stats.signups.toLocaleString()}</div>
-                    <div className="admin-stat-label">New Signups</div>
-                    <div style={{ marginTop: '1rem' }}>
+                    <div className="admin-stat-label">New Signups ({timeRange}d)</div>
+                    <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--admin-text-secondary)' }}>
+                        {restaurantStats.totalCount} total restaurants
+                    </div>
+                    <div style={{ marginTop: '0.5rem' }}>
                         <Sparkline
                             data={analytics.map(d => d.signups || 0)}
                             color="#22d3ee"
@@ -161,7 +171,7 @@ const MetricsDashboard = () => {
                         </div>
                     </div>
                     <div className="admin-stat-value">{stats.avgActiveUsers.toLocaleString()}</div>
-                    <div className="admin-stat-label">Avg. Active Users</div>
+                    <div className="admin-stat-label">Avg. Active Users/Day</div>
                     <div style={{ marginTop: '1rem' }}>
                         <Sparkline
                             data={analytics.map(d => d.activeUsers || 0)}
@@ -178,7 +188,7 @@ const MetricsDashboard = () => {
                         </div>
                     </div>
                     <div className="admin-stat-value">{stats.orders.toLocaleString()}</div>
-                    <div className="admin-stat-label">Total Orders</div>
+                    <div className="admin-stat-label">Total Orders ({timeRange}d)</div>
                     <div style={{ marginTop: '1rem' }}>
                         <Sparkline
                             data={analytics.map(d => d.orders || 0)}
@@ -188,7 +198,7 @@ const MetricsDashboard = () => {
                 </div>
             </div>
 
-            {/* Page Views Breakdown */}
+            {/* Page Views Breakdown + Conversion Funnel */}
             <div className="admin-grid admin-grid-2">
                 <div className="admin-card">
                     <div className="admin-card-header">
@@ -248,8 +258,8 @@ const MetricsDashboard = () => {
                                 { label: 'Signup Page Views', value: analytics.reduce((s, d) => s + (d.pageViews?.signup || 0), 0), color: '#22d3ee' },
                                 { label: 'Completed Signups', value: stats.signups, color: '#22c55e' }
                             ].map((stage, index, arr) => {
-                                const maxValue = arr[0].value;
-                                const percentage = maxValue > 0 ? (stage.value / maxValue * 100) : 0;
+                                const maxValue = arr[0].value || 1;
+                                const percentage = (stage.value / maxValue * 100);
 
                                 return (
                                     <div key={stage.label}>
@@ -275,9 +285,10 @@ const MetricsDashboard = () => {
                                                 paddingRight: '8px',
                                                 color: 'white',
                                                 fontSize: '0.75rem',
-                                                fontWeight: 600
+                                                fontWeight: 600,
+                                                minWidth: stage.value > 0 ? '30px' : '0'
                                             }}>
-                                                {percentage.toFixed(0)}%
+                                                {stage.value > 0 ? `${percentage.toFixed(0)}%` : ''}
                                             </div>
                                         </div>
                                     </div>
@@ -285,6 +296,37 @@ const MetricsDashboard = () => {
                             })}
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* Restaurant Tier Overview */}
+            <div className="admin-card">
+                <div className="admin-card-header">
+                    <h2 className="admin-card-title">
+                        <span className="admin-card-title-icon">🏪</span>
+                        Restaurant Overview
+                    </h2>
+                </div>
+                <div style={{ padding: '1rem 1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    {['scout', 'ally', 'guide', 'chief', 'elder'].map(tier => {
+                        const count = restaurantStats.tierCounts?.[tier] || 0;
+                        const colors = { scout: '#6b7280', ally: '#4ade80', guide: '#60a5fa', chief: '#f59e0b', elder: '#a855f7' };
+                        const icons = { scout: '🔍', ally: '🌱', guide: '🧭', chief: '🦅', elder: '👑' };
+                        return (
+                            <div key={tier} style={{
+                                flex: '1 1 120px',
+                                background: `${colors[tier]}10`,
+                                border: `1px solid ${colors[tier]}30`,
+                                borderRadius: 'var(--admin-radius-sm)',
+                                padding: '1rem',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '1.5rem', marginBottom: '4px' }}>{icons[tier]}</div>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: colors[tier] }}>{count}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-secondary)', textTransform: 'capitalize' }}>{tier}</div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -329,7 +371,7 @@ const MetricsDashboard = () => {
                                         <td>
                                             <span style={{
                                                 color: parseFloat(conversionRate) > 2 ? 'var(--admin-green)' :
-                                                    parseFloat(conversionRate) > 1 ? 'var(--admin-yellow)' : 'var(--admin-red)'
+                                                    parseFloat(conversionRate) > 1 ? 'var(--admin-yellow)' : 'var(--admin-text-muted)'
                                             }}>
                                                 {conversionRate}%
                                             </span>
@@ -342,22 +384,24 @@ const MetricsDashboard = () => {
                 </div>
             </div>
 
-            {/* Note about mock data */}
-            <div className="admin-card" style={{
-                background: 'rgba(168, 85, 247, 0.1)',
-                borderColor: 'rgba(168, 85, 247, 0.2)'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                    <span style={{ fontSize: '1.5rem' }}>ℹ️</span>
-                    <div>
-                        <strong style={{ display: 'block', marginBottom: '4px' }}>Development Mode</strong>
-                        <p style={{ margin: 0, color: 'var(--admin-text-secondary)' }}>
-                            This dashboard is showing mock analytics data. In production, real data will be
-                            collected through page view tracking and aggregated by cloud functions.
-                        </p>
+            {/* Info note */}
+            {!hasAnyData && (
+                <div className="admin-card" style={{
+                    background: 'rgba(34, 211, 238, 0.08)',
+                    borderColor: 'rgba(34, 211, 238, 0.2)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '0.5rem' }}>
+                        <span style={{ fontSize: '1.5rem' }}>ℹ️</span>
+                        <div>
+                            <strong style={{ display: 'block', marginBottom: '4px' }}>No Analytics Data Yet</strong>
+                            <p style={{ margin: 0, color: 'var(--admin-text-secondary)' }}>
+                                Analytics events (page views, signups, orders) will appear here as users interact with the platform.
+                                Data is collected in real-time through the landing page, signup flow, and order processing.
+                            </p>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };

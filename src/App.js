@@ -5,6 +5,7 @@ import { LocationProvider } from './contexts/LocationContext';
 import { MenuProvider } from './contexts/MenuContext';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { AdminProvider } from './contexts/AdminContext';
+import { OnboardingProvider } from './contexts/OnboardingContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
@@ -37,6 +38,7 @@ function App() {
       <SubscriptionProvider>
         <LocationProvider>
           <MenuProvider>
+            <OnboardingProvider>
             <Router>
               <Routes>
                 {/* Public Routes */}
@@ -136,6 +138,7 @@ function App() {
                 } />
               </Routes>
             </Router>
+            </OnboardingProvider>
           </MenuProvider>
         </LocationProvider>
       </SubscriptionProvider>

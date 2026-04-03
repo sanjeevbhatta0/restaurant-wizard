@@ -261,92 +261,32 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Main Content Grid */}
-      <div className="home-content-grid">
-        {/* Recent Activity */}
-        <section className="recent-activity-section">
-          <div className="section-header">
-            <h2 className="section-title">Recent Activity</h2>
-          </div>
-          <div className="activity-list">
-            {recentActivities.length > 0 ? (
-              recentActivities.map((activity, index) => (
-                <div key={activity.id} className="activity-item-plain" style={{ animationDelay: `${index * 0.05}s` }}>
-                  <div className="activity-text">
-                    {activity.message}
-                  </div>
-                  <div className="activity-time">
-                    {getTimeAgo(activity.createdAt || activity.timestamp)}
-                  </div>
+      {/* Recent Activity */}
+      <section className="recent-activity-section">
+        <div className="section-header">
+          <h2 className="section-title">Recent Activity</h2>
+        </div>
+        <div className="activity-list">
+          {recentActivities.length > 0 ? (
+            recentActivities.map((activity, index) => (
+              <div key={activity.id} className="activity-item-plain" style={{ animationDelay: `${index * 0.05}s` }}>
+                <div className="activity-text">
+                  {activity.message}
                 </div>
-              ))
-            ) : (
-              <div className="empty-activity">
-                <i className="bi bi-inbox"></i>
-                <p>No recent activity</p>
-                <span>Activities will appear here as they happen</span>
+                <div className="activity-time">
+                  {getTimeAgo(activity.createdAt || activity.timestamp)}
+                </div>
               </div>
-            )}
-          </div>
-        </section>
-
-        {/* Getting Started / Tips */}
-        <section className="tips-section">
-          <h2 className="section-title">Getting Started</h2>
-          <div className="tips-list">
-            <div className="tip-card">
-              <div className="tip-number">1</div>
-              <div className="tip-content">
-                <h4>Set up your menu</h4>
-                <p>Add categories and items with photos, prices, and descriptions</p>
-                <Link to="/menu-management" className="tip-link">
-                  Go to Menu <i className="bi bi-arrow-right"></i>
-                </Link>
-              </div>
+            ))
+          ) : (
+            <div className="empty-activity">
+              <i className="bi bi-inbox"></i>
+              <p>No recent activity</p>
+              <span>Activities will appear here as they happen</span>
             </div>
-            <div className="tip-card">
-              <div className="tip-number">2</div>
-              <div className="tip-content">
-                <h4>Start taking orders</h4>
-                <p>Use the POS system to quickly process customer orders</p>
-                <Link to="/pos" className="tip-link">
-                  Open POS <i className="bi bi-arrow-right"></i>
-                </Link>
-              </div>
-            </div>
-            <div className="tip-card">
-              <div className="tip-number">3</div>
-              <div className="tip-content">
-                <h4>Build your website</h4>
-                <p>Create a beautiful online presence for your restaurant</p>
-                <Link to="/website-builder" className="tip-link">
-                  Build Website <i className="bi bi-arrow-right"></i>
-                </Link>
-              </div>
-            </div>
-            <div className="tip-card">
-              <div className="tip-number">4</div>
-              <div className="tip-content">
-                <h4>Track performance</h4>
-                <p>Monitor orders, revenue, and trends in analytics</p>
-                <Link to="/analytics" className="tip-link">
-                  View Analytics <i className="bi bi-arrow-right"></i>
-                </Link>
-              </div>
-            </div>
-            <div className="tip-card">
-              <div className="tip-number">5</div>
-              <div className="tip-content">
-                <h4>Manage your account</h4>
-                <p>Update your profile, address, and security settings</p>
-                <Link to="/account" className="tip-link">
-                  Go to Account <i className="bi bi-arrow-right"></i>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+          )}
+        </div>
+      </section>
 
       {/* Floating Quick POS Button */}
       <Link to="/pos" className="floating-pos-button">

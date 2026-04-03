@@ -5,6 +5,7 @@ import PricingManagement from './PricingManagement';
 import FeatureManagement from './FeatureManagement';
 import PricingPreview from './PricingPreview';
 import MetricsDashboard from './MetricsDashboard';
+import UsersDashboard from './UsersDashboard';
 import AdminSettings from './AdminSettings';
 import PublishScheduler from './PublishScheduler';
 import './AdminDashboard.css';
@@ -44,6 +45,7 @@ const AdminDashboard = () => {
         { id: 'features', label: 'Features', icon: '⚡', path: '/admin/features' },
         { id: 'preview', label: 'Preview', icon: '👁️', path: '/admin/preview' },
         { id: 'metrics', label: 'Metrics', icon: '📊', path: '/admin/metrics' },
+        { id: 'users', label: 'Users', icon: '👥', path: '/admin/users' },
         { id: 'settings', label: 'Settings', icon: '⚙️', path: '/admin/settings' }
     ];
 
@@ -121,7 +123,7 @@ const AdminDashboard = () => {
 
                     <div className="admin-nav-section">
                         <div className="admin-nav-section-title">Analytics</div>
-                        {navItems.slice(3, 4).map(item => (
+                        {navItems.slice(3, 5).map(item => (
                             <button
                                 key={item.id}
                                 className={`admin-nav-item ${getCurrentSection() === item.id ? 'active' : ''}`}
@@ -138,7 +140,7 @@ const AdminDashboard = () => {
 
                     <div className="admin-nav-section">
                         <div className="admin-nav-section-title">Account</div>
-                        {navItems.slice(4).map(item => (
+                        {navItems.slice(5).map(item => (
                             <button
                                 key={item.id}
                                 className={`admin-nav-item ${getCurrentSection() === item.id ? 'active' : ''}`}
@@ -226,6 +228,7 @@ const AdminDashboard = () => {
                         <Route path="/features" element={<FeatureManagement showToast={showToast} />} />
                         <Route path="/preview" element={<PricingPreview />} />
                         <Route path="/metrics" element={<MetricsDashboard />} />
+                        <Route path="/users" element={<UsersDashboard />} />
                         <Route path="/settings" element={<AdminSettings showToast={showToast} />} />
                     </Routes>
                 </div>

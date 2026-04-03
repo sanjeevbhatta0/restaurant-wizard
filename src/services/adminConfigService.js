@@ -224,10 +224,9 @@ export const checkIsAdmin = async (uid) => {
     }
 };
 
-// Get analytics data
+// Get analytics data (real data from Firestore, empty days filled with zeros)
 export const getAnalytics = async (days = 30) => {
     try {
-        const endDate = new Date();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - days);
 
@@ -238,16 +237,43 @@ export const getAnalytics = async (days = 30) => {
         );
 
         const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => doc.data());
+        const existingData = {};
+        querySnapshot.docs.forEach(d => {
+            const data = d.data();
+            existingData[data.date] = data;
+        });
+
+        // Fill in all days in range (so sparklines have continuous data)
+        const result = [];
+        const today = new Date();
+        for (let i = days - 1; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+
+            if (existingData[dateStr]) {
+                result.push(existingData[dateStr]);
+            } else {
+                result.push({
+                    date: dateStr,
+                    pageViews: { total: 0, homepage: 0, pricing: 0, signup: 0 },
+                    signups: 0,
+                    activeUsers: 0,
+                    orders: 0
+                });
+            }
+        }
+
+        return result;
     } catch (error) {
         console.error('Error fetching analytics:', error);
-        // Return mock data for development/testing
-        return generateMockAnalytics(days);
+        // Return empty data for all days instead of mock data
+        return generateEmptyAnalytics(days);
     }
 };
 
-// Generate mock analytics data for development
-const generateMockAnalytics = (days) => {
+// Generate empty analytics data (zeros) for when DB has no data
+const generateEmptyAnalytics = (days) => {
     const data = [];
     const today = new Date();
 
@@ -257,19 +283,36 @@ const generateMockAnalytics = (days) => {
 
         data.push({
             date: date.toISOString().split('T')[0],
-            pageViews: {
-                total: Math.floor(Math.random() * 500) + 200,
-                homepage: Math.floor(Math.random() * 300) + 100,
-                pricing: Math.floor(Math.random() * 150) + 50,
-                signup: Math.floor(Math.random() * 100) + 20
-            },
-            signups: Math.floor(Math.random() * 15) + 2,
-            activeUsers: Math.floor(Math.random() * 80) + 30,
-            orders: Math.floor(Math.random() * 200) + 50
+            pageViews: { total: 0, homepage: 0, pricing: 0, signup: 0 },
+            signups: 0,
+            activeUsers: 0,
+            orders: 0
         });
     }
 
     return data;
+};
+
+// Get total restaurant count and signup stats for admin dashboard
+export const getRestaurantStats = async () => {
+    try {
+        const snapshot = await getDocs(collection(adminDb, 'restaurants'));
+        const restaurants = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        const totalCount = restaurants.length;
+        const tierCounts = {};
+        let totalOrders = 0;
+
+        restaurants.forEach(r => {
+            const tier = r.subscription?.tier || 'scout';
+            tierCounts[tier] = (tierCounts[tier] || 0) + 1;
+        });
+
+        return { totalCount, tierCounts, totalOrders };
+    } catch (error) {
+        console.error('Error fetching restaurant stats:', error);
+        return { totalCount: 0, tierCounts: {}, totalOrders: 0 };
+    }
 };
 
 // Update admin password
