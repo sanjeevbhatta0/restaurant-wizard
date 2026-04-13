@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import { db } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc, query, orderBy, serverTimestamp } from 'firebase/firestore';
 import { getApiBaseUrl } from '../config';
+import ConfirmModal from './ConfirmModal';
 import './PromotionsRewards.css';
+import './PageHeader.css';
 
 /**
  * Parse discount string into numeric value and unit (client-side mirror of server helper)
@@ -24,6 +27,7 @@ function parsePromoDiscountClient(type, discountStr) {
 
 const PromotionsRewards = () => {
     const { currentUser: user, restaurantUid } = useAuth();
+    const { selectedLocation, isMultiLocation, locations } = useLocation();
     const [activeTab, setActiveTab] = useState('promotions');
     const [promotions, setPromotions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -45,7 +49,10 @@ const PromotionsRewards = () => {
         freeItemName: '',
         autoClaimOnSignup: false
     });
+    const [selectedLocationIds, setSelectedLocationIds] = useState([]); // for multi-location promo targeting
+    const [locationSelectMode, setLocationSelectMode] = useState('all'); // 'all' | 'specific'
     const [showFlyer, setShowFlyer] = useState(null);
+    const [confirmState, setConfirmState] = useState(null);
     const [restaurantSlug, setRestaurantSlug] = useState('');
     const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
     const toastTimerRef = useRef(null);
@@ -90,7 +97,7 @@ const PromotionsRewards = () => {
                 if (snap.exists()) setRestaurantSlug(snap.data().slug || restaurantUid);
             }).catch(() => {});
         }
-    }, [user]);
+    }, [user, selectedLocation]);
 
     const loadRewardsConfig = async () => {
         try {
@@ -126,12 +133,21 @@ const PromotionsRewards = () => {
             const q = query(promoRef, orderBy('createdAt', 'desc'));
             const snapshot = await getDocs(q);
 
-            const promos = snapshot.docs.map(doc => ({
+            let promos = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),
                 validFrom: doc.data().validFrom?.toDate?.()?.toISOString().split('T')[0] || '',
                 validUntil: doc.data().validUntil?.toDate?.()?.toISOString().split('T')[0] || ''
             }));
+
+            // Filter by selected location for multi-location restaurants
+            if (isMultiLocation && selectedLocation) {
+                promos = promos.filter(p => {
+                    // Show if no locationIds (legacy/all-locations promo) or if selected location is included
+                    if (!p.locationIds || p.locationIds.length === 0) return true;
+                    return p.locationIds.includes(selectedLocation);
+                });
+            }
 
             setPromotions(promos);
         } catch (err) {
@@ -176,6 +192,11 @@ const PromotionsRewards = () => {
             }
             if (formData.type === 'storeLaunch') {
                 promoData.autoClaimOnSignup = formData.autoClaimOnSignup;
+            }
+
+            // Multi-location: store which locations this promo applies to
+            if (isMultiLocation) {
+                promoData.locationIds = locationSelectMode === 'all' ? [] : selectedLocationIds;
             }
 
             if (editingPromo) {
@@ -224,6 +245,8 @@ const PromotionsRewards = () => {
             freeItemName: '',
             autoClaimOnSignup: false
         });
+        setLocationSelectMode('all');
+        setSelectedLocationIds([]);
     };
 
     const handleEdit = (promo) => {
@@ -244,12 +267,27 @@ const PromotionsRewards = () => {
             autoClaimOnSignup: promo.autoClaimOnSignup || false
         });
         setEditingPromo(promo);
+        // Restore location selection when editing
+        if (promo.locationIds && promo.locationIds.length > 0) {
+            setLocationSelectMode('specific');
+            setSelectedLocationIds(promo.locationIds);
+        } else {
+            setLocationSelectMode('all');
+            setSelectedLocationIds([]);
+        }
         setShowForm(true);
     };
 
-    const handleDelete = async (promoId) => {
-        if (!window.confirm('Are you sure you want to delete this promotion?')) return;
+    const handleDelete = (promoId) => {
+        setConfirmState({
+            title: 'Delete Promotion',
+            message: 'Are you sure you want to delete this promotion?',
+            confirmText: 'Delete',
+            onConfirm: () => doDeletePromotion(promoId)
+        });
+    };
 
+    const doDeletePromotion = async (promoId) => {
         try {
             await deleteDoc(doc(db, `restaurants/${restaurantUid}/promotions`, promoId));
             loadPromotions();
@@ -343,12 +381,15 @@ const PromotionsRewards = () => {
                     <button className="pr-toast-close" onClick={() => setToast(null)}>×</button>
                 </div>
             )}
-            <div className="page-header">
-                <div>
-                    <h1>🎁 Promotions & Rewards</h1>
-                    <p>Create and manage promotions for your customers</p>
+            <div className="page-header-gradient" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="header-content">
+                    <i className="bi bi-gift header-icon"></i>
+                    <div>
+                        <h2>Promotions & Rewards</h2>
+                        <p>Create and manage promotions for your customers</p>
+                    </div>
                 </div>
-                <button className="btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
+                <button className="btn-primary" onClick={() => { resetForm(); setShowForm(true); }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)', color: 'white' }}>
                     <i className="bi bi-plus-lg"></i> Create Promotion
                 </button>
             </div>
@@ -543,6 +584,81 @@ const PromotionsRewards = () => {
                                         placeholder="https://..."
                                     />
                                 </div>
+
+                                {/* Multi-location: Select which locations this promo applies to */}
+                                {isMultiLocation && locations.length > 1 && (
+                                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                        <label><i className="bi bi-geo-alt"></i> Apply to Locations</label>
+                                        <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+                                            <button
+                                                type="button"
+                                                className={`btn-ghost ${locationSelectMode === 'all' ? 'active' : ''}`}
+                                                style={{
+                                                    padding: '6px 16px',
+                                                    borderRadius: '20px',
+                                                    border: locationSelectMode === 'all' ? '2px solid #667eea' : '1px solid #ddd',
+                                                    background: locationSelectMode === 'all' ? '#667eea' : 'white',
+                                                    color: locationSelectMode === 'all' ? 'white' : '#333',
+                                                    fontSize: '0.85rem',
+                                                    cursor: 'pointer'
+                                                }}
+                                                onClick={() => { setLocationSelectMode('all'); setSelectedLocationIds([]); }}
+                                            >
+                                                All Locations
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`btn-ghost ${locationSelectMode === 'specific' ? 'active' : ''}`}
+                                                style={{
+                                                    padding: '6px 16px',
+                                                    borderRadius: '20px',
+                                                    border: locationSelectMode === 'specific' ? '2px solid #667eea' : '1px solid #ddd',
+                                                    background: locationSelectMode === 'specific' ? '#667eea' : 'white',
+                                                    color: locationSelectMode === 'specific' ? 'white' : '#333',
+                                                    fontSize: '0.85rem',
+                                                    cursor: 'pointer'
+                                                }}
+                                                onClick={() => setLocationSelectMode('specific')}
+                                            >
+                                                Specific Locations
+                                            </button>
+                                        </div>
+                                        {locationSelectMode === 'specific' && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                {locations.map(loc => (
+                                                    <label
+                                                        key={loc.id}
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            padding: '6px 12px',
+                                                            borderRadius: '8px',
+                                                            border: selectedLocationIds.includes(loc.id) ? '2px solid #27ae60' : '1px solid #ddd',
+                                                            background: selectedLocationIds.includes(loc.id) ? '#e8f5e9' : '#f9f9f9',
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.85rem'
+                                                        }}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedLocationIds.includes(loc.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedLocationIds([...selectedLocationIds, loc.id]);
+                                                                } else {
+                                                                    setSelectedLocationIds(selectedLocationIds.filter(id => id !== loc.id));
+                                                                }
+                                                            }}
+                                                        />
+                                                        <i className="bi bi-geo-alt-fill" style={{ color: selectedLocationIds.includes(loc.id) ? '#27ae60' : '#999' }}></i>
+                                                        {loc.name}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="form-actions">
                                     <button type="button" className="btn-ghost" onClick={() => { setShowForm(false); setEditingPromo(null); }}>
@@ -830,6 +946,7 @@ const PromotionsRewards = () => {
                     </div>
                 </div>
             )}
+            <ConfirmModal state={confirmState} onClose={() => setConfirmState(null)} />
         </div>
     );
 };

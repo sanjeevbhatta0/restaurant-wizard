@@ -10,6 +10,9 @@ const isEmulator = process.env.REACT_APP_USE_EMULATOR === 'true';
 
 const PROJECT_ID = isProd ? 'kodacarte-861d8' : 'restaurant-portal-6b147';
 
+/** Hosting site ID for restaurant customer websites (custom domains point here) */
+const RESTAURANT_SITE_ID = isProd ? 'kodacarte-sites' : 'koda-carte-sites';
+
 /** Base URL for Cloud Functions HTTP endpoints */
 const getApiBaseUrl = () => {
   if (isEmulator) {
@@ -31,9 +34,9 @@ const getWebsiteUrl = (slug) => {
   return `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}`;
 };
 
-/** Preview URL for a restaurant website (adds preview flag) */
-const getWebsitePreviewUrl = (slug, locationParam = '') => {
-  return `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}&preview=true${locationParam}`;
+/** Preview URL for a restaurant website (preview token = restaurantId for owner verification) */
+const getWebsitePreviewUrl = (slug, restaurantId, locationParam = '') => {
+  return `${getApiBaseUrl()}/serveWebsite?restaurant=${slug}&preview=${encodeURIComponent(restaurantId)}${locationParam}`;
 };
 
 /** URL for the widget.js script */
@@ -46,8 +49,15 @@ const getFirebaseConsoleUrl = () => {
   return `https://console.firebase.google.com/project/${PROJECT_ID}/overview`;
 };
 
+/** Stripe publishable key — must match the Firebase environment */
+const STRIPE_PUBLISHABLE_KEY = isProd
+  ? process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY_PROD || process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+  : process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY_DEV || process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+
 export {
   PROJECT_ID,
+  RESTAURANT_SITE_ID,
+  STRIPE_PUBLISHABLE_KEY,
   isProd,
   isEmulator,
   getApiBaseUrl,

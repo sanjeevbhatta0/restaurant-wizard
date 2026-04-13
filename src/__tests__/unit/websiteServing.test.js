@@ -138,7 +138,7 @@ function buildEmbedConfig(restaurantId, locationId, templateData, options = {}) 
     apiBaseUrl: options.isEmulator
       ? 'http://localhost:5001/restaurant-portal-6b147/us-central1'
       : 'https://us-central1-restaurant-portal-6b147.cloudfunctions.net',
-    taxRate: options.taxRate || 8.5,
+    taxRate: options.taxRate || 8,
     initialTab: options.initialTab || 'menu',
     primaryColor: templateData.primaryColor,
     secondaryColor: templateData.secondaryColor,
@@ -384,5 +384,76 @@ describe('Website Serving Business Logic', () => {
       expect(config.apiBaseUrl).toContain('localhost:5001');
       expect(config.locationId).toBe('uid-123'); // falls back to restaurantId
     });
+  });
+});
+
+// ==========================================
+// Item Notes & Spice Level in Website Orders
+// ==========================================
+
+describe('Website Order Items with Notes & Spice Level', () => {
+  it('should pass validation with items containing notes and spiceLevel', () => {
+    const result = validateOrderData({
+      restaurantId: 'abc',
+      customer: { name: 'Test', email: 'test@test.com' },
+      items: [
+        { id: '1', name: 'Burger', price: 10, quantity: 1, notes: 'well done' },
+        { id: '2', name: 'Curry', price: 15, quantity: 1, spiceLevel: 'Hot' }
+      ]
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it('should pass validation with items without notes/spiceLevel (backward compat)', () => {
+    const result = validateOrderData({
+      restaurantId: 'abc',
+      customer: { name: 'Test', email: 'test@test.com' },
+      items: [
+        { id: '1', name: 'Burger', price: 10, quantity: 1 }
+      ]
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it('should preserve notes and spiceLevel in order items round-trip', () => {
+    const orderItems = [
+      { id: '1', name: 'Steak', price: 25, quantity: 1, notes: 'medium rare', spiceLevel: '' },
+      { id: '2', name: 'Pad Thai', price: 14, quantity: 2, notes: 'extra peanuts', spiceLevel: 'Mild' },
+      { id: '3', name: 'Soda', price: 3, quantity: 1, notes: 'no ice' }
+    ];
+
+    // Simulate backend pass-through (items stored as-is)
+    const storedOrder = { items: orderItems };
+
+    expect(storedOrder.items[0].notes).toBe('medium rare');
+    expect(storedOrder.items[1].spiceLevel).toBe('Mild');
+    expect(storedOrder.items[1].notes).toBe('extra peanuts');
+    expect(storedOrder.items[2].notes).toBe('no ice');
+  });
+
+  it('should handle menu items with spiceLevelEnabled in template data', () => {
+    const menuItem = {
+      id: 'curry-1',
+      name: 'Green Curry',
+      price: 16.99,
+      spiceLevelEnabled: true,
+      spiceLevels: ['Mild', 'Medium', 'Hot', 'Thai Hot']
+    };
+
+    expect(menuItem.spiceLevelEnabled).toBe(true);
+    expect(menuItem.spiceLevels).toHaveLength(4);
+    expect(menuItem.spiceLevels).toContain('Thai Hot');
+  });
+
+  it('should enforce max 10 spice levels', () => {
+    const spiceLevels = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+    expect(spiceLevels.length).toBeLessThanOrEqual(10);
+
+    // Adding an 11th should not be allowed
+    const tooMany = [...spiceLevels, '11'];
+    expect(tooMany.length).toBeGreaterThan(10);
+    // In the UI this is prevented; here we just validate the constraint
+    const capped = tooMany.slice(0, 10);
+    expect(capped).toHaveLength(10);
   });
 });

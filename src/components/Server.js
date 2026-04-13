@@ -531,6 +531,16 @@ const Server = () => {
                               <li key={index} className="order-item">
                                 <span className="item-quantity">{item.quantity}x</span>
                                 <span className="item-name">{item.name}</span>
+                                {item.spiceLevel && (
+                                  <span style={{ marginLeft: '4px', color: '#e74c3c', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                    [{item.spiceLevel}]
+                                  </span>
+                                )}
+                                {(item.notes || item.specialInstructions) && (
+                                  <div style={{ fontSize: '0.8rem', color: '#e67e22', fontStyle: 'italic', marginLeft: '28px' }}>
+                                    {item.notes || item.specialInstructions}
+                                  </div>
+                                )}
                               </li>
                             ))}
                           </ul>
@@ -622,6 +632,16 @@ const Server = () => {
                               <li key={index} className="order-item">
                                 <span className="item-quantity">{item.quantity}x</span>
                                 <span className="item-name">{item.name}</span>
+                                {item.spiceLevel && (
+                                  <span style={{ marginLeft: '4px', color: '#e74c3c', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                    [{item.spiceLevel}]
+                                  </span>
+                                )}
+                                {(item.notes || item.specialInstructions) && (
+                                  <div style={{ fontSize: '0.8rem', color: '#e67e22', fontStyle: 'italic', marginLeft: '28px' }}>
+                                    {item.notes || item.specialInstructions}
+                                  </div>
+                                )}
                               </li>
                             ))}
                           </ul>
@@ -690,6 +710,16 @@ const Server = () => {
                               <li key={index} className="order-item">
                                 <span className="item-quantity">{item.quantity}x</span>
                                 <span className="item-name">{item.name}</span>
+                                {item.spiceLevel && (
+                                  <span style={{ marginLeft: '4px', color: '#e74c3c', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                    [{item.spiceLevel}]
+                                  </span>
+                                )}
+                                {(item.notes || item.specialInstructions) && (
+                                  <div style={{ fontSize: '0.8rem', color: '#e67e22', fontStyle: 'italic', marginLeft: '28px' }}>
+                                    {item.notes || item.specialInstructions}
+                                  </div>
+                                )}
                               </li>
                             ))}
                           </ul>

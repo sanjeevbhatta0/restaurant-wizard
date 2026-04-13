@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -57,7 +57,7 @@ const Home = () => {
     const activitiesQuery = query(
       activitiesRef,
       orderBy('createdAt', 'desc'),
-      limit(50) // Get more to filter client-side
+      limit(20) // Fetch slightly more than needed for client-side location filtering
     );
 
     const unsubscribeActivities = onSnapshot(activitiesQuery, (snapshot) => {
@@ -98,22 +98,25 @@ const Home = () => {
       setRecentActivities([]);
     });
 
-    // Still listen to orders for stats calculation
+    // Listen to orders for stats calculation — server-side date + location filter
+    // Only fetch today's orders (for stats) — no need to load entire history
     const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
-    const ordersQuery = query(ordersRef, orderBy('createdAt', 'desc'), limit(50));
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const orderConstraints = [
+      where('createdAt', '>=', Timestamp.fromDate(todayStart)),
+      orderBy('createdAt', 'desc')
+    ];
+    if (isMultiLocation && selectedLocation) {
+      orderConstraints.push(where('locationId', '==', selectedLocation));
+    }
+    const ordersQuery = query(ordersRef, ...orderConstraints);
 
     const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
-      let orders = snapshot.docs.map(doc => ({
+      const orders = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-
-      // Filter by location if multi-location
-      if (isMultiLocation && selectedLocation) {
-        orders = orders.filter(order => {
-          return order.locationId === selectedLocation;
-        });
-      }
 
       // Calculate today's stats
       const now = new Date();

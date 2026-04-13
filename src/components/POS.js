@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Spinner, Alert, Button, Badge } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Spinner, Alert, Button, Badge, Modal, Form } from 'react-bootstrap';
 import {
   collection,
   addDoc,
   doc,
   getDoc,
-  onSnapshot
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Elements } from '@stripe/react-stripe-js';
@@ -13,11 +16,13 @@ import lanSyncService from '../services/lanSyncService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useMenu } from '../contexts/MenuContext';
+import MenuItemImage from './MenuItemImage';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import TableSelectionModal from './TableSelectionModal';
+import ReceiptModal from './ReceiptModal';
 import CardPaymentForm from './CardPaymentForm';
 import activityService from '../services/activityService';
-import { getStripe } from '../services/stripeService';
+import { getStripe, getStripeConnectStatus } from '../services/stripeService';
 import {
   getTerminalConfig,
   listReaders,
@@ -46,13 +51,96 @@ const POS = () => {
   const [showWakeLockPrompt, setShowWakeLockPrompt] = useState(true);
   const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
-  const { isPayFirst, requiresTables, getServiceMode } = useSubscription();
+  const { isPayFirst, requiresTables, getServiceMode, customerDisplayEnabled } = useSubscription();
+
+  // Item options modal state (notes + spice level)
+  const [showItemOptions, setShowItemOptions] = useState(false);
+  const [itemOptionsTarget, setItemOptionsTarget] = useState(null);
+  const [itemNotes, setItemNotes] = useState('');
+  const [itemSpiceLevel, setItemSpiceLevel] = useState('');
+  const [editingCartIndex, setEditingCartIndex] = useState(null);
 
   // Pay-first mode state
   const [showPaymentStep, setShowPaymentStep] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [taxRate, setTaxRate] = useState(8);
+  const [restaurantData, setRestaurantData] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+
+  // Customer display state
+  const [cdPending, setCdPending] = useState(false);
+  const [cdResponse, setCdResponse] = useState(null);
+  const cdUnsubRef = useRef(null);
+
+  // Resizable panel state
+  const [categoryWidth, setCategoryWidth] = useState(() => {
+    const saved = localStorage.getItem('pos_category_width');
+    return saved ? parseInt(saved, 10) : 180;
+  });
+  const [orderWidth, setOrderWidth] = useState(() => {
+    const saved = localStorage.getItem('pos_order_width');
+    return saved ? parseInt(saved, 10) : 320;
+  });
+  const dragRef = useRef({ active: null, startX: 0, startWidth: 0 });
+
+  const handleDragStart = useCallback((panel, e) => {
+    e.preventDefault();
+    dragRef.current = {
+      active: panel,
+      startX: e.clientX || e.touches?.[0]?.clientX || 0,
+      startWidth: panel === 'category' ? categoryWidth : orderWidth
+    };
+
+    const handleMove = (ev) => {
+      const clientX = ev.clientX || ev.touches?.[0]?.clientX || 0;
+      const delta = clientX - dragRef.current.startX;
+      if (dragRef.current.active === 'category') {
+        const newWidth = Math.min(400, Math.max(60, dragRef.current.startWidth + delta));
+        setCategoryWidth(newWidth);
+      } else {
+        // Order panel: dragging left = wider, right = narrower
+        const newWidth = Math.min(500, Math.max(200, dragRef.current.startWidth - delta));
+        setOrderWidth(newWidth);
+      }
+    };
+
+    const handleEnd = () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      // Persist to localStorage
+      if (dragRef.current.active === 'category') {
+        localStorage.setItem('pos_category_width', String(categoryWidth));
+      } else {
+        localStorage.setItem('pos_order_width', String(orderWidth));
+      }
+      dragRef.current.active = null;
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('touchend', handleEnd);
+  }, [categoryWidth, orderWidth]);
+
+  // Save widths when they change (debounced via the drag end handler above)
+  useEffect(() => {
+    localStorage.setItem('pos_category_width', String(categoryWidth));
+  }, [categoryWidth]);
+  useEffect(() => {
+    localStorage.setItem('pos_order_width', String(orderWidth));
+  }, [orderWidth]);
+
+  // Stripe promise — POS always uses platform account (not Stripe Connect)
+  // This avoids issues with stale/invalid connected accounts
+  const [stripePromise, setStripePromise] = useState(null);
 
   // Terminal state
   const [terminalAvailable, setTerminalAvailable] = useState(false);
@@ -82,6 +170,23 @@ const POS = () => {
     }
   }, []);
 
+  // Initialize Stripe — uses connected account if valid, falls back to platform
+  useEffect(() => {
+    const initStripe = async () => {
+      try {
+        const connectStatus = await getStripeConnectStatus();
+        const connectedId = connectStatus.connected ? connectStatus.stripeAccountId : null;
+        const stripe = await getStripe(connectedId);
+        setStripePromise(stripe);
+      } catch (error) {
+        console.error('Error initializing Stripe, falling back to platform:', error);
+        const stripe = await getStripe();
+        setStripePromise(stripe);
+      }
+    };
+    initStripe();
+  }, []);
+
   // Cleanup wake lock on unmount
   useEffect(() => {
     return () => {
@@ -89,21 +194,22 @@ const POS = () => {
     };
   }, []);
 
-  // Load tax rate from restaurant settings
+  // Load restaurant settings (tax rate, name, address, etc.)
   useEffect(() => {
     if (!currentUser?.uid) return;
-    const loadTaxRate = async () => {
+    const loadRestaurantData = async () => {
       try {
         const docSnap = await getDoc(doc(db, 'restaurants', restaurantUid));
         if (docSnap.exists()) {
           const data = docSnap.data();
+          setRestaurantData(data);
           if (data.taxRate !== undefined) setTaxRate(data.taxRate);
         }
       } catch (err) {
-        console.error('Failed to load tax rate:', err);
+        console.error('Failed to load restaurant data:', err);
       }
     };
-    loadTaxRate();
+    loadRestaurantData();
   }, [currentUser, restaurantUid]);
 
   // Check if Stripe Terminal is configured and find the reader
@@ -200,10 +306,29 @@ const POS = () => {
     return Math.max(0, price);
   };
 
-  // Add item to order
+  // Add item to order — opens options modal if spice levels are configured
   const addToOrder = (item) => {
+    if (item.spiceLevelEnabled && item.spiceLevels && item.spiceLevels.length > 0) {
+      // Show options modal for spice level selection (required)
+      setItemOptionsTarget(item);
+      setItemNotes('');
+      setItemSpiceLevel('');
+      setEditingCartIndex(null);
+      setShowItemOptions(true);
+      return;
+    }
+    // No spice levels — add directly (merge by id since no notes/spice differ)
+    addItemToCart(item, '', '');
+  };
+
+  // Add item to cart with notes and spice level
+  const addItemToCart = (item, notes, spiceLevel) => {
     setOrderItems(prevItems => {
-      const existingIndex = prevItems.findIndex(i => i.id === item.id);
+      const existingIndex = prevItems.findIndex(i =>
+        i.id === item.id &&
+        (i.notes || '') === (notes || '') &&
+        (i.spiceLevel || '') === (spiceLevel || '')
+      );
       if (existingIndex >= 0) {
         const updated = [...prevItems];
         updated[existingIndex] = {
@@ -212,15 +337,47 @@ const POS = () => {
         };
         return updated;
       }
-      return [...prevItems, { ...item, quantity: 1 }];
+      return [...prevItems, { ...item, quantity: 1, notes: notes || '', spiceLevel: spiceLevel || '' }];
     });
   };
 
-  // Update item quantity
-  const updateQuantity = (itemId, delta) => {
+  // Confirm item options modal
+  const confirmItemOptions = () => {
+    if (itemOptionsTarget?.spiceLevelEnabled && itemOptionsTarget?.spiceLevels?.length > 0 && !itemSpiceLevel) {
+      return; // Spice level is required
+    }
+    if (editingCartIndex !== null) {
+      // Editing existing cart item's notes
+      setOrderItems(prevItems => {
+        const updated = [...prevItems];
+        updated[editingCartIndex] = { ...updated[editingCartIndex], notes: itemNotes || '' };
+        return updated;
+      });
+    } else {
+      addItemToCart(itemOptionsTarget, itemNotes, itemSpiceLevel);
+    }
+    setShowItemOptions(false);
+    setItemOptionsTarget(null);
+    setItemNotes('');
+    setItemSpiceLevel('');
+    setEditingCartIndex(null);
+  };
+
+  // Edit notes on an existing cart item
+  const editCartItemNotes = (index) => {
+    const item = orderItems[index];
+    setItemOptionsTarget(item);
+    setItemNotes(item.notes || '');
+    setItemSpiceLevel(item.spiceLevel || '');
+    setEditingCartIndex(index);
+    setShowItemOptions(true);
+  };
+
+  // Update item quantity by cart index
+  const updateQuantity = (index, delta) => {
     setOrderItems(prevItems => {
-      return prevItems.map(item => {
-        if (item.id === itemId) {
+      return prevItems.map((item, i) => {
+        if (i === index) {
           const newQuantity = item.quantity + delta;
           if (newQuantity <= 0) return null;
           return { ...item, quantity: newQuantity };
@@ -230,15 +387,21 @@ const POS = () => {
     });
   };
 
-  // Remove item from order
-  const removeItem = (itemId) => {
-    setOrderItems(prevItems => prevItems.filter(item => item.id !== itemId));
+  // Remove item from order by cart index
+  const removeItem = (index) => {
+    setOrderItems(prevItems => prevItems.filter((_, i) => i !== index));
   };
 
   // Clear entire order
   const clearOrder = () => {
     setOrderItems([]);
     setSelectedTables([]);
+    setCdPending(false);
+    setCdResponse(null);
+    if (cdUnsubRef.current) {
+      cdUnsubRef.current();
+      cdUnsubRef.current = null;
+    }
   };
 
   // Calculate order total
@@ -281,10 +444,12 @@ const POS = () => {
         price: calculateItemPrice(item),
         originalPrice: item.price,
         quantity: item.quantity,
-        subtotal: calculateItemPrice(item) * item.quantity
+        subtotal: calculateItemPrice(item) * item.quantity,
+        ...(item.notes && { notes: item.notes }),
+        ...(item.spiceLevel && { spiceLevel: item.spiceLevel })
       })),
       status: 'sent_to_kitchen',
-      orderType: isPayFirst() ? 'counter' : 'dine_in',
+      orderType: (getServiceMode() === 'counter_service' || getServiceMode() === 'food_truck') ? 'counter' : 'dine_in',
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -293,14 +458,29 @@ const POS = () => {
       orderData.tableNumber = tableNumber;
     }
 
+    // Attach customer display response (tip, signature, receipt) if available
+    if (cdResponse) {
+      orderData.customerDisplayResponse = {
+        tipAmount: cdResponse.tipAmount || 0,
+        tipPercent: cdResponse.tipPercent || null,
+        signature: cdResponse.signature || null,
+        receiptMethod: cdResponse.receiptMethod || 'none',
+        receiptContact: cdResponse.receiptContact || null,
+        confirmedAt: cdResponse.confirmedAt || null
+      };
+    }
+
     if (paymentInfo) {
       orderData.paidAtPOS = true;
-      orderData.total = calculateTotalWithTax();
+      const tipAmt = cdResponse?.tipAmount || 0;
+      const totalBeforeTip = calculateTotalWithTax();
+      orderData.total = totalBeforeTip + tipAmt;
       orderData.paymentDetails = {
         subtotal: calculateSubtotal(),
         taxRate: taxRate,
         taxAmount: calculateTaxAmount(),
-        total: calculateTotalWithTax(),
+        tipAmount: tipAmt,
+        total: totalBeforeTip + tipAmt,
         paymentMethod: paymentInfo.method,
         paidAt: new Date().toISOString(),
         ...(paymentInfo.stripePaymentIntentId && { stripePaymentIntentId: paymentInfo.stripePaymentIntentId })
@@ -314,18 +494,26 @@ const POS = () => {
 
   // Submit order to Firestore
   const submitOrder = async (orderData, orderLocationId, orderNumber) => {
+    // Check order limit BEFORE creating the order
+    try {
+      const usageResult = await incrementOrderCount(restaurantUid, orderData.total);
+      if (usageResult.blocked) {
+        throw new Error(usageResult.reason || 'Order limit reached. Please upgrade your plan.');
+      }
+    } catch (usageErr) {
+      if (usageErr.message?.includes('limit')) {
+        throw usageErr; // Re-throw limit errors to block the order
+      }
+      console.error('Failed to track order usage:', usageErr);
+      // Non-limit errors: allow the order to proceed
+    }
+
     const docRef = await addDoc(
       collection(db, `restaurants/${restaurantUid}/orders`),
       orderData
     );
 
     lanSyncService.sendOrder({ id: docRef.id, ...orderData });
-
-    try {
-      await incrementOrderCount(restaurantUid, orderData.total);
-    } catch (usageErr) {
-      console.error('Failed to track order usage:', usageErr);
-    }
 
     const tableDisplay = selectedTables.length > 0
       ? (selectedTables.length === 1
@@ -353,10 +541,38 @@ const POS = () => {
       total: orderData.total
     });
 
+    // Build receipt data for pay-first orders
+    if (orderData.paidAtPOS && orderData.paymentDetails) {
+      setReceiptData({
+        restaurantName: restaurantData?.restaurantName || '',
+        restaurantAddress: restaurantData?.address || '',
+        restaurantPhone: restaurantData?.phone || '',
+        orderNumbers: [orderNumber],
+        items: orderData.items.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price
+        })),
+        subtotal: orderData.paymentDetails.subtotal,
+        taxRate: orderData.paymentDetails.taxRate,
+        taxAmount: orderData.paymentDetails.taxAmount,
+        discountAmount: 0,
+        discountType: 'amount',
+        promoCode: null,
+        tipAmount: orderData.paymentDetails.tipAmount || 0,
+        total: orderData.paymentDetails.total,
+        paymentMethod: orderData.paymentDetails.paymentMethod,
+        tableNumbers: tableDisplay ? [tableDisplay] : [],
+        paidAt: orderData.paymentDetails.paidAt
+      });
+    }
+
     setOrderItems([]);
     setSelectedTables([]);
     setShowPaymentStep(false);
     setPaymentMethod(null);
+    setCdResponse(null);
+    setCdPending(false);
   };
 
   // Send order to kitchen (full-service mode — no payment)
@@ -449,10 +665,12 @@ const POS = () => {
           price: calculateItemPrice(item),
           originalPrice: item.price,
           quantity: item.quantity,
-          subtotal: calculateItemPrice(item) * item.quantity
+          subtotal: calculateItemPrice(item) * item.quantity,
+          ...(item.notes && { notes: item.notes }),
+          ...(item.spiceLevel && { spiceLevel: item.spiceLevel })
         })),
         status: 'pending_payment',
-        orderType: isPayFirst() ? 'counter' : 'dine_in',
+        orderType: (getServiceMode() === 'counter_service' || getServiceMode() === 'food_truck') ? 'counter' : 'dine_in',
         subtotal: calculateSubtotal(),
         total: calculateTotalWithTax(),
         taxRate: taxRate,
@@ -484,6 +702,19 @@ const POS = () => {
         (docSnap) => {
           if (!docSnap.exists()) return;
           const data = docSnap.data();
+
+          if (data.rejectedByMobile === true || (data.status === 'cancelled' && data.pendingMobilePayment !== true)) {
+            // Payment was rejected/cancelled by KodaPay
+            unsubscribe();
+            kodaPayUnsubscribeRef.current = null;
+            setKodaPayPending(false);
+            setKodaPayOrderRef(null);
+            setShowPaymentStep(true);
+            setPaymentMethod(null);
+
+            setError('Payment was cancelled from KodaPay. You can choose another payment method.');
+            return;
+          }
 
           if (data.paidAtPOS === true && data.status === 'sent_to_kitchen') {
             // Payment completed by KodaPay!
@@ -576,6 +807,104 @@ const POS = () => {
     setShowPaymentStep(true);
   };
 
+  // Customer Display — send payment session and listen for confirmation
+  const sendToCustomerDisplay = async () => {
+    if (!restaurantUid || orderItems.length === 0) return;
+
+    const subtotal = calculateSubtotal();
+    const tax = calculateTaxAmount();
+    const total = calculateTotalWithTax();
+    const tableNumber = selectedTables.length > 0
+      ? (selectedTables.length === 1 ? selectedTables[0] : selectedTables.join(', '))
+      : null;
+
+    const sessionData = {
+      status: 'pending_customer',
+      items: orderItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: calculateItemPrice(item),
+        quantity: item.quantity,
+        ...(item.notes && { notes: item.notes }),
+        ...(item.spiceLevel && { spiceLevel: item.spiceLevel })
+      })),
+      subtotal,
+      taxRate,
+      taxAmount: tax,
+      total,
+      orderNumber: null,
+      tableNumber,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'restaurants', restaurantUid, 'paymentReview', 'current'), sessionData);
+      setCdPending(true);
+      setCdResponse(null);
+
+      // Listen for customer confirmation
+      if (cdUnsubRef.current) cdUnsubRef.current();
+      cdUnsubRef.current = onSnapshot(
+        doc(db, 'restaurants', restaurantUid, 'paymentReview', 'current'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data.status === 'confirmed' && data.customerResponse) {
+              setCdResponse(data.customerResponse);
+              setCdPending(false);
+            }
+          }
+        }
+      );
+    } catch (err) {
+      console.error('Failed to send to customer display:', err);
+      setError('Failed to send to customer display: ' + err.message);
+    }
+  };
+
+  const cancelCustomerDisplay = async () => {
+    if (cdUnsubRef.current) {
+      cdUnsubRef.current();
+      cdUnsubRef.current = null;
+    }
+    setCdPending(false);
+    setCdResponse(null);
+    try {
+      await setDoc(doc(db, 'restaurants', restaurantUid, 'paymentReview', 'current'), { status: 'idle' });
+    } catch (err) {
+      console.error('Failed to reset customer display:', err);
+    }
+  };
+
+  const proceedAfterCustomerDisplay = async () => {
+    // Reset the paymentReview doc to idle
+    try {
+      await setDoc(doc(db, 'restaurants', restaurantUid, 'paymentReview', 'current'), { status: 'idle' });
+    } catch (err) {
+      console.error('Failed to reset customer display:', err);
+    }
+    if (cdUnsubRef.current) {
+      cdUnsubRef.current();
+      cdUnsubRef.current = null;
+    }
+
+    if (isPayFirst()) {
+      // For pay-first, now show payment method selection
+      setShowPaymentStep(true);
+    } else {
+      // For full-service, send to kitchen
+      await sendToKitchen();
+    }
+    setCdResponse(null);
+  };
+
+  // Cleanup customer display listener on unmount
+  useEffect(() => {
+    return () => {
+      if (cdUnsubRef.current) cdUnsubRef.current();
+    };
+  }, []);
+
   const handleTableSelect = (tables) => {
     setSelectedTables(tables);
   };
@@ -626,14 +955,15 @@ const POS = () => {
           <div>
             <h2>Point of Sale</h2>
             <p>{getServiceMode() === 'food_truck'
-              ? 'Take orders and collect payment at the window'
+              ? `Take orders at the window${isPayFirst() ? ' and collect payment' : ''}`
               : getServiceMode() === 'counter_service'
-                ? 'Take orders and collect payment at the counter'
+                ? `Take orders at the counter${isPayFirst() ? ' and collect payment' : ''}`
                 : 'Process orders and manage your restaurant sales'}</p>
           </div>
-          {isPayFirst() && (
+          {(getServiceMode() === 'counter_service' || getServiceMode() === 'food_truck') && (
             <Badge bg="light" text="dark" className="ms-3" style={{ fontSize: '0.8rem' }}>
-              <i className="bi bi-cash-coin me-1"></i> Pay First
+              <i className={`bi ${isPayFirst() ? 'bi-cash-coin' : 'bi-receipt-cutoff'} me-1`}></i>
+              {isPayFirst() ? 'Pre-Pay' : 'Post-Pay'}
             </Badge>
           )}
         </div>
@@ -671,7 +1001,7 @@ const POS = () => {
 
       <div className="pos-container">
         {/* Left Panel - Category Navigation */}
-        <div className="pos-categories">
+        <div className="pos-categories" style={{ width: categoryWidth }}>
           <h5>Categories</h5>
           <ul className="category-nav">
             {categories.map(category => (
@@ -694,6 +1024,16 @@ const POS = () => {
           )}
         </div>
 
+        {/* Drag handle - Categories / Main */}
+        <div
+          className="pos-drag-handle"
+          onMouseDown={(e) => handleDragStart('category', e)}
+          onTouchStart={(e) => handleDragStart('category', e)}
+          title="Drag to resize categories"
+        >
+          <div className="pos-drag-handle-dots" />
+        </div>
+
         {/* Main Panel - Item Tiles */}
         <div className="pos-main">
           <div className="pos-header">
@@ -714,17 +1054,7 @@ const POS = () => {
                 className="pos-item-tile"
                 onClick={() => addToOrder(item)}
               >
-                {item.imageUrl ? (
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="pos-item-image"
-                  />
-                ) : (
-                  <div className="pos-item-placeholder">
-                    <i className="bi bi-cup-straw"></i>
-                  </div>
-                )}
+                <MenuItemImage src={item.imageUrl} alt={item.name} size={70} />
                 <div className="pos-item-name">{item.name}</div>
                 <div className="pos-item-price">
                   ${calculateItemPrice(item).toFixed(2)}
@@ -743,8 +1073,18 @@ const POS = () => {
           </div>
         </div>
 
+        {/* Drag handle - Main / Order Panel */}
+        <div
+          className="pos-drag-handle"
+          onMouseDown={(e) => handleDragStart('order', e)}
+          onTouchStart={(e) => handleDragStart('order', e)}
+          title="Drag to resize order panel"
+        >
+          <div className="pos-drag-handle-dots" />
+        </div>
+
         {/* Right Panel - Current Order */}
-        <div className="pos-order-panel">
+        <div className="pos-order-panel" style={{ width: orderWidth }}>
           <div className="pos-order-header">
             <h5>Current Order</h5>
             <span>{orderItems.length} item(s)</span>
@@ -758,25 +1098,40 @@ const POS = () => {
                 <small>Click items to add them</small>
               </div>
             ) : (
-              orderItems.map(item => (
-                <div key={item.id} className="pos-order-item">
+              orderItems.map((item, index) => (
+                <div key={`${item.id}_${index}`} className="pos-order-item">
                   <div className="pos-order-item-info">
-                    <div className="pos-order-item-name">{item.name}</div>
+                    <div className="pos-order-item-name">
+                      {item.name}
+                      <span
+                        className="pos-order-item-edit-notes"
+                        onClick={(e) => { e.stopPropagation(); editCartItemNotes(index); }}
+                        title={item.notes ? 'Edit note' : 'Add note'}
+                      >
+                        <i className={`bi bi-pencil${item.notes ? '-fill' : ''}`} style={{ fontSize: '0.7rem', marginLeft: '6px', color: item.notes ? '#e67e22' : '#aaa', cursor: 'pointer' }}></i>
+                      </span>
+                    </div>
+                    {item.spiceLevel && (
+                      <Badge bg="danger" style={{ fontSize: '0.65rem', marginBottom: '2px' }}>{item.spiceLevel}</Badge>
+                    )}
+                    {item.notes && (
+                      <div className="pos-order-item-notes">{item.notes}</div>
+                    )}
                     <div className="pos-order-item-price">
                       ${calculateItemPrice(item).toFixed(2)} each
                     </div>
                   </div>
                   <div className="pos-order-item-quantity">
-                    <button onClick={() => updateQuantity(item.id, -1)}>−</button>
+                    <button onClick={() => updateQuantity(index, -1)}>−</button>
                     <span>{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, 1)}>+</button>
+                    <button onClick={() => updateQuantity(index, 1)}>+</button>
                   </div>
                   <div className="pos-order-item-total">
                     ${(calculateItemPrice(item) * item.quantity).toFixed(2)}
                   </div>
                   <span
                     className="pos-order-item-remove"
-                    onClick={() => removeItem(item.id)}
+                    onClick={() => removeItem(index)}
                   >
                     <i className="bi bi-x-circle"></i>
                   </span>
@@ -829,12 +1184,58 @@ const POS = () => {
               </div>
             )}
 
-            {/* Full-service: Send to Kitchen button */}
-            {!isPayFirst() && (
+            {/* Customer Display: tip/receipt info after confirmation */}
+            {cdResponse && (
+              <div className="pos-cd-response">
+                {cdResponse.tipAmount > 0 && (
+                  <div className="pos-cd-response-row">
+                    <span><i className="bi bi-heart-fill" style={{ color: '#e74c3c' }}></i> Tip:</span>
+                    <span>${cdResponse.tipAmount.toFixed(2)}{cdResponse.tipPercent ? ` (${cdResponse.tipPercent}%)` : ''}</span>
+                  </div>
+                )}
+                {cdResponse.receiptMethod && cdResponse.receiptMethod !== 'none' && (
+                  <div className="pos-cd-response-row">
+                    <span><i className="bi bi-receipt"></i> Receipt:</span>
+                    <span>{cdResponse.receiptMethod}{cdResponse.receiptContact ? ` — ${cdResponse.receiptContact}` : ''}</span>
+                  </div>
+                )}
+                {cdResponse.signature && (
+                  <div className="pos-cd-response-row">
+                    <span><i className="bi bi-pen"></i> Signed</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Full-service: Send to Kitchen button (or customer display first) */}
+            {!isPayFirst() && !cdPending && !cdResponse && (
               <button
                 className="pos-send-button"
-                onClick={sendToKitchen}
+                onClick={customerDisplayEnabled ? sendToCustomerDisplay : sendToKitchen}
                 disabled={orderItems.length === 0 || (requiresTables() && selectedTables.length === 0) || sendingOrder}
+              >
+                {sendingOrder ? (
+                  <>
+                    <Spinner animation="border" size="sm" /> Sending...
+                  </>
+                ) : customerDisplayEnabled ? (
+                  <>
+                    <i className="bi bi-display"></i> Send to Customer Display
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-send"></i> Send to Kitchen
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Full-service: after customer display confirms, proceed to kitchen */}
+            {!isPayFirst() && cdResponse && (
+              <button
+                className="pos-send-button"
+                onClick={proceedAfterCustomerDisplay}
+                disabled={sendingOrder}
               >
                 {sendingOrder ? (
                   <>
@@ -848,12 +1249,37 @@ const POS = () => {
               </button>
             )}
 
-            {/* Pay-first: Payment step */}
-            {isPayFirst() && !showPaymentStep && (
+            {/* Customer Display: waiting for customer */}
+            {cdPending && (
+              <div className="pos-cd-waiting">
+                <Spinner animation="border" size="sm" variant="primary" />
+                <span style={{ marginLeft: '8px' }}>Waiting for customer...</span>
+                <button className="pos-clear-button" onClick={cancelCustomerDisplay} style={{ marginTop: '8px' }}>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Pay-first: Payment step (or customer display first) */}
+            {isPayFirst() && !showPaymentStep && !cdPending && !cdResponse && (
               <button
                 className="pos-send-button pos-pay-button"
-                onClick={initiatePayment}
+                onClick={customerDisplayEnabled ? sendToCustomerDisplay : initiatePayment}
                 disabled={orderItems.length === 0}
+              >
+                {customerDisplayEnabled ? (
+                  <><i className="bi bi-display"></i> Send to Customer Display</>
+                ) : (
+                  <><i className="bi bi-cash-coin"></i> Proceed to Payment</>
+                )}
+              </button>
+            )}
+
+            {/* Pay-first: after customer display confirms, proceed to payment */}
+            {isPayFirst() && !showPaymentStep && cdResponse && (
+              <button
+                className="pos-send-button pos-pay-button"
+                onClick={proceedAfterCustomerDisplay}
               >
                 <i className="bi bi-cash-coin"></i> Proceed to Payment
               </button>
@@ -884,16 +1310,14 @@ const POS = () => {
                       <i className="bi bi-credit-card"></i>
                       <span>Card</span>
                     </button>
-                    {terminalAvailable && (
-                      <button
-                        className="pos-payment-method-btn pos-terminal-btn"
-                        onClick={() => setPaymentMethod('terminal')}
-                        style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', color: 'white' }}
-                      >
-                        <i className={`bi ${terminalReaderType === 'bluetooth' ? 'bi-bluetooth' : 'bi-phone'}`}></i>
-                        <span>Terminal</span>
-                      </button>
-                    )}
+                    <button
+                      className="pos-payment-method-btn pos-terminal-btn"
+                      onClick={() => setPaymentMethod('terminal')}
+                      style={{ background: 'linear-gradient(135deg, #635BFF, #7B73FF)', color: 'white' }}
+                    >
+                      <i className={`bi ${terminalReaderType === 'bluetooth' ? 'bi-bluetooth' : 'bi-phone'}`}></i>
+                      <span>Terminal</span>
+                    </button>
                     <button
                       className="pos-payment-method-btn pos-kodapay-btn"
                       onClick={() => setPaymentMethod('kodapay')}
@@ -925,9 +1349,9 @@ const POS = () => {
                   </div>
                 )}
 
-                {paymentMethod === 'card' && (
+                {paymentMethod === 'card' && stripePromise && (
                   <div className="pos-card-payment">
-                    <Elements stripe={getStripe()}>
+                    <Elements stripe={stripePromise}>
                       <CardPaymentForm
                         total={calculateTotalWithTax()}
                         onPaymentSuccess={handleCardPaymentSuccess}
@@ -937,6 +1361,7 @@ const POS = () => {
                         orderIds={[]}
                         tableNumbers={selectedTables}
                         restaurantId={restaurantUid}
+                        source="pos"
                         paymentDetails={{
                           subtotal: calculateSubtotal(),
                           taxRate: taxRate,
@@ -950,6 +1375,30 @@ const POS = () => {
 
                 {paymentMethod === 'terminal' && (
                   <div className="pos-terminal-payment">
+                    {!terminalAvailable ? (
+                      <div style={{
+                        textAlign: 'center', padding: '24px',
+                        background: '#f8f9fa', borderRadius: '12px'
+                      }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>
+                          <i className="bi bi-phone" style={{ color: '#635BFF' }}></i>
+                        </div>
+                        <p style={{ fontWeight: 600, fontSize: '1.05rem', marginBottom: '8px' }}>
+                          Terminal Not Set Up
+                        </p>
+                        <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '16px' }}>
+                          Go to <strong>Account → Stripe Terminal Setup</strong> to register a terminal reader before using this payment method.
+                        </p>
+                        <button
+                          className="pos-clear-button"
+                          onClick={() => setPaymentMethod(null)}
+                          style={{ marginTop: '4px' }}
+                        >
+                          Back to Payment Methods
+                        </button>
+                      </div>
+                    ) : (
+                    <>
                     <div className="pos-payment-amount" style={{ marginBottom: '16px' }}>
                       <span>Amount Due:</span>
                       <strong>${calculateTotalWithTax().toFixed(2)}</strong>
@@ -1015,6 +1464,8 @@ const POS = () => {
                           </>
                         )}
                       </div>
+                    )}
+                    </>
                     )}
                   </div>
                 )}
@@ -1116,9 +1567,16 @@ const POS = () => {
                   )}
                 </>
               )}
-              <button onClick={() => setOrderSuccess(null)}>
-                New Order
-              </button>
+              <div className="pos-success-actions">
+                {orderSuccess.paidAtPOS && receiptData && (
+                  <button className="pos-receipt-btn" onClick={() => setShowReceiptModal(true)}>
+                    <i className="bi bi-receipt me-1"></i> View Receipt
+                  </button>
+                )}
+                <button onClick={() => { setOrderSuccess(null); setReceiptData(null); }}>
+                  New Order
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1132,6 +1590,80 @@ const POS = () => {
             selectedTables={selectedTables}
           />
         )}
+
+        {/* Receipt Modal */}
+        <ReceiptModal
+          show={showReceiptModal}
+          onHide={() => setShowReceiptModal(false)}
+          receiptData={receiptData}
+        />
+
+        {/* Item Options Modal (Notes + Spice Level) */}
+        <Modal
+          show={showItemOptions}
+          onHide={() => { setShowItemOptions(false); setItemOptionsTarget(null); setEditingCartIndex(null); }}
+          centered
+          size="sm"
+        >
+          <Modal.Header closeButton>
+            <Modal.Title style={{ fontSize: '1rem' }}>
+              {editingCartIndex !== null ? 'Edit Note' : (itemOptionsTarget?.name || 'Item Options')}
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {/* Spice Level (required when available, only for new items) */}
+            {editingCartIndex === null && itemOptionsTarget?.spiceLevelEnabled && itemOptionsTarget?.spiceLevels?.length > 0 && (
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-bold">
+                  Spice Level <span className="text-danger">*</span>
+                </Form.Label>
+                <div className="d-flex flex-wrap gap-2">
+                  {itemOptionsTarget.spiceLevels.map((level) => (
+                    <Button
+                      key={level}
+                      variant={itemSpiceLevel === level ? 'danger' : 'outline-danger'}
+                      size="sm"
+                      onClick={() => setItemSpiceLevel(level)}
+                    >
+                      {level}
+                    </Button>
+                  ))}
+                </div>
+                {!itemSpiceLevel && (
+                  <Form.Text className="text-danger">Please select a spice level.</Form.Text>
+                )}
+              </Form.Group>
+            )}
+
+            {/* Notes */}
+            <Form.Group>
+              <Form.Label>Notes (optional)</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={2}
+                maxLength={200}
+                placeholder="e.g. extra roasted, no ice, add straw"
+                value={itemNotes}
+                onChange={(e) => setItemNotes(e.target.value)}
+                autoFocus={editingCartIndex !== null}
+              />
+              <Form.Text className="text-muted">{itemNotes.length}/200</Form.Text>
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" size="sm" onClick={() => { setShowItemOptions(false); setItemOptionsTarget(null); setEditingCartIndex(null); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={confirmItemOptions}
+              disabled={editingCartIndex === null && itemOptionsTarget?.spiceLevelEnabled && itemOptionsTarget?.spiceLevels?.length > 0 && !itemSpiceLevel}
+            >
+              {editingCartIndex !== null ? 'Update' : 'Add to Order'}
+            </Button>
+          </Modal.Footer>
+        </Modal>
       </div>
     </div>
   );

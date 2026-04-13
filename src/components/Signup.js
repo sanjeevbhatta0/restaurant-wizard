@@ -6,8 +6,9 @@ import { CardElement, Elements, useStripe, useElements } from '@stripe/react-str
 import { auth, db } from '../firebase';
 import { Form, Button, Card, Alert, Badge, Spinner } from 'react-bootstrap';
 import PasswordInput from './PasswordInput';
-import { TIER_FEATURES, TRIAL_PERIOD_DAYS } from '../contexts/SubscriptionContext';
-import { getStripe, createTierPayment, calculateTierPrice, formatAmount } from '../services/stripeService';
+import { TIER_FEATURES } from '../contexts/SubscriptionContext';
+import { getStripe, createStripeSubscription, activateTrialSubscription, calculateTierPrice, formatAmount } from '../services/stripeService';
+import { getPublishedConfig } from '../services/adminConfigService';
 import { trackPageView, trackSignup } from '../services/platformAnalyticsService';
 import './Login.css';
 
@@ -42,10 +43,12 @@ const SignupForm = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [restaurantName, setRestaurantName] = useState('');
   const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
   const [locationCount, setLocationCount] = useState(1);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1); // 1 = account details, 2 = payment
+  const [adminConfig, setAdminConfig] = useState(null);
   const navigate = useNavigate();
 
   // Get tier and billing cycle from URL params
@@ -59,21 +62,26 @@ const SignupForm = () => {
   // Scout tier is free and single-location only
   const isFreeTier = validTier === 'scout';
 
-  // Track signup page view on mount
+  // Check if this tier has a free trial enabled via admin config
+  const trialConfig = adminConfig?.freeTrials?.[validTier];
+  const hasFreeTrial = !isFreeTier && trialConfig?.enabled && trialConfig?.days > 0;
+
+  // Track signup page view on mount and fetch admin config
   useEffect(() => {
     trackPageView('signup');
+    getPublishedConfig().then(setAdminConfig);
   }, []);
 
   // For scout tier, force single location
   const effectiveLocationCount = isFreeTier ? 1 : locationCount;
 
-  // Calculate pricing based on locations (0 for scout)
+  // Calculate pricing from live admin config (falls back to defaults while loading)
   const pricing = useMemo(() => {
     if (isFreeTier) {
       return { totalCharge: 0, monthlyPerLocation: 0, billingMonths: 0 };
     }
-    return calculateTierPrice(validTier, billingCycle, effectiveLocationCount);
-  }, [validTier, billingCycle, effectiveLocationCount, isFreeTier]);
+    return calculateTierPrice(validTier, billingCycle, effectiveLocationCount, adminConfig);
+  }, [validTier, billingCycle, effectiveLocationCount, isFreeTier, adminConfig]);
 
   const handleAccountSubmit = async (e) => {
     e.preventDefault();
@@ -100,7 +108,11 @@ const SignupForm = () => {
       return;
     }
 
-    // Move to payment step for paid tiers
+    // For tiers with an active free trial, go to payment step to collect card
+    // (card is required but won't be charged until trial ends)
+    // For paid tiers, go to payment step to charge immediately
+
+    // Move to payment step
     setError('');
     setStep(2);
   };
@@ -131,6 +143,7 @@ const SignupForm = () => {
         username: username,
         usernameLower: username.toLowerCase(),
         email: email,
+        phone: phone || null,
         isMultiLocation: false, // Scout tier is single location only
         locationCount: 1,
         createdAt: new Date().toISOString(),
@@ -173,93 +186,137 @@ const SignupForm = () => {
       setError('');
       setLoading(true);
 
-      // Create PaymentIntent on backend
-      const { clientSecret, paymentIntentId } = await createTierPayment(
-        pricing.totalCharge,
+      // Create Stripe Subscription (or trial SetupIntent) on backend
+      const subscriptionResult = await createStripeSubscription(
         validTier,
         billingCycle,
-        locationCount,
+        effectiveLocationCount,
         restaurantName,
         email
       );
 
-      // Confirm payment with Stripe
       const cardElement = elements.getElement(CardElement);
-      const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: {
-            email: email,
-            name: restaurantName
+
+      let subscriptionId;
+      let stripeCustomerId = subscriptionResult.customerId;
+      let subscriptionStatus;
+      let trialEnd = null;
+
+      if (subscriptionResult.type === 'trial') {
+        // TRIAL FLOW: Confirm SetupIntent (saves card, no charge)
+        const { error: setupError, setupIntent } = await stripe.confirmCardSetup(
+          subscriptionResult.setupIntentClientSecret,
+          {
+            payment_method: {
+              card: cardElement,
+              billing_details: { email, name: restaurantName },
+            },
           }
+        );
+
+        if (setupError) {
+          throw new Error(setupError.message);
         }
-      });
 
-      if (stripeError) {
-        throw new Error(stripeError.message);
+        if (setupIntent.status !== 'succeeded') {
+          throw new Error('Card setup was not successful. Please try again.');
+        }
+
+        // Card saved — now activate the trial subscription on the server
+        const trialResult = await activateTrialSubscription({
+          customerId: stripeCustomerId,
+          priceId: subscriptionResult.priceId,
+          locationCount: effectiveLocationCount,
+          trialDays: subscriptionResult.trialDays,
+          couponId: subscriptionResult.couponId || null,
+          tier: validTier,
+          billingCycle,
+          restaurantName,
+        });
+
+        subscriptionId = trialResult.subscriptionId;
+        subscriptionStatus = 'trialing';
+        trialEnd = trialResult.trialEnd;
+      } else {
+        // PAID FLOW: Confirm PaymentIntent (charges immediately)
+        const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(
+          subscriptionResult.clientSecret,
+          {
+            payment_method: {
+              card: cardElement,
+              billing_details: { email, name: restaurantName },
+            },
+          }
+        );
+
+        if (stripeError) {
+          throw new Error(stripeError.message);
+        }
+
+        if (paymentIntent.status !== 'succeeded') {
+          throw new Error('Payment was not successful. Please try again.');
+        }
+
+        subscriptionId = subscriptionResult.subscriptionId;
+        subscriptionStatus = 'active';
       }
 
-      if (paymentIntent.status !== 'succeeded') {
-        throw new Error('Payment was not successful. Please try again.');
-      }
-
-      // Payment successful - now create the user account
+      // Payment/setup successful — create the user account
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Update the user profile with the username
-      await updateProfile(user, {
-        displayName: username
-      });
+      await updateProfile(user, { displayName: username });
 
-      // Calculate subscription period end
       const now = new Date();
       const periodMonths = { monthly: 1, quarterly: 3, annual: 12 }[billingCycle];
-      const periodEnd = new Date(now);
-      periodEnd.setMonth(periodEnd.getMonth() + periodMonths);
+      const periodEnd = trialEnd ? new Date(trialEnd) : new Date(now);
+      if (!trialEnd) {
+        periodEnd.setMonth(periodEnd.getMonth() + periodMonths);
+      }
 
       // Store user data with subscription info
       await setDoc(doc(db, "restaurants", user.uid), {
-        restaurantName: restaurantName,
-        username: username,
+        restaurantName,
+        username,
         usernameLower: username.toLowerCase(),
-        email: email,
-        isMultiLocation: locationCount > 1,
-        locationCount: locationCount,
-        createdAt: new Date().toISOString(),
-        // Subscription data
+        email,
+        phone: phone || null,
+        isMultiLocation: effectiveLocationCount > 1,
+        locationCount: effectiveLocationCount,
+        createdAt: now.toISOString(),
         subscription: {
           tier: validTier,
-          status: 'active',
-          billingCycle: billingCycle,
-          locationCount: locationCount,
-          stripePaymentIntentId: paymentIntentId,
-          // TODO: Replace with Stripe subscription IDs when implementing recurring billing
-          stripeCustomerId: null,
-          stripeSubscriptionId: null,
+          status: subscriptionStatus,
+          billingCycle,
+          locationCount: effectiveLocationCount,
+          stripeCustomerId,
+          stripeSubscriptionId: subscriptionId,
+          stripePaymentIntentId: null,
+          ...(trialEnd ? {
+            trialStart: now.toISOString(),
+            trialEnd,
+          } : {}),
           currentPeriodStart: now.toISOString(),
           currentPeriodEnd: periodEnd.toISOString(),
-          amountPaid: pricing.totalCharge,
-          createdAt: new Date().toISOString()
-        }
+          amountPaid: subscriptionStatus === 'trialing' ? 0 : pricing.totalCharge,
+          createdAt: now.toISOString(),
+        },
       });
 
       // If multi-location, create default locations
-      if (locationCount > 1) {
-        for (let i = 1; i <= locationCount; i++) {
+      if (effectiveLocationCount > 1) {
+        for (let i = 1; i <= effectiveLocationCount; i++) {
           const locationId = i === 1 ? user.uid : `${user.uid}_loc_${i}`;
           await setDoc(doc(db, `restaurants/${user.uid}/locations`, locationId), {
             name: i === 1 ? restaurantName : `${restaurantName} - Location ${i}`,
             address: '',
             isDefault: i === 1,
-            createdAt: new Date().toISOString()
+            createdAt: now.toISOString(),
           });
         }
       }
 
-      // Track the signup
       await trackSignup(validTier);
-
       navigate('/home');
     } catch (err) {
       console.error('Signup error:', err);
@@ -286,7 +343,7 @@ const SignupForm = () => {
                 <span className="auth-brand-name">Koda Carte</span>
               </div>
               <h2>{step === 1 ? 'Create Account' : 'Complete Payment'}</h2>
-              <p>{step === 1 ? 'Join Koda Carte today' : 'Secure payment powered by Stripe'}</p>
+              <p>{step === 1 ? (hasFreeTrial ? `Start your ${trialConfig.days}-day free trial` : 'Join Koda Carte today') : 'Secure payment powered by Stripe'}</p>
 
               {/* Step indicator */}
               <div style={{
@@ -349,10 +406,43 @@ const SignupForm = () => {
                           No credit card required
                         </div>
                       </>
+                    ) : hasFreeTrial ? (
+                      <>
+                        <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#4ade80' }}>
+                          {trialConfig.days}-day free trial
+                        </div>
+                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                          {pricing.discount ? (
+                            <>
+                              Then{' '}
+                              <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>
+                                {formatAmount(pricing.originalMonthlyPerLocation)}
+                              </span>{' '}
+                              {formatAmount(pricing.monthlyPerLocation)}/mo per location
+                            </>
+                          ) : (
+                            <>Then {formatAmount(pricing.monthlyPerLocation)}/mo per location</>
+                          )}
+                        </div>
+                        {pricing.discount && (
+                          <Badge bg="success" style={{ fontSize: '0.7rem', marginTop: '4px' }}>
+                            {pricing.discount.isPercentage ? `${pricing.discount.amount}% off` : `$${pricing.discount.amount} off`} — {pricing.discount.name}
+                          </Badge>
+                        )}
+                      </>
                     ) : (
                       <>
                         <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                          ${pricing.monthlyPerLocation}/mo per location
+                          {pricing.discount ? (
+                            <>
+                              <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>
+                                ${pricing.originalMonthlyPerLocation}
+                              </span>{' '}
+                              ${pricing.monthlyPerLocation}/mo per location
+                            </>
+                          ) : (
+                            <>${pricing.monthlyPerLocation}/mo per location</>
+                          )}
                         </div>
                         <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>
                           {formatAmount(pricing.totalCharge)}
@@ -360,6 +450,11 @@ const SignupForm = () => {
                             {' '}for {pricing.billingMonths} month{pricing.billingMonths > 1 ? 's' : ''}
                           </span>
                         </div>
+                        {pricing.discount && (
+                          <Badge bg="success" style={{ fontSize: '0.7rem', marginTop: '4px' }}>
+                            {pricing.discount.isPercentage ? `${pricing.discount.amount}% off` : `$${pricing.discount.amount} off`} — {pricing.discount.name}
+                          </Badge>
+                        )}
                       </>
                     )}
                   </div>
@@ -440,7 +535,7 @@ const SignupForm = () => {
                         opacity: 0.7,
                         textAlign: 'center'
                       }}>
-                        Total: {locationCount} locations × ${pricing.monthlyPerLocation}/mo × {pricing.billingMonths} months = {formatAmount(pricing.totalCharge)}
+                        Total: {effectiveLocationCount} locations × ${pricing.monthlyPerLocation}/mo × {pricing.billingMonths} months = {formatAmount(pricing.totalCharge)}
                       </div>
                     )}
                   </>
@@ -499,6 +594,19 @@ const SignupForm = () => {
                     />
                   </Form.Group>
                   <Form.Group className="mb-3">
+                    <Form.Label>Phone Number <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>(optional)</span></Form.Label>
+                    <Form.Control
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="auth-input"
+                      placeholder="(937) 361-9400"
+                    />
+                    <Form.Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem' }}>
+                      We'll send you a welcome SMS with setup instructions
+                    </Form.Text>
+                  </Form.Group>
+                  <Form.Group className="mb-3">
                     <Form.Label>Password</Form.Label>
                     <PasswordInput
                       value={password}
@@ -520,8 +628,21 @@ const SignupForm = () => {
                     className="auth-button w-100"
                     type="submit"
                     disabled={loading}
+                    onClick={(e) => {
+                      // Explicit click handler as fallback for environments where
+                      // type="submit" click doesn't trigger form onSubmit
+                      const form = e.target.closest('form');
+                      if (form && !form.checkValidity()) {
+                        form.reportValidity();
+                        return;
+                      }
+                      if (form) {
+                        e.preventDefault();
+                        handleAccountSubmit(e);
+                      }
+                    }}
                   >
-                    {loading ? 'Creating Account...' : (isFreeTier ? 'Create Free Account →' : 'Continue to Payment →')}
+                    {loading ? 'Creating Account...' : (isFreeTier ? 'Create Free Account →' : hasFreeTrial ? `Continue — Add Card for Trial →` : 'Continue to Payment →')}
                   </Button>
                 </Form>
               ) : (
@@ -539,12 +660,26 @@ const SignupForm = () => {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                       <span style={{ color: '#666' }}>Locations</span>
-                      <span style={{ fontWeight: 600 }}>{locationCount}</span>
+                      <span style={{ fontWeight: 600 }}>{effectiveLocationCount}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                       <span style={{ color: '#666' }}>Plan</span>
                       <span style={{ fontWeight: 600 }}>{tierInfo?.name} ({billingCycle})</span>
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ color: '#666' }}>Billing</span>
+                      <span style={{ fontWeight: 600 }}>
+                        Recurring {billingCycle === 'annual' ? 'yearly' : billingCycle}
+                      </span>
+                    </div>
+                    {pricing.discount && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ color: '#666' }}>Discount</span>
+                        <span style={{ fontWeight: 600, color: '#16a34a' }}>
+                          {pricing.discount.isPercentage ? `${pricing.discount.amount}%` : formatAmount(pricing.discount.amount)} off — {pricing.discount.name}
+                        </span>
+                      </div>
+                    )}
                     <div style={{
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -552,9 +687,36 @@ const SignupForm = () => {
                       borderTop: '1px solid #e5e7eb',
                       marginTop: '8px'
                     }}>
-                      <span style={{ fontWeight: 700 }}>Total</span>
-                      <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{formatAmount(pricing.totalCharge)}</span>
+                      <span style={{ fontWeight: 700 }}>
+                        {hasFreeTrial ? 'After trial' : 'Total'}
+                      </span>
+                      <div style={{ textAlign: 'right' }}>
+                        {pricing.originalMonthlyPerLocation && (
+                          <div style={{ fontSize: '0.8rem', textDecoration: 'line-through', color: '#999' }}>
+                            {formatAmount(pricing.originalMonthlyPerLocation * effectiveLocationCount * pricing.billingMonths)}
+                          </div>
+                        )}
+                        <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+                          {formatAmount(pricing.totalCharge)}
+                          <span style={{ fontSize: '0.75rem', fontWeight: 400, color: '#666' }}>
+                            /{billingCycle === 'annual' ? 'yr' : billingCycle === 'quarterly' ? 'qtr' : 'mo'}
+                          </span>
+                        </span>
+                      </div>
                     </div>
+                    {hasFreeTrial && (
+                      <div style={{
+                        marginTop: '8px',
+                        padding: '8px 12px',
+                        background: '#f0fdf4',
+                        borderRadius: '8px',
+                        fontSize: '0.85rem',
+                        color: '#16a34a',
+                        textAlign: 'center'
+                      }}>
+                        {trialConfig.days}-day free trial — you won't be charged today
+                      </div>
+                    )}
                   </div>
 
                   {/* Card Element */}
@@ -569,7 +731,9 @@ const SignupForm = () => {
                       <CardElement options={CARD_ELEMENT_OPTIONS} />
                     </div>
                     <Form.Text className="text-muted" style={{ display: 'block', marginTop: '8px' }}>
-                      🔒 Your payment is secured with Stripe
+                      {hasFreeTrial
+                        ? 'Your card will be saved and charged after the trial ends'
+                        : 'Your payment is secured with Stripe'}
                     </Form.Text>
                   </Form.Group>
 
@@ -591,10 +755,12 @@ const SignupForm = () => {
                       {loading ? (
                         <>
                           <Spinner animation="border" size="sm" className="me-2" />
-                          Processing...
+                          {hasFreeTrial ? 'Setting up trial...' : 'Processing...'}
                         </>
+                      ) : hasFreeTrial ? (
+                        `Start ${trialConfig.days}-Day Free Trial`
                       ) : (
-                        `Pay ${formatAmount(pricing.totalCharge)}`
+                        `Subscribe — ${formatAmount(pricing.totalCharge)}`
                       )}
                     </Button>
                   </div>
@@ -605,7 +771,9 @@ const SignupForm = () => {
                     textAlign: 'center',
                     marginTop: '12px'
                   }}>
-                    By signing up, you agree to our Terms of Service and Privacy Policy
+                    {hasFreeTrial
+                      ? `Your free trial starts today. You'll be charged ${formatAmount(pricing.totalCharge)} after ${trialConfig.days} days unless you cancel.`
+                      : `You'll be billed ${formatAmount(pricing.totalCharge)} ${billingCycle === 'annual' ? 'annually' : billingCycle}. Cancel anytime.`}
                   </p>
                 </Form>
               )}

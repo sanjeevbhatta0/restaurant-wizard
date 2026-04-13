@@ -3,5 +3,25 @@
     "default": "restaurant-portal-6b147",
     "dev": "restaurant-portal-6b147",
     "prod": "kodacarte-861d8"
-  }
+  },
+  "targets": {
+    "restaurant-portal-6b147": {
+      "hosting": {
+        "admin": [
+          "restaurant-portal-6b147"
+        ],
+        "restaurants": [
+          "koda-carte-sites"
+        ]
+      }
+    },
+    "kodacarte-861d8": {
+      "hosting": {
+        "admin": [
+          "kodacarte-861d8"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

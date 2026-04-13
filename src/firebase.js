@@ -38,6 +38,16 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 const functions = getFunctions(app);
 
+// Connect to emulators in development
+// MUST happen before enableMultiTabIndexedDbPersistence — Firestore settings
+// cannot be changed after the first operation starts the instance.
+if (process.env.REACT_APP_USE_EMULATOR === 'true') {
+  connectAuthEmulator(auth, `http://${process.env.REACT_APP_EMULATOR_HOST}:${process.env.REACT_APP_AUTH_EMULATOR_PORT}`);
+  connectFirestoreEmulator(db, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_FIRESTORE_EMULATOR_PORT));
+  connectStorageEmulator(storage, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_STORAGE_EMULATOR_PORT));
+  connectFunctionsEmulator(functions, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_FUNCTIONS_EMULATOR_PORT));
+}
+
 // Enable offline persistence for Firestore
 // Data is cached in IndexedDB and writes are queued when offline
 enableMultiTabIndexedDbPersistence(db).catch((err) => {
@@ -47,14 +57,6 @@ enableMultiTabIndexedDbPersistence(db).catch((err) => {
     console.warn('Firestore persistence not available in this browser');
   }
 });
-
-// Connect to emulators in development
-if (process.env.REACT_APP_USE_EMULATOR === 'true') {
-  connectAuthEmulator(auth, `http://${process.env.REACT_APP_EMULATOR_HOST}:${process.env.REACT_APP_AUTH_EMULATOR_PORT}`);
-  connectFirestoreEmulator(db, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_FIRESTORE_EMULATOR_PORT));
-  connectStorageEmulator(storage, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_STORAGE_EMULATOR_PORT));
-  connectFunctionsEmulator(functions, process.env.REACT_APP_EMULATOR_HOST, parseInt(process.env.REACT_APP_FUNCTIONS_EMULATOR_PORT));
-}
 
 export { auth, db, storage, functions };
 export default app;

@@ -433,7 +433,7 @@ describe('Payment Processing — Integration', () => {
         selectedOrders: [],
         discountAmount: 0,
         tipAmount: 0,
-        taxRate: 8.5,
+        taxRate: 8,
         paymentMethod: 'cash'
       });
 
@@ -441,7 +441,7 @@ describe('Payment Processing — Integration', () => {
       expect(reset.selectedOrders).toEqual([]);
       expect(reset.discountAmount).toBe(0);
       expect(reset.tipAmount).toBe(0);
-      expect(reset.taxRate).toBe(8.5);
+      expect(reset.taxRate).toBe(8);
       expect(reset.paymentMethod).toBe('cash');
     });
   });

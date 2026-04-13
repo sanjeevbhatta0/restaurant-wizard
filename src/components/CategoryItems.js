@@ -14,6 +14,9 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { db, storage } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Container, Card, Button, Form, Alert, Spinner, Modal } from 'react-bootstrap';
+import { compressImage } from '../services/imageService';
+import MenuItemImage from './MenuItemImage';
+import ConfirmModal from './ConfirmModal';
 
 const CategoryItems = () => {
   const { categoryId } = useParams();
@@ -26,6 +29,8 @@ const CategoryItems = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
+  const [confirmState, setConfirmState] = useState(null);
+
   // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
   const [itemForm, setItemForm] = useState({
@@ -113,10 +118,11 @@ const CategoryItems = () => {
       let imageStoragePath = '';
 
       if (itemForm.image) {
-        const fileName = `${Date.now()}-${itemForm.image.name}`;
+        const compressed = await compressImage(itemForm.image);
+        const fileName = `${Date.now()}-${compressed.name}`;
         imageStoragePath = `restaurants/${restaurantUid}/menuItems/${categoryId}/${fileName}`;
         const storageRef = ref(storage, imageStoragePath);
-        await uploadBytes(storageRef, itemForm.image);
+        await uploadBytes(storageRef, compressed);
         imageUrl = await getDownloadURL(storageRef);
       }
 
@@ -138,9 +144,16 @@ const CategoryItems = () => {
     }
   };
 
-  const handleDeleteItem = async (itemId, imageStoragePath) => {
-    if (!window.confirm('Are you sure you want to delete this item?')) return;
+  const handleDeleteItem = (itemId, imageStoragePath) => {
+    setConfirmState({
+      title: 'Delete Item',
+      message: 'Are you sure you want to delete this item?',
+      confirmText: 'Delete',
+      onConfirm: () => doDeleteItem(itemId, imageStoragePath)
+    });
+  };
 
+  const doDeleteItem = async (itemId, imageStoragePath) => {
     try {
       if (imageStoragePath) {
         const imageRef = ref(storage, imageStoragePath);
@@ -191,11 +204,7 @@ const CategoryItems = () => {
               </div>
               <div className="d-flex">
                 {item.imageUrl && (
-                  <img 
-                    src={item.imageUrl} 
-                    alt={item.name} 
-                    style={{ width: '50px', height: '50px', objectFit: 'cover', marginRight: '10px' }}
-                  />
+                  <MenuItemImage src={item.imageUrl} alt={item.name} size={50} className="me-2" />
                 )}
                 <Button
                   variant="outline-danger"
@@ -294,6 +303,7 @@ const CategoryItems = () => {
           </Form>
         </Modal.Body>
       </Modal>
+      <ConfirmModal state={confirmState} onClose={() => setConfirmState(null)} />
     </Container>
   );
 };

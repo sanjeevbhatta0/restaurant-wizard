@@ -172,10 +172,13 @@ const ReviewManagement = () => {
 
   return (
     <Container fluid className="review-management">
-      <div className="page-header-modern">
-        <div className="page-header-content">
-          <h1><i className="bi bi-chat-quote"></i> Customer Reviews</h1>
-          <p>Manage and moderate customer reviews for your restaurant</p>
+      <div className="page-header-gradient">
+        <div className="header-content">
+          <i className="bi bi-chat-quote header-icon"></i>
+          <div>
+            <h2>Customer Reviews</h2>
+            <p>Manage and moderate customer reviews for your restaurant</p>
+          </div>
         </div>
       </div>
 

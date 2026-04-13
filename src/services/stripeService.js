@@ -1,22 +1,24 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { STRIPE_PUBLISHABLE_KEY } from '../config';
 
 // Cache Stripe instances: platform + connected accounts
 const stripeInstances = {};
 
 /**
  * Initialize Stripe with the publishable key.
+ * Uses environment-aware key from config (dev = pk_test, prod = pk_live).
  * If connectedAccountId is provided, creates a Stripe instance targeting that connected account.
  * @param {string} [connectedAccountId] - Optional Stripe Connect account ID
  */
 export const getStripe = async (connectedAccountId) => {
   const cacheKey = connectedAccountId || '__platform__';
   if (!stripeInstances[cacheKey]) {
-    const isProd = process.env.REACT_APP_FIREBASE_ENV === 'production';
-    const publishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
-      || (isProd
-        ? 'pk_live_51SkXBnKKkFGO1CjjN6pbM8w7XQLIe8RqXJMMND7mVFHcbFp6qjDTZwd3Q51hTzV4Qn6TaicxpKImFM3tAomhUpkN00nV5baEOk'
-        : 'pk_test_51SkXC0KckjWrEVo2Ds2i9mmr5IONkNEYa5an7d4lEr2qg29M3y88UzQRCZoqSzJ92qoTBffVm1AWEPB5uYxdhpsD00bsPkUN15');
+    const publishableKey = STRIPE_PUBLISHABLE_KEY;
+    if (!publishableKey) {
+      console.error('Stripe publishable key is not set');
+      return null;
+    }
     const opts = connectedAccountId ? { stripeAccount: connectedAccountId } : {};
     stripeInstances[cacheKey] = loadStripe(publishableKey, opts);
   }
@@ -47,18 +49,21 @@ export const getStripeConnectStatus = async () => {
  * @param {string} restaurantId - Restaurant ID (user UID)
  * @returns {Promise<{clientSecret: string, paymentIntentId: string}>}
  */
-export const createPaymentIntent = async (amount, orderIds, tableNumbers, restaurantId) => {
+export const createPaymentIntent = async (amount, orderIds, tableNumbers, restaurantId, source) => {
   try {
     const functions = getFunctions();
     const createPaymentIntentFn = httpsCallable(functions, 'createPaymentIntent');
 
-    const result = await createPaymentIntentFn({
+    const params = {
       amount,
       currency: 'usd',
       orderIds,
       tableNumbers,
       restaurantId
-    });
+    };
+    if (source) params.source = source;
+
+    const result = await createPaymentIntentFn(params);
 
     return result.data;
   } catch (error) {
@@ -167,50 +172,160 @@ export const createTierPayment = async (amount, tier, billingCycle, locationCoun
   }
 };
 
+// Default pricing fallbacks (used when admin config hasn't loaded yet)
+const DEFAULT_BASE_PRICES = {
+  scout: 0,
+  ally: 29,
+  guide: 59,
+  chief: 99,
+  elder: 229
+};
+
+const DEFAULT_BILLING_MULTIPLIERS = {
+  monthly: 1.20,
+  quarterly: 1.10,
+  annual: 1.00
+};
+
 /**
- * Calculate total price for tier signup
+ * Calculate total price for tier signup.
+ * Accepts optional adminConfig to use live pricing from platformConfig/current.
+ * Falls back to hardcoded defaults if no config provided.
+ *
  * @param {string} tier - Tier name
  * @param {string} billingCycle - monthly, quarterly, annual
  * @param {number} locationCount - Number of locations
+ * @param {Object} [adminConfig] - Live admin config from platformConfig/current
  * @returns {{monthlyPerLocation: number, totalMonthly: number, billingMonths: number, totalCharge: number}}
  */
-export const calculateTierPrice = (tier, billingCycle, locationCount) => {
-  // Base prices (annual rate - this is the advertised price)
-  const BASE_PRICES = {
-    ally: 29,
-    guide: 59,
-    chief: 99,
-    elder: 229
-  };
+export const calculateTierPrice = (tier, billingCycle, locationCount, adminConfig) => {
+  const basePrices = adminConfig?.pricing || DEFAULT_BASE_PRICES;
+  const billingMultipliers = adminConfig?.billingMultipliers || DEFAULT_BILLING_MULTIPLIERS;
 
-  // Billing multipliers
-  const BILLING_MULTIPLIERS = {
-    monthly: 1.20,   // 20% extra
-    quarterly: 1.10, // 10% extra
-    annual: 1.00     // Base price
-  };
-
-  // Billing periods in months
   const BILLING_MONTHS = {
     monthly: 1,
     quarterly: 3,
     annual: 12
   };
 
-  const basePrice = BASE_PRICES[tier] || 29;
-  const multiplier = BILLING_MULTIPLIERS[billingCycle] || 1;
+  const basePrice = basePrices[tier] ?? DEFAULT_BASE_PRICES[tier] ?? 29;
+  const multiplier = billingMultipliers[billingCycle] ?? DEFAULT_BILLING_MULTIPLIERS[billingCycle] ?? 1;
   const billingMonths = BILLING_MONTHS[billingCycle] || 1;
 
-  const monthlyPerLocation = basePrice * multiplier;
+  // Check for active discounts (same logic as PricingTiers.js)
+  let discountAmount = 0;
+  let activeDiscount = null;
+  if (adminConfig?.discounts) {
+    const now = new Date();
+    activeDiscount = adminConfig.discounts.find(d => {
+      if (!d.active) return false;
+      const start = new Date(d.startDate);
+      const end = new Date(d.endDate);
+      return now >= start && now <= end &&
+        ((d.type === 'tier' && d.target === tier) ||
+         (d.type === 'billing_cycle' && d.target === billingCycle));
+    });
+
+    if (activeDiscount) {
+      if (activeDiscount.isPercentage) {
+        discountAmount = basePrice * (activeDiscount.amount / 100);
+      } else {
+        discountAmount = activeDiscount.amount;
+      }
+    }
+  }
+
+  const discountedBasePrice = Math.max(0, basePrice - discountAmount);
+  const monthlyPerLocation = discountedBasePrice * multiplier;
+  const originalMonthly = basePrice * multiplier;
   const totalMonthly = monthlyPerLocation * locationCount;
   const totalCharge = totalMonthly * billingMonths;
 
   return {
     monthlyPerLocation: Math.round(monthlyPerLocation * 100) / 100,
+    originalMonthlyPerLocation: activeDiscount ? Math.round(originalMonthly * 100) / 100 : null,
     totalMonthly: Math.round(totalMonthly * 100) / 100,
     billingMonths,
-    totalCharge: Math.round(totalCharge * 100) / 100
+    totalCharge: Math.round(totalCharge * 100) / 100,
+    discount: activeDiscount ? {
+      name: activeDiscount.name,
+      amount: activeDiscount.amount,
+      isPercentage: activeDiscount.isPercentage,
+    } : null,
   };
+};
+
+/**
+ * Create a Stripe Subscription for a new restaurant signup.
+ * Handles recurring billing, free trials, and discounts.
+ *
+ * @param {string} tier - Selected tier (ally, guide, chief, elder)
+ * @param {string} billingCycle - Billing cycle (monthly, quarterly, annual)
+ * @param {number} locationCount - Number of locations
+ * @param {string} restaurantName - Restaurant name
+ * @param {string} email - Customer email
+ * @returns {Promise<{type: 'trial'|'subscription', ...}>}
+ */
+export const createStripeSubscription = async (tier, billingCycle, locationCount, restaurantName, email) => {
+  try {
+    const functions = getFunctions();
+    const fn = httpsCallable(functions, 'createStripeSubscription');
+
+    const result = await fn({
+      tier,
+      billingCycle,
+      locationCount,
+      restaurantName,
+      email,
+    });
+
+    return result.data;
+  } catch (error) {
+    console.error('Error creating subscription:', error);
+    throw new Error(error.message || 'Failed to create subscription');
+  }
+};
+
+/**
+ * Activate a trial subscription after the SetupIntent is confirmed.
+ * Creates the actual Stripe Subscription with trial_period_days.
+ *
+ * @param {Object} params - Subscription parameters from createStripeSubscription response
+ * @returns {Promise<{subscriptionId: string, trialEnd: string, status: string}>}
+ */
+export const activateTrialSubscription = async (params) => {
+  try {
+    const functions = getFunctions();
+    const fn = httpsCallable(functions, 'activateTrialSubscription');
+
+    const result = await fn(params);
+    return result.data;
+  } catch (error) {
+    console.error('Error activating trial subscription:', error);
+    throw new Error(error.message || 'Failed to activate trial');
+  }
+};
+
+/**
+ * Update an existing subscription plan (upgrade or downgrade).
+ * Upgrades are prorated immediately. Downgrades are scheduled at period end.
+ *
+ * @param {string} newTier - New tier (ally, guide, chief, elder, scout)
+ * @param {string} newBillingCycle - New billing cycle
+ * @param {number} locationCount - Number of locations
+ * @returns {Promise<{type: 'upgrade_applied'|'downgrade_scheduled', ...}>}
+ */
+export const updateSubscriptionPlan = async (newTier, newBillingCycle, locationCount) => {
+  try {
+    const functions = getFunctions();
+    const fn = httpsCallable(functions, 'updateSubscriptionPlan');
+
+    const result = await fn({ newTier, newBillingCycle, locationCount });
+    return result.data;
+  } catch (error) {
+    console.error('Error updating subscription plan:', error);
+    throw new Error(error.message || 'Failed to update plan');
+  }
 };
 
 export default {
@@ -221,6 +336,9 @@ export default {
   processRefund,
   formatAmount,
   createTierPayment,
-  calculateTierPrice
+  calculateTierPrice,
+  createStripeSubscription,
+  activateTrialSubscription,
+  updateSubscriptionPlan,
 };
 

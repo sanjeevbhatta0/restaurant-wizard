@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { Container, Button, Modal, Form, Alert, Spinner } from 'react-bootstrap';
+import ConfirmModal from './ConfirmModal';
 import './PageHeader.css';
 import './TableLayout.css';
 
@@ -13,6 +14,7 @@ const TableLayout = () => {
   const [layout, setLayout] = useState(null);
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [confirmState, setConfirmState] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -211,9 +213,12 @@ const TableLayout = () => {
   };
 
   const handleDeleteTable = (tableId) => {
-    if (window.confirm('Are you sure you want to delete this table?')) {
-      setTables(tables.filter(t => t.id !== tableId));
-    }
+    setConfirmState({
+      title: 'Delete Table',
+      message: 'Are you sure you want to delete this table?',
+      confirmText: 'Delete',
+      onConfirm: () => setTables(tables.filter(t => t.id !== tableId))
+    });
   };
 
   const handleMouseDown = (e, table) => {
@@ -613,6 +618,7 @@ const TableLayout = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+      <ConfirmModal state={confirmState} onClose={() => setConfirmState(null)} />
     </Container>
   );
 };

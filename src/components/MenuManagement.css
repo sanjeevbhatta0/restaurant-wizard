@@ -303,6 +303,12 @@
   opacity: 1;
 }
 
+@media (hover: none) {
+  .menu-item-actions {
+    opacity: 1;
+  }
+}
+
 .menu-item-edit-btn,
 .menu-item-delete-btn {
   width: 28px;

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Koda Carte Logo — Concept Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f0f0;
+      padding: 3rem 1rem;
+    }
+    h1 { margin-bottom: 0.3rem; color: #333; font-size: 1.4rem; }
+    .subtitle { color: #888; margin-bottom: 2.5rem; font-size: 0.85rem; }
+    .section-title { color: #555; font-size: 1rem; font-weight: 600; margin: 2.5rem 0 1.5rem; text-transform: uppercase; letter-spacing: 2px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2.5rem;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.8rem;
+    }
+    .card-label {
+      font-size: 0.75rem;
+      color: #999;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .logo-box {
+      width: 240px;
+      height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 20px;
+      padding: 24px;
+    }
+    .light-bg { background: #ffffff; box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
+    .dark-bg { background: #1a1a2e; }
+    .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .logo-box svg { width: 100%; height: 100%; }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      padding: 1.5rem 3rem;
+      border-radius: 16px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+      margin-top: 1rem;
+    }
+    .brand-row svg { width: 56px; height: 56px; }
+    .brand-bg-light { background: #fff; }
+    .brand-bg-dark { background: #1a1a2e; }
+    .brand-text {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #b8964e 0%, #7ab97e 40%, #4db6ac 70%, #26c6da 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 1px;
+    }
+    .brand-text-white {
+      background: none;
+      -webkit-text-fill-color: #fff;
+      color: #fff;
+    }
+    .compare-section {
+      display: flex;
+      align-items: flex-start;
+      gap: 4rem;
+      margin-top: 1.5rem;
+    }
+    .compare-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .compare-card img, .compare-card svg { width: 160px; height: 160px; }
+    .compare-label { font-size: 0.8rem; color: #888; font-weight: 600; }
+    .anatomy {
+      margin-top: 2rem;
+      padding: 2rem;
+      max-width: 700px;
+      text-align: center;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.06);
+    }
+    .anatomy h2 { font-size: 1rem; color: #333; margin-bottom: 1rem; }
+    .anatomy-grid {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+      color: #666;
+      font-size: 0.85rem;
+    }
+    .anatomy-item { text-align: center; }
+    .anatomy-item .icon { font-size: 1.8rem; margin-bottom: 0.3rem; }
+    .anatomy-item strong { display: block; margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+  <h1>Koda Carte Logo — Concept Preview</h1>
+  <p class="subtitle">Cursive K with fork (lower-right), spoon bowl (upper-right tip), knife edge (upper-left tip)</p>
+
+  <!-- ===== NEW CONCEPT ===== -->
+  <div class="section-title">New Concept</div>
+  <div class="grid">
+    <!-- Light -->
+    <div class="card">
+      <div class="logo-box light-bg">
+        <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="0.8" y2="1">
+              <stop offset="0%" stop-color="#b8964e"/>
+              <stop offset="30%" stop-color="#8aad6a"/>
+              <stop offset="55%" stop-color="#7ab97e"/>
+              <stop offset="75%" stop-color="#4db6ac"/>
+              <stop offset="100%" stop-color="#26c6da"/>
+            </linearGradient>
+          </defs>
+
+          <!--
+            Cursive K structure (matching existing logo):
+            - Vertical backbone from bottom-center up
+            - Upper-left loop (golden) — ends with knife taper
+            - Upper-right arm from crossing — ends with spoon bowl
+            - Lower-right arm from crossing — ends with fork tines
+          -->
+
+          <!-- UPPER-LEFT: Loop with knife-edge tip -->
+          <!-- The top of the loop tapers to a sharp knife point instead of rounding off -->
+          <path d="
+            M 165 260
+            C 130 210, 95 150, 100 100
+            C 103 70, 120 42, 150 35
+            C 178 28, 195 55, 190 85
+            C 185 110, 170 140, 155 165
+          " fill="none" stroke="url(#g1)" stroke-width="30" stroke-linecap="round"/>
+          <!-- Knife point: sharp taper at the top of the loop -->
+          <!-- A small pointed extension where the loop peaks -->
+          <path d="
+            M 147 38
+            L 132 18
+            L 138 15
+            L 155 33
+          " fill="url(#g1)" stroke="none"/>
+          <!-- Subtle knife edge line along the outer curve of the top -->
+          <path d="
+            M 135 22
+            C 140 30, 148 35, 153 34
+          " fill="none" stroke="url(#g1)" stroke-width="2" opacity="0.4"/>
+
+          <!-- VERTICAL BACKBONE: flows from the loop down to bottom -->
+          <path d="
+            M 160 160
+            C 175 220, 180 280, 175 340
+            C 172 370, 165 400, 155 430
+          " fill="none" stroke="url(#g1)" stroke-width="30" stroke-linecap="round"/>
+
+          <!-- CROSSING AREA: the center where arms diverge -->
+          <!-- Small decorative loop at center for the cursive feel -->
+          <path d="
+            M 150 245
+            C 160 230, 185 228, 190 245
+            C 195 262, 172 265, 160 255
+          " fill="none" stroke="url(#g1)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+
+          <!-- UPPER-RIGHT ARM: ends with spoon bowl -->
+          <path d="
+            M 180 240
+            C 220 190, 280 140, 340 105
+            C 370 88, 395 80, 410 82
+          " fill="none" stroke="url(#g1)" stroke-width="28" stroke-linecap="round"/>
+          <!-- Spoon bowl: oval at the end of the upper-right arm -->
+          <ellipse cx="418" cy="75" rx="28" ry="20" fill="url(#g1)" transform="rotate(20, 418, 75)"/>
+          <!-- Spoon bowl inner highlight (gives it depth) -->
+          <ellipse cx="418" cy="73" rx="18" ry="12" fill="white" opacity="0.25" transform="rotate(20, 418, 73)"/>
+
+          <!-- LOWER-RIGHT ARM: ends with fork tines -->
+          <path d="
+            M 175 260
+            C 220 310, 280 360, 340 395
+            C 365 408, 385 415, 400 418
+          " fill="none" stroke="url(#g1)" stroke-width="28" stroke-linecap="round"/>
+
+          <!-- Fork head transition: the stroke widens slightly before tines -->
+          <path d="
+            M 390 412
+            C 400 416, 408 418, 415 417
+            C 422 416, 425 414, 425 410
+          " fill="none" stroke="url(#g1)" stroke-width="30" stroke-linecap="round"/>
+
+          <!-- Fork tines: 4 prongs extending from the end -->
+          <path d="M 408 408 C 415 400, 425 385, 430 370" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 418 412 C 426 405, 438 392, 445 378" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 427 414 C 436 408, 450 398, 458 386" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 435 413 C 444 409, 460 402, 470 393" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round"/>
+
+          <!-- Bottom tail: the bottom of the K curls right (teal) -->
+          <path d="
+            M 155 430
+            C 150 445, 160 460, 185 465
+            C 210 468, 240 460, 260 445
+          " fill="none" stroke="url(#g1)" stroke-width="26" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="card-label">Light Background</span>
+    </div>
+
+    <!-- Dark -->
+    <div class="card">
+      <div class="logo-box dark-bg">
+        <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="g2" x1="0" y1="0" x2="0.8" y2="1">
+              <stop offset="0%" stop-color="#b8964e"/>
+              <stop offset="30%" stop-color="#8aad6a"/>
+              <stop offset="55%" stop-color="#7ab97e"/>
+              <stop offset="75%" stop-color="#4db6ac"/>
+              <stop offset="100%" stop-color="#26c6da"/>
+            </linearGradient>
+          </defs>
+          <path d="M 165 260 C 130 210, 95 150, 100 100 C 103 70, 120 42, 150 35 C 178 28, 195 55, 190 85 C 185 110, 170 140, 155 165" fill="none" stroke="url(#g2)" stroke-width="30" stroke-linecap="round"/>
+          <path d="M 147 38 L 132 18 L 138 15 L 155 33" fill="url(#g2)" stroke="none"/>
+          <path d="M 135 22 C 140 30, 148 35, 153 34" fill="none" stroke="url(#g2)" stroke-width="2" opacity="0.4"/>
+          <path d="M 160 160 C 175 220, 180 280, 175 340 C 172 370, 165 400, 155 430" fill="none" stroke="url(#g2)" stroke-width="30" stroke-linecap="round"/>
+          <path d="M 150 245 C 160 230, 185 228, 190 245 C 195 262, 172 265, 160 255" fill="none" stroke="url(#g2)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+          <path d="M 180 240 C 220 190, 280 140, 340 105 C 370 88, 395 80, 410 82" fill="none" stroke="url(#g2)" stroke-width="28" stroke-linecap="round"/>
+          <ellipse cx="418" cy="75" rx="28" ry="20" fill="url(#g2)" transform="rotate(20, 418, 75)"/>
+          <ellipse cx="418" cy="73" rx="18" ry="12" fill="white" opacity="0.15" transform="rotate(20, 418, 73)"/>
+          <path d="M 175 260 C 220 310, 280 360, 340 395 C 365 408, 385 415, 400 418" fill="none" stroke="url(#g2)" stroke-width="28" stroke-linecap="round"/>
+          <path d="M 390 412 C 400 416, 408 418, 415 417 C 422 416, 425 414, 425 410" fill="none" stroke="url(#g2)" stroke-width="30" stroke-linecap="round"/>
+          <path d="M 408 408 C 415 400, 425 385, 430 370" fill="none" stroke="url(#g2)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 418 412 C 426 405, 438 392, 445 378" fill="none" stroke="url(#g2)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 427 414 C 436 408, 450 398, 458 386" fill="none" stroke="url(#g2)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 435 413 C 444 409, 460 402, 470 393" fill="none" stroke="url(#g2)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 155 430 C 150 445, 160 460, 185 465 C 210 468, 240 460, 260 445" fill="none" stroke="url(#g2)" stroke-width="26" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="card-label">Dark Background</span>
+    </div>
+
+    <!-- Gradient -->
+    <div class="card">
+      <div class="logo-box gradient-bg">
+        <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="g3" x1="0" y1="0" x2="0.8" y2="1">
+              <stop offset="0%" stop-color="rgba(255,255,255,0.95)"/>
+              <stop offset="100%" stop-color="rgba(255,255,255,0.80)"/>
+            </linearGradient>
+          </defs>
+          <path d="M 165 260 C 130 210, 95 150, 100 100 C 103 70, 120 42, 150 35 C 178 28, 195 55, 190 85 C 185 110, 170 140, 155 165" fill="none" stroke="url(#g3)" stroke-width="30" stroke-linecap="round"/>
+          <path d="M 147 38 L 132 18 L 138 15 L 155 33" fill="url(#g3)" stroke="none"/>
+          <path d="M 135 22 C 140 30, 148 35, 153 34" fill="none" stroke="url(#g3)" stroke-width="2" opacity="0.4"/>
+          <path d="M 160 160 C 175 220, 180 280, 175 340 C 172 370, 165 400, 155 430" fill="none" stroke="url(#g3)" stroke-width="30" stroke-linecap="round"/>
+          <path d="M 150 245 C 160 230, 185 228, 190 245 C 195 262, 172 265, 160 255" fill="none" stroke="url(#g3)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+          <path d="M 180 240 C 220 190, 280 140, 340 105 C 370 88, 395 80, 410 82" fill="none" stroke="url(#g3)" stroke-width="28" stroke-linecap="round"/>
+          <ellipse cx="418" cy="75" rx="28" ry="20" fill="url(#g3)" transform="rotate(20, 418, 75)"/>
+          <ellipse cx="418" cy="73" rx="18" ry="12" fill="white" opacity="0.2" transform="rotate(20, 418, 73)"/>
+          <path d="M 175 260 C 220 310, 280 360, 340 395 C 365 408, 385 415, 400 418" fill="none" stroke="url(#g3)" stroke-width="28" stroke-linecap="round"/>
+          <path d="M 390 412 C 400 416, 408 418, 415 417 C 422 416, 425 414, 425 410" fill="none" stroke="url(#g3)" stroke-width="30" stroke-linecap="round"/>
+          <path d="M 408 408 C 415 400, 425 385, 430 370" fill="none" stroke="url(#g3)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 418 412 C 426 405, 438 392, 445 378" fill="none" stroke="url(#g3)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 427 414 C 436 408, 450 398, 458 386" fill="none" stroke="url(#g3)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 435 413 C 444 409, 460 402, 470 393" fill="none" stroke="url(#g3)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 155 430 C 150 445, 160 460, 185 465 C 210 468, 240 460, 260 445" fill="none" stroke="url(#g3)" stroke-width="26" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="card-label">On Gradient</span>
+    </div>
+  </div>
+
+  <!-- ===== CURRENT LOGO FOR COMPARISON ===== -->
+  <div class="section-title">Current Logo (for comparison)</div>
+  <div class="compare-section">
+    <div class="compare-card">
+      <img src="koda-carte-logo.png" alt="Current logo" style="width: 200px; height: 200px; object-fit: contain;" />
+      <span class="compare-label">Current</span>
+    </div>
+    <div class="compare-card" style="font-size: 3rem; color: #ccc; align-self: center;">vs</div>
+    <div class="compare-card">
+      <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg" style="width: 200px; height: 200px;">
+        <defs>
+          <linearGradient id="g6" x1="0" y1="0" x2="0.8" y2="1">
+            <stop offset="0%" stop-color="#b8964e"/>
+            <stop offset="30%" stop-color="#8aad6a"/>
+            <stop offset="55%" stop-color="#7ab97e"/>
+            <stop offset="75%" stop-color="#4db6ac"/>
+            <stop offset="100%" stop-color="#26c6da"/>
+          </linearGradient>
+        </defs>
+        <path d="M 165 260 C 130 210, 95 150, 100 100 C 103 70, 120 42, 150 35 C 178 28, 195 55, 190 85 C 185 110, 170 140, 155 165" fill="none" stroke="url(#g6)" stroke-width="30" stroke-linecap="round"/>
+        <path d="M 147 38 L 132 18 L 138 15 L 155 33" fill="url(#g6)" stroke="none"/>
+        <path d="M 135 22 C 140 30, 148 35, 153 34" fill="none" stroke="url(#g6)" stroke-width="2" opacity="0.4"/>
+        <path d="M 160 160 C 175 220, 180 280, 175 340 C 172 370, 165 400, 155 430" fill="none" stroke="url(#g6)" stroke-width="30" stroke-linecap="round"/>
+        <path d="M 150 245 C 160 230, 185 228, 190 245 C 195 262, 172 265, 160 255" fill="none" stroke="url(#g6)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+        <path d="M 180 240 C 220 190, 280 140, 340 105 C 370 88, 395 80, 410 82" fill="none" stroke="url(#g6)" stroke-width="28" stroke-linecap="round"/>
+        <ellipse cx="418" cy="75" rx="28" ry="20" fill="url(#g6)" transform="rotate(20, 418, 75)"/>
+        <ellipse cx="418" cy="73" rx="18" ry="12" fill="white" opacity="0.25" transform="rotate(20, 418, 73)"/>
+        <path d="M 175 260 C 220 310, 280 360, 340 395 C 365 408, 385 415, 400 418" fill="none" stroke="url(#g6)" stroke-width="28" stroke-linecap="round"/>
+        <path d="M 390 412 C 400 416, 408 418, 415 417 C 422 416, 425 414, 425 410" fill="none" stroke="url(#g6)" stroke-width="30" stroke-linecap="round"/>
+        <path d="M 408 408 C 415 400, 425 385, 430 370" fill="none" stroke="url(#g6)" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 418 412 C 426 405, 438 392, 445 378" fill="none" stroke="url(#g6)" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 427 414 C 436 408, 450 398, 458 386" fill="none" stroke="url(#g6)" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 435 413 C 444 409, 460 402, 470 393" fill="none" stroke="url(#g6)" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 155 430 C 150 445, 160 460, 185 465 C 210 468, 240 460, 260 445" fill="none" stroke="url(#g6)" stroke-width="26" stroke-linecap="round"/>
+      </svg>
+      <span class="compare-label">New Concept</span>
+    </div>
+  </div>
+
+  <!-- ===== BRAND LOCKUPS ===== -->
+  <div class="section-title">Brand Lockups</div>
+
+  <div class="brand-row brand-bg-light">
+    <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g4" x1="0" y1="0" x2="0.8" y2="1">
+          <stop offset="0%" stop-color="#b8964e"/>
+          <stop offset="30%" stop-color="#8aad6a"/>
+          <stop offset="55%" stop-color="#7ab97e"/>
+          <stop offset="75%" stop-color="#4db6ac"/>
+          <stop offset="100%" stop-color="#26c6da"/>
+        </linearGradient>
+      </defs>
+      <path d="M 165 260 C 130 210, 95 150, 100 100 C 103 70, 120 42, 150 35 C 178 28, 195 55, 190 85 C 185 110, 170 140, 155 165" fill="none" stroke="url(#g4)" stroke-width="30" stroke-linecap="round"/>
+      <path d="M 147 38 L 132 18 L 138 15 L 155 33" fill="url(#g4)" stroke="none"/>
+      <path d="M 160 160 C 175 220, 180 280, 175 340 C 172 370, 165 400, 155 430" fill="none" stroke="url(#g4)" stroke-width="30" stroke-linecap="round"/>
+      <path d="M 150 245 C 160 230, 185 228, 190 245 C 195 262, 172 265, 160 255" fill="none" stroke="url(#g4)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+      <path d="M 180 240 C 220 190, 280 140, 340 105 C 370 88, 395 80, 410 82" fill="none" stroke="url(#g4)" stroke-width="28" stroke-linecap="round"/>
+      <ellipse cx="418" cy="75" rx="28" ry="20" fill="url(#g4)" transform="rotate(20, 418, 75)"/>
+      <ellipse cx="418" cy="73" rx="18" ry="12" fill="white" opacity="0.25" transform="rotate(20, 418, 73)"/>
+      <path d="M 175 260 C 220 310, 280 360, 340 395 C 365 408, 385 415, 400 418" fill="none" stroke="url(#g4)" stroke-width="28" stroke-linecap="round"/>
+      <path d="M 390 412 C 400 416, 408 418, 415 417 C 422 416, 425 414, 425 410" fill="none" stroke="url(#g4)" stroke-width="30" stroke-linecap="round"/>
+      <path d="M 408 408 C 415 400, 425 385, 430 370" fill="none" stroke="url(#g4)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 418 412 C 426 405, 438 392, 445 378" fill="none" stroke="url(#g4)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 427 414 C 436 408, 450 398, 458 386" fill="none" stroke="url(#g4)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 435 413 C 444 409, 460 402, 470 393" fill="none" stroke="url(#g4)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 155 430 C 150 445, 160 460, 185 465 C 210 468, 240 460, 260 445" fill="none" stroke="url(#g4)" stroke-width="26" stroke-linecap="round"/>
+    </svg>
+    <span class="brand-text">Koda Carte</span>
+  </div>
+
+  <div class="brand-row brand-bg-dark">
+    <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g5" x1="0" y1="0" x2="0.8" y2="1">
+          <stop offset="0%" stop-color="#b8964e"/>
+          <stop offset="30%" stop-color="#8aad6a"/>
+          <stop offset="55%" stop-color="#7ab97e"/>
+          <stop offset="75%" stop-color="#4db6ac"/>
+          <stop offset="100%" stop-color="#26c6da"/>
+        </linearGradient>
+      </defs>
+      <path d="M 165 260 C 130 210, 95 150, 100 100 C 103 70, 120 42, 150 35 C 178 28, 195 55, 190 85 C 185 110, 170 140, 155 165" fill="none" stroke="url(#g5)" stroke-width="30" stroke-linecap="round"/>
+      <path d="M 147 38 L 132 18 L 138 15 L 155 33" fill="url(#g5)" stroke="none"/>
+      <path d="M 160 160 C 175 220, 180 280, 175 340 C 172 370, 165 400, 155 430" fill="none" stroke="url(#g5)" stroke-width="30" stroke-linecap="round"/>
+      <path d="M 150 245 C 160 230, 185 228, 190 245 C 195 262, 172 265, 160 255" fill="none" stroke="url(#g5)" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+      <path d="M 180 240 C 220 190, 280 140, 340 105 C 370 88, 395 80, 410 82" fill="none" stroke="url(#g5)" stroke-width="28" stroke-linecap="round"/>
+      <ellipse cx="418" cy="75" rx="28" ry="20" fill="url(#g5)" transform="rotate(20, 418, 75)"/>
+      <ellipse cx="418" cy="73" rx="18" ry="12" fill="white" opacity="0.15" transform="rotate(20, 418, 73)"/>
+      <path d="M 175 260 C 220 310, 280 360, 340 395 C 365 408, 385 415, 400 418" fill="none" stroke="url(#g5)" stroke-width="28" stroke-linecap="round"/>
+      <path d="M 390 412 C 400 416, 408 418, 415 417 C 422 416, 425 414, 425 410" fill="none" stroke="url(#g5)" stroke-width="30" stroke-linecap="round"/>
+      <path d="M 408 408 C 415 400, 425 385, 430 370" fill="none" stroke="url(#g5)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 418 412 C 426 405, 438 392, 445 378" fill="none" stroke="url(#g5)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 427 414 C 436 408, 450 398, 458 386" fill="none" stroke="url(#g5)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 435 413 C 444 409, 460 402, 470 393" fill="none" stroke="url(#g5)" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 155 430 C 150 445, 160 460, 185 465 C 210 468, 240 460, 260 445" fill="none" stroke="url(#g5)" stroke-width="26" stroke-linecap="round"/>
+    </svg>
+    <span class="brand-text brand-text-white">Koda Carte</span>
+  </div>
+
+  <!-- ===== ANATOMY ===== -->
+  <div class="anatomy">
+    <h2>What Changed</h2>
+    <p style="color: #888; font-size: 0.85rem; margin-bottom: 1.5rem;">Same cursive K shape. Three utensils blend into the natural stroke endings.</p>
+    <div class="anatomy-grid">
+      <div class="anatomy-item">
+        <div class="icon">&#x1F52A;</div>
+        <strong>Upper-left tip</strong>
+        Knife point<br/>
+        <span style="font-size: 0.75rem; color: #aaa;">Sharp taper at the loop peak</span>
+      </div>
+      <div class="anatomy-item">
+        <div class="icon">&#x1F944;</div>
+        <strong>Upper-right tip</strong>
+        Spoon bowl<br/>
+        <span style="font-size: 0.75rem; color: #aaa;">Oval widens at arm end</span>
+      </div>
+      <div class="anatomy-item">
+        <div class="icon">&#x1F374;</div>
+        <strong>Lower-right tip</strong>
+        Fork tines<br/>
+        <span style="font-size: 0.75rem; color: #aaa;">Same as current logo</span>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

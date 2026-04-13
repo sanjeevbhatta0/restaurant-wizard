@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{restaurantName}} - {{tagline}}</title>
     <meta name="description" content="{{description}}">
+    {{#if logo}}<link rel="icon" href="{{logo}}" type="image/png">{{/if}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -46,6 +47,7 @@
             line-height: 1.7;
             background: linear-gradient(135deg, var(--mint) 0%, var(--peach) 50%, var(--yellow) 100%);
             background-attachment: fixed;
+            overflow-x: hidden;
         }
 
         /* Fun blob background */
@@ -178,6 +180,14 @@
             grid-template-columns: 1fr 1fr;
             gap: 4rem;
             align-items: center;
+        }
+
+        /* When hero has no image, make content full-width and centered */
+        .hero-container:only-child,
+        .hero-container:not(:has(.hero-image)) {
+            grid-template-columns: 1fr;
+            text-align: center;
+            max-width: 800px;
         }
 
         .hero-content {
@@ -366,6 +376,10 @@
             grid-template-columns: 1fr 1fr;
             gap: 4rem;
             align-items: center;
+        }
+
+        .about-grid > :only-child {
+            grid-column: 1 / -1;
         }
 
         .about-image img {
@@ -599,8 +613,13 @@
         .hours-row {
             display: flex;
             justify-content: space-between;
+            gap: 1rem;
             padding: 0.4rem 0;
             border-bottom: 1px dashed #ddd;
+        }
+
+        .hours-day {
+            flex-shrink: 0;
         }
 
         .social-links {
@@ -1208,6 +1227,11 @@
             .cart-sidebar {
                 width: 100%;
                 border-radius: 0;
+                right: -100%;
+            }
+
+            .cart-sidebar.active {
+                right: 0;
             }
 
             .cart-header,
@@ -1244,6 +1268,7 @@
         .review-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .review-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 12px 16px; border-radius: 8px; margin-top: 12px; text-align: center; }
         .review-empty { text-align: center; color: #999; padding: 40px 20px; }
+        .pac-container { z-index: 100000 !important; }
     </style>
 </head>
 
@@ -1298,17 +1323,21 @@
                         </a>
                     </div>
                 </div>
+                {{#if heroImage}}
                 <div class="hero-image">
                     <img src="{{heroImage}}" alt="{{restaurantName}}">
                 </div>
+                {{/if}}
             </div>
         </section>
 
         <section class="about" id="about">
             <div class="about-grid">
+                {{#if aboutImage}}
                 <div class="about-image">
                     <img src="{{aboutImage}}" alt="About {{restaurantName}}">
                 </div>
+                {{/if}}
                 <div class="about-content">
                     <h2>Our Story 📖</h2>
                     <div id="aboutContent">{{aboutContent}}</div>
@@ -1348,7 +1377,7 @@
                 <div class="contact-card">
                     <div class="contact-icon"><i class="bi bi-geo-alt-fill"></i></div>
                     <h3>Location</h3>
-                    <p>{{addre}}</p>
+                    <p>{{address}}</p>
                 </div>
                 <div class="contact-card">
                     <div class="contact-icon"><i class="bi bi-telephone-fill"></i></div>
@@ -1411,10 +1440,11 @@
         </section>
 
         <footer class="footer">
+            {{#if logo}}<img src="{{logo}}" alt="{{restaurantName}}" style="height:50px; width:auto; margin-bottom:0.75rem;">{{/if}}
             <div class="footer-logo">🌿 {{restaurantName}}</div>
             <p>{{tagline}}</p>
             <p style="margin-top: 0.5rem;">&copy; {{year}} {{restaurantName}}. All rights reserved.</p>
-            <p style="margin-top: 0.5rem; font-size: 0.85rem;">Powered by Restaurant Wizard</p>
+            <p style="margin-top: 0.5rem; font-size: 0.85rem; display:flex; align-items:center; justify-content:center; gap:6px;">Powered by <a href="https://kodacarte.com" style="color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:5px;"><img src="https://restaurant-portal-6b147.web.app/koda-carte-logo-white.png" alt="Koda Carte" style="height:18px; width:auto; vertical-align:middle;"> KodaCarte</a></p>
         </footer>
 
         <!-- Cart, Modal, Toast - Same structure as other templates -->
@@ -1455,16 +1485,7 @@
         <script src="https://js.stripe.com/v3/"></script>
         <script>
             // Same JavaScript logic as other templates
-            const CONFIG = {
-                restaurantId: '{{restaurantId}}',
-                locationId: '{{locationId}}',
-                restaurantName: '{{restaurantName}}',
-                apiBaseUrl: '{{apiBaseUrl}}',
-                stripePublishableKey: '{{stripePublishableKey}}',
-                stripeConnectedAccountId: '{{stripeConnectedAccountId}}',
-                taxRate: {{taxRate}} / 100,
-                promoId: '{{promoId}}'
-        };
+            const CONFIG = JSON.parse('{{configJson}}');
 
             const hours = {{hoursJson}};
             let selectedRating = 0;
@@ -1655,8 +1676,10 @@
                 const totalDiscount = discount + ptsDiscount + rwDiscount;
                 const taxable = subtotal - totalDiscount;
                 const tax = Math.round(taxable * CONFIG.taxRate * 100) / 100;
-                const total = Math.round((taxable + tax) * 100) / 100;
-                return { subtotal, discount, ptsDiscount, rwDiscount, tax, total };
+                const deliveryFee = (selectedOrderType === 'delivery' && currentDeliveryQuote) ? currentDeliveryQuote.fee / 100 : 0;
+                const driverTip = selectedOrderType === 'delivery' ? selectedTipAmount : 0;
+                const total = Math.round((taxable + tax + deliveryFee + driverTip) * 100) / 100;
+                return { subtotal, discount, ptsDiscount, rwDiscount, tax, deliveryFee, driverTip, total };
             }
 
             function getAutoPromoCode() {
@@ -1759,26 +1782,67 @@
 
             function renderCheckoutForm() {
                 const totals = getCartTotals();
+                // Preserve form field values across re-renders
+                const prevName = document.getElementById('customerName')?.value;
+                const prevPhone = document.getElementById('customerPhone')?.value;
+                const prevEmail = document.getElementById('customerEmail')?.value;
+                const prevAddress = document.getElementById('deliveryAddress')?.value;
+                const prevInstructions = document.getElementById('deliveryInstructions')?.value;
+                const prevContactless = document.getElementById('contactlessDelivery')?.checked;
+
                 // Get user details if logged in
                 const user = window.customerPortal?.user || {};
-                const userName = user.fullName || '';
-                const userPhone = user.phone || '';
-                const userEmail = user.email || '';
+                const userName = prevName !== undefined ? prevName : (user.fullName || '');
+                const userPhone = prevPhone !== undefined ? prevPhone : (user.phone || '');
+                const userEmail = prevEmail !== undefined ? prevEmail : (user.email || '');
+                const savedAddress = prevAddress || '';
+                const savedInstructions = prevInstructions || '';
 
                 document.getElementById('checkoutForm').innerHTML = `
                 <div class="order-type-selector">
-                    <div class="order-type-option active" id="pickupOption" onclick="selectOrderType('pickup')"><i class="bi bi-bag-check"></i><h4>Pickup</h4><p>~30 mins</p></div>
-                    <div class="order-type-option disabled" id="deliveryOption"><i class="bi bi-truck"></i><h4>Delivery</h4><p>Coming Soon!</p></div>
+                    <div class="order-type-option ${selectedOrderType === 'pickup' ? 'active' : ''}" id="pickupOption" onclick="selectOrderType('pickup')"><i class="bi bi-bag-check"></i><h4>Pickup</h4><p>~30 mins</p></div>
+                    ${CONFIG.deliveryEnabled
+                      ? '<div class="order-type-option ' + (selectedOrderType === 'delivery' ? 'active' : '') + '" id="deliveryOption" onclick="selectOrderType(\'delivery\')"><i class="bi bi-truck"></i><h4>Delivery</h4><p>To your door</p></div>'
+                      : '<div class="order-type-option disabled" id="deliveryOption"><i class="bi bi-truck"></i><h4>Delivery</h4><p>Coming Soon!</p></div>'
+                    }
                 </div>
                 <div class="form-group"><label>Your Name *</label><input type="text" id="customerName" placeholder="John Doe" value="${userName}" required></div>
                 <div class="form-group"><label>Phone *</label><input type="tel" id="customerPhone" placeholder="(555) 123-4567" value="${userPhone}" required></div>
                 <div class="form-group"><label>Email *</label><input type="email" id="customerEmail" placeholder="john@example.com" value="${userEmail}" required></div>
-                <div class="form-group"><label>Pickup Time</label><select id="pickupTime">${generatePickupTimes()}</select></div>
+                <div class="form-group" id="pickupTimeField" style="display:${selectedOrderType === 'delivery' ? 'none' : 'block'};"><label>Pickup Time</label><select id="pickupTime">${generatePickupTimes()}</select></div>
+                <div id="deliveryFields" style="display:${selectedOrderType === 'delivery' ? 'block' : 'none'};">
+                    <div class="form-group">
+                        <label for="deliveryAddress">Delivery Address *</label>
+                        <input type="text" id="deliveryAddress" placeholder="Start typing your address..." autocomplete="new-password" oninput="onDeliveryAddressInput()" value="${savedAddress}">
+                    </div>
+                    <div id="deliveryQuoteArea">${currentDeliveryQuote ? '<div style="padding:0.75rem; background:#e8f5e9; border-radius:8px; margin:0.5rem 0;"><div style="font-weight:600; color:#2d6a4f;"><i class="bi bi-check-circle"></i> Delivery available — $' + (currentDeliveryQuote.fee / 100).toFixed(2) + ' via DoorDash</div>' + (currentDeliveryQuote.estimatedDropoffTime ? '<div style="font-size:0.85rem; color:#666; margin-top:4px;"><i class="bi bi-clock"></i> Est. delivery: <strong>' + new Date(currentDeliveryQuote.estimatedDropoffTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</strong></div>' : '') + '</div>' : ''}</div>
+                    <div class="form-group">
+                        <label for="deliveryInstructions">Delivery Instructions</label>
+                        <textarea id="deliveryInstructions" rows="2" placeholder="Apartment #, gate code, leave at door..." style="width:100%; padding:0.5rem; border:1px solid #ddd; border-radius:8px; font-family:inherit;">${savedInstructions}</textarea>
+                    </div>
+                    <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="contactlessDelivery" ${prevContactless !== undefined ? (prevContactless ? 'checked' : '') : (CONFIG.deliveryContactlessDefault ? 'checked' : '')}>
+                        <label for="contactlessDelivery" style="margin:0; cursor:pointer;">Contactless delivery (leave at door)</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Driver Tip</label>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            ${[{v:3,l:'$3'},{v:5,l:'$5'},{v:8,l:'$8'},{v:0,l:'No Tip'}].map(t =>
+                              '<button type="button" class="tip-btn" onclick="selectTip(' + t.v + ')" style="padding:0.5rem 1rem; border:2px solid ' + (selectedTipAmount === t.v && !isCustomTip ? 'var(--primary-color)' : '#ddd') + '; border-radius:8px; background:' + (selectedTipAmount === t.v && !isCustomTip ? 'rgba(45,106,79,0.1)' : 'white') + '; cursor:pointer; font-weight:600;">' + t.l + '</button>'
+                            ).join('')}
+                            <button type="button" class="tip-btn" onclick="showCustomTip()" style="padding:0.5rem 1rem; border:2px solid ${isCustomTip ? 'var(--primary-color)' : '#ddd'}; border-radius:8px; background:${isCustomTip ? 'rgba(45,106,79,0.1)' : 'white'}; cursor:pointer; font-weight:600;">Custom</button>
+                        </div>
+                        <div id="customTipInput" style="display:${isCustomTip ? 'flex' : 'none'}; align-items:center; gap:8px; margin-top:8px;">
+                            <span style="font-weight:600; font-size:1.1rem;">$</span>
+                            <input type="number" id="customTipAmount" min="0" step="0.5" placeholder="Enter amount" value="${isCustomTip ? selectedTipAmount : ''}" oninput="onCustomTipInput()" style="width:120px; padding:0.5rem; border:2px solid var(--primary-color); border-radius:8px; font-size:1rem; font-weight:600;">
+                        </div>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>Payment</label>
                     <div class="payment-options">
-                        <label class="payment-option active" id="payLaterOption" onclick="selectPaymentMethod('payLater')"><input type="radio" name="paymentMethod" value="payLater" checked><i class="bi bi-shop"></i><div><strong>Pay at Pickup</strong><p style="font-size:0.85rem;margin:0;">Cash or card when you arrive</p></div></label>
-                        <label class="payment-option" id="payNowOption" onclick="selectPaymentMethod('payNow')"><input type="radio" name="paymentMethod" value="payNow"><i class="bi bi-credit-card"></i><div><strong>Pay Now</strong><p style="font-size:0.85rem;margin:0;">Secure card payment</p></div></label>
+                        <label class="payment-option ${selectedOrderType === 'delivery' ? '' : 'active'}" id="payLaterOption" onclick="selectPaymentMethod('payLater')" style="display:${selectedOrderType === 'delivery' ? 'none' : ''};"><input type="radio" name="paymentMethod" value="payLater" ${selectedOrderType === 'delivery' ? '' : 'checked'}><i class="bi bi-shop"></i><div><strong>Pay at Pickup</strong><p style="font-size:0.85rem;margin:0;">Cash or card when you arrive</p></div></label>
+                        <label class="payment-option ${selectedOrderType === 'delivery' ? 'active' : ''}" id="payNowOption" onclick="selectPaymentMethod('payNow')"><input type="radio" name="paymentMethod" value="payNow" ${selectedOrderType === 'delivery' ? 'checked' : ''}><i class="bi bi-credit-card"></i><div><strong>Pay Now</strong><p style="font-size:0.85rem;margin:0;">Secure card payment</p></div></label>
                     </div>
                 </div>
                 <div id="cardElementContainer" style="display:none;"><div class="form-group"><label>Card Details</label><div id="card-element"></div><div id="card-errors"></div></div></div>
@@ -1851,12 +1915,218 @@
                         <span>-$${totals.rwDiscount.toFixed(2)}</span>
                     </div>
                     ` : ''}
-                    <div class="summary-item"><span>Tax</span><span>$${totals.tax.toFixed(2)}</span></div><div class="summary-item summary-total"><span>Total</span><span>$${totals.total.toFixed(2)}</span></div></div>
+                    <div class="summary-item"><span>Tax</span><span>$${totals.tax.toFixed(2)}</span></div>
+                    ${totals.deliveryFee > 0 ? `<div class="summary-item"><span>Delivery Fee (DoorDash)</span><span>$${totals.deliveryFee.toFixed(2)}</span></div>` : ''}
+                    ${totals.driverTip > 0 ? `<div class="summary-item"><span>Driver Tip</span><span>$${totals.driverTip.toFixed(2)}</span></div>` : ''}
+                    <div class="summary-item summary-total"><span>Total</span><span>$${totals.total.toFixed(2)}</span></div></div>
                 <button class="place-order-btn" id="placeOrderBtn" onclick="placeOrder()">Place Order - $${totals.total.toFixed(2)} 🎉</button>
             `;
+                // Old Stripe card element was destroyed by innerHTML replacement — reset so it gets re-created
+                resetCardElement();
             }
 
-            function selectOrderType(type) { document.querySelectorAll('.order-type-option').forEach(el => el.classList.remove('active')); document.getElementById(`${type}Option`).classList.add('active'); }
+            // After innerHTML replacement, old Stripe card element is unmounted — must re-create
+            function resetCardElement() {
+                if (cardElement) {
+                    try { cardElement.destroy(); } catch(e) {}
+                    cardElement = null;
+                }
+            }
+
+            // Update just the order summary section without full re-render
+            function updateOrderSummary() {
+                const totals = getCartTotals();
+                const summaryEl = document.querySelector('.order-summary');
+                if (!summaryEl) return;
+                summaryEl.innerHTML = `
+                    <h4>Order Summary</h4>
+                    ${cart.map(item => `
+                        <div class="summary-item">
+                            <span>${item.quantity}x ${item.name}</span>
+                            <span>$${(item.finalPrice * item.quantity).toFixed(2)}</span>
+                        </div>
+                    `).join('')}
+                    <div class="summary-item"><span>Subtotal</span><span>$${totals.subtotal.toFixed(2)}</span></div>
+                    ${totals.discount > 0 ? '<div class="summary-item" style="color:#27ae60;"><span>Discount (' + (appliedPromo?.title || 'Promo') + ')</span><span>-$' + totals.discount.toFixed(2) + '</span></div>' : ''}
+                    ${totals.ptsDiscount > 0 ? '<div class="summary-item" style="color:#27ae60;"><span>Points Redeemed (' + redeemingPoints + ' pts)</span><span>-$' + totals.ptsDiscount.toFixed(2) + '</span></div>' : ''}
+                    ${totals.rwDiscount > 0 ? '<div class="summary-item" style="color:#27ae60;"><span>Reward Applied</span><span>-$' + totals.rwDiscount.toFixed(2) + '</span></div>' : ''}
+                    <div class="summary-item"><span>Tax (${(CONFIG.taxRate * 100).toFixed(1)}%)</span><span>$${totals.tax.toFixed(2)}</span></div>
+                    ${totals.deliveryFee > 0 ? '<div class="summary-item"><span>Delivery Fee (DoorDash)</span><span>$' + totals.deliveryFee.toFixed(2) + '</span></div>' : ''}
+                    ${totals.driverTip > 0 ? '<div class="summary-item"><span>Driver Tip</span><span>$' + totals.driverTip.toFixed(2) + '</span></div>' : ''}
+                    <div class="summary-item summary-total"><span>Total</span><span>$${totals.total.toFixed(2)}</span></div>
+                `;
+                const btn = document.getElementById('placeOrderBtn');
+                if (btn) btn.innerHTML = '<i class="bi bi-check-circle"></i> Place Order - $' + totals.total.toFixed(2);
+            }
+
+            var selectedOrderType = 'pickup';
+            var currentDeliveryQuote = null;
+            var deliveryQuoteTimeout = null;
+            var selectedTipAmount = 5;
+            var isCustomTip = false;
+            var placesAutocomplete = null;
+
+            function loadGoogleMapsScript(callback) {
+                if (typeof google !== 'undefined' && google.maps && google.maps.places) {
+                    callback();
+                    return;
+                }
+                if (!CONFIG.googleMapsApiKey) return;
+                if (!document.getElementById('googleMapsScript')) {
+                    const script = document.createElement('script');
+                    script.id = 'googleMapsScript';
+                    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + CONFIG.googleMapsApiKey + '&libraries=places&callback=_gmapsReady';
+                    script.async = true;
+                    script.defer = true;
+                    window._gmapsCallback = callback;
+                    window._gmapsReady = function() {
+                        if (window._gmapsCallback) window._gmapsCallback();
+                    };
+                    document.head.appendChild(script);
+                } else {
+                    // Script tag exists but still loading — poll for it
+                    var attempts = 0;
+                    var poll = setInterval(function() {
+                        attempts++;
+                        if (typeof google !== 'undefined' && google.maps && google.maps.places) {
+                            clearInterval(poll);
+                            callback();
+                        } else if (attempts > 50) {
+                            clearInterval(poll);
+                        }
+                    }, 100);
+                }
+            }
+
+            function initPlacesAutocomplete() {
+                if (placesAutocomplete) return;
+                if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
+                    loadGoogleMapsScript(function() { initPlacesAutocomplete(); });
+                    return;
+                }
+                const input = document.getElementById('deliveryAddress');
+                if (!input) return;
+                placesAutocomplete = new google.maps.places.Autocomplete(input, {
+                    types: ['address'],
+                    componentRestrictions: { country: 'us' },
+                    fields: ['formatted_address', 'geometry']
+                });
+                // Force-disable browser autofill
+                input.setAttribute('autocomplete', 'new-password');
+                setTimeout(function() { input.setAttribute('autocomplete', 'new-password'); }, 500);
+                placesAutocomplete.addListener('place_changed', function() {
+                    const place = placesAutocomplete.getPlace();
+                    if (place && place.formatted_address) {
+                        input.value = place.formatted_address;
+                        clearTimeout(deliveryQuoteTimeout);
+                        fetchDeliveryQuote();
+                    }
+                });
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        const pacContainer = document.querySelector('.pac-container');
+                        if (pacContainer && pacContainer.style.display !== 'none') {
+                            e.preventDefault();
+                        }
+                    }
+                });
+            }
+
+            function selectOrderType(type) {
+                selectedOrderType = type;
+                currentDeliveryQuote = type === 'delivery' ? currentDeliveryQuote : null;
+                // Re-render form (now respects selectedOrderType)
+                renderCheckoutForm();
+                // Re-init Places autocomplete after DOM re-render (old input was destroyed)
+                if (type === 'delivery') {
+                    placesAutocomplete = null;
+                    initPlacesAutocomplete();
+                    selectPaymentMethod('payNow');
+                }
+            }
+
+            function selectTip(amount) {
+                selectedTipAmount = amount;
+                isCustomTip = false;
+                document.querySelectorAll('.tip-btn').forEach(btn => {
+                    const btnText = btn.textContent.trim();
+                    const btnAmount = parseInt(btnText.replace(/[^0-9]/g, '')) || 0;
+                    const isActive = (btnAmount === amount || (amount === 0 && btnText === 'No Tip')) && btnText !== 'Custom';
+                    btn.style.border = isActive ? '2px solid var(--primary-color)' : '2px solid #ddd';
+                    btn.style.background = isActive ? 'rgba(45,106,79,0.1)' : 'white';
+                });
+                const customInput = document.getElementById('customTipInput');
+                if (customInput) customInput.style.display = 'none';
+                updateOrderSummary();
+            }
+
+            function showCustomTip() {
+                isCustomTip = true;
+                document.querySelectorAll('.tip-btn').forEach(btn => {
+                    const isCustomBtn = btn.textContent.trim() === 'Custom';
+                    btn.style.border = isCustomBtn ? '2px solid var(--primary-color)' : '2px solid #ddd';
+                    btn.style.background = isCustomBtn ? 'rgba(45,106,79,0.1)' : 'white';
+                });
+                const customInput = document.getElementById('customTipInput');
+                if (customInput) {
+                    customInput.style.display = 'flex';
+                    document.getElementById('customTipAmount')?.focus();
+                }
+            }
+
+            function onCustomTipInput() {
+                const val = parseFloat(document.getElementById('customTipAmount')?.value) || 0;
+                selectedTipAmount = Math.max(0, val);
+                updateOrderSummary();
+            }
+
+            function onDeliveryAddressInput() {
+                clearTimeout(deliveryQuoteTimeout);
+                deliveryQuoteTimeout = setTimeout(fetchDeliveryQuote, 800);
+            }
+
+            async function fetchDeliveryQuote() {
+                const address = document.getElementById('deliveryAddress')?.value?.trim();
+                if (!address || address.length < 10) {
+                    currentDeliveryQuote = null;
+                    document.getElementById('deliveryQuoteArea').innerHTML = '';
+                    return;
+                }
+                const quoteArea = document.getElementById('deliveryQuoteArea');
+                quoteArea.innerHTML = '<div style="padding:0.75rem; background:#f0f4ff; border-radius:8px; margin:0.5rem 0;"><div style="display:flex; align-items:center; gap:8px;"><div class="delivery-spinner" style="width:18px; height:18px; border:2px solid #ddd; border-top:2px solid var(--primary-color); border-radius:50%; animation:spin 0.8s linear infinite;"></div><span style="font-size:0.9rem; color:#555;">Getting delivery estimate from our delivery partner...</span></div></div>';
+                try {
+                    const resp = await fetch(CONFIG.apiBaseUrl + '/getDeliveryQuote', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            restaurantId: CONFIG.restaurantId,
+                            locationId: CONFIG.locationId,
+                            dropoffAddress: address,
+                            dropoffPhone: document.getElementById('customerPhone')?.value || '',
+                            dropoffName: document.getElementById('customerName')?.value || '',
+                            orderValueCents: Math.round(getCartTotals().subtotal * 100)
+                        })
+                    });
+                    const data = await resp.json();
+                    console.log('Delivery quote response:', data);
+                    if (data.success && data.fee !== undefined) {
+                        currentDeliveryQuote = data;
+                        const eta = data.estimatedDropoffTime ? new Date(data.estimatedDropoffTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+                        quoteArea.innerHTML = `<div style="padding:0.75rem; background:#e8f5e9; border-radius:8px; margin:0.5rem 0;">
+                            <div style="font-weight:600; color:#2d6a4f;"><i class="bi bi-check-circle"></i> Delivery available — $${(data.fee / 100).toFixed(2)} via DoorDash</div>
+                            ${eta ? '<div style="font-size:0.85rem; color:#666; margin-top:4px;"><i class="bi bi-clock"></i> Est. delivery: <strong>' + eta + '</strong></div>' : ''}
+                        </div>`;
+                        updateOrderSummary();
+                    } else {
+                        currentDeliveryQuote = null;
+                        quoteArea.innerHTML = '<div style="padding:0.5rem; color:#e74c3c; font-size:0.9rem;"><i class="bi bi-exclamation-triangle"></i> ' + (data.error || 'Delivery not available to this address') + '</div>';
+                    }
+                } catch (err) {
+                    console.error('Delivery quote fetch error:', err);
+                    currentDeliveryQuote = null;
+                    quoteArea.innerHTML = '<div style="padding:0.5rem; color:#e74c3c; font-size:0.9rem;"><i class="bi bi-exclamation-triangle"></i> Could not get delivery estimate. Please try again.</div>';
+                }
+            }
 
             function selectPaymentMethod(method) {
                 console.log('selectPaymentMethod called:', method, '| stripe:', !!stripe, '| cardElement:', !!cardElement);
@@ -1896,15 +2166,40 @@
             }
 
             function generatePickupTimes() {
-                const times = [];
                 const now = new Date();
-                const start = new Date(now.getTime() + 30 * 60000);
-                start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15);
-                for (let i = 0; i < 12; i++) {
-                    const time = new Date(start.getTime() + i * 15 * 60000);
-                    times.push(`<option value="${time.toISOString()}">${time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</option>`);
+                const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+                const todayKey = dayNames[now.getDay()];
+                const todayHours = hours && hours[todayKey];
+
+                let openTime = null;
+                let closeTime = null;
+                if (todayHours && todayHours.open) {
+                    const [oh, om] = todayHours.open.split(':').map(Number);
+                    openTime = new Date(now);
+                    openTime.setHours(oh, om, 0, 0);
                 }
-                return times.join('');
+                if (todayHours && todayHours.close) {
+                    const [ch, cm] = todayHours.close.split(':').map(Number);
+                    closeTime = new Date(now);
+                    closeTime.setHours(ch, cm, 0, 0);
+                }
+
+                let start = new Date(now.getTime() + 60 * 60000);
+                if (openTime && start < openTime) {
+                    start = new Date(openTime);
+                }
+                const rem = start.getMinutes() % 20;
+                if (rem !== 0) start.setMinutes(start.getMinutes() + (20 - rem));
+                start.setSeconds(0, 0);
+
+                let opts = '<option value="ASAP">ASAP</option>';
+                for (let i = 0; i < 18; i++) {
+                    const time = new Date(start.getTime() + i * 20 * 60000);
+                    if (closeTime && time > closeTime) break;
+                    const timeStr = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                    opts += `<option value="${time.toISOString()}">${timeStr}</option>`;
+                }
+                return opts;
             }
 
             async function placeOrder() {
@@ -1919,7 +2214,7 @@
                 const name = document.getElementById('customerName').value.trim();
                 const phone = document.getElementById('customerPhone').value.trim();
                 const email = document.getElementById('customerEmail').value.trim();
-                const pickupTime = document.getElementById('pickupTime').value;
+                const pickupTime = document.getElementById('pickupTime')?.value || 'ASAP';
                 const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
 
                 if (!name || !phone || !email) { showToast('Please fill all fields!', 'error'); return; }
@@ -1935,6 +2230,23 @@
                         paymentDetails = { paymentMethodId: pm.id, amount: totals.total, status: 'pending' };
                     }
 
+                    // Validate delivery fields
+                    if (selectedOrderType === 'delivery') {
+                        const address = document.getElementById('deliveryAddress')?.value?.trim();
+                        if (!address) {
+                            showToast('Please enter a delivery address.', 'error');
+                            btn.disabled = false;
+                            btn.innerHTML = 'Place Order 🎉';
+                            return;
+                        }
+                        if (!currentDeliveryQuote) {
+                            showToast('Please wait for the delivery quote or check your address.', 'error');
+                            btn.disabled = false;
+                            btn.innerHTML = 'Place Order 🎉';
+                            return;
+                        }
+                    }
+
                     const orderData = {
                         restaurantId: CONFIG.restaurantId,
                         locationId: CONFIG.locationId,
@@ -1945,39 +2257,55 @@
                         tax: totals.tax,
                         taxRate: CONFIG.taxRate * 100,
                         total: totals.total,
-                        pickupTime,
-                        orderType: 'pickup',
+                        pickupTime: selectedOrderType === 'delivery' ? null : pickupTime,
+                        orderType: selectedOrderType,
                         paymentMethod: paymentMethod === 'payNow' ? 'card' : 'payAtRestaurant',
                         paymentDetails,
                         promoCode: appliedPromo?.promoCode || appliedPromo?.uniqueCode || null,
                         promotionId: appliedPromo?.promotionId || null,
                         pointsToRedeem: redeemingPoints || 0,
                         rewardId: selectedRewardId || null,
-                        source: 'website'
+                        source: 'website',
+                        ...(selectedOrderType === 'delivery' ? {
+                            deliveryAddress: { fullAddress: document.getElementById('deliveryAddress').value.trim() },
+                            deliveryInstructions: document.getElementById('deliveryInstructions')?.value || '',
+                            contactlessDelivery: document.getElementById('contactlessDelivery')?.checked || false,
+                            deliveryFee: totals.deliveryFee,
+                            driverTip: totals.driverTip,
+                            doordashQuoteId: currentDeliveryQuote?.quoteId || null
+                        } : {})
                     };
 
                     const response = await fetch(`${CONFIG.apiBaseUrl}/submitOrder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderData) });
                     const result = await response.json();
 
-                    if (result.success) { showOrderConfirmation(result.orderId, pickupTime); clearCart(); }
+                    if (result.success) { showOrderConfirmation(result.orderId, pickupTime, result.trackingUrl); clearCart(); currentDeliveryQuote = null; }
                     else throw new Error(result.error || 'Order failed');
                 } catch (error) {
                     console.error(error);
-                    showToast(error.message || 'Order failed 😢', 'error');
+                    showToast(error.message || 'Order failed', 'error');
                     btn.disabled = false;
                     btn.innerHTML = 'Place Order 🎉';
                 }
             }
 
-            function showOrderConfirmation(orderId, pickupTime) {
-                const pickupDate = new Date(pickupTime);
+            function showOrderConfirmation(orderId, pickupTime, trackingUrl) {
+                const isDelivery = selectedOrderType === 'delivery';
+                const timeStr = pickupTime === 'ASAP' ? 'ASAP' : (pickupTime ? new Date(pickupTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
                 document.getElementById('checkoutForm').innerHTML = `
                 <div class="order-confirmation">
                     <div class="confirmation-icon"><i class="bi bi-check-lg"></i></div>
-                    <h3>Order Placed! 🎉</h3>
+                    <h3>Order Placed!</h3>
                     <div class="order-number"><span>Order Number</span><br><strong>${orderId}</strong></div>
-                    <p>Ready for pickup at <strong>${pickupDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</strong></p>
-                    <p style="margin-top:0.5rem;color:var(--text-light);">See you soon! 👋</p>
+                    ${isDelivery ? `
+                        <p style="color: var(--text-light); margin-bottom: 1rem;">
+                            <i class="bi bi-truck"></i> Your order is being prepared and a driver will be on the way soon!
+                        </p>
+                        ${trackingUrl ? `<a href="${trackingUrl}" target="_blank" style="display:inline-block; padding:0.5rem 1rem; background:var(--primary-color); color:white; border-radius:8px; text-decoration:none; margin-bottom:1rem;"><i class="bi bi-geo-alt"></i> Track Your Delivery</a>` : ''}
+                    ` : `
+                        <p>Ready for pickup at <strong>${timeStr}</strong></p>
+                        <p style="margin-top:0.5rem;color:var(--text-light);">See you soon!</p>
+                    `}
                     <button class="btn btn-primary" onclick="goToDashboard()" style="width:100%;margin-top:1.5rem;"><i class="bi bi-bag-check"></i> View My Orders</button>
                 </div>
             `;
@@ -2049,7 +2377,8 @@
                 accentColor: '{{accentColor}}',
                 fontFamily: 'Nunito'
             },
-            useMockData: false
+            useMockData: false,
+            skipPhoneVerification: {{skipPhoneVerification}}
         });
     </script>
     <script>

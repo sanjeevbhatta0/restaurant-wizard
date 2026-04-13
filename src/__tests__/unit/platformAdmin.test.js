@@ -769,6 +769,79 @@ describe('Platform Admin Configuration', () => {
   });
 
   // ==========================================
+  // Admin Config ↔ Runtime Feature Consistency
+  // ==========================================
+
+  describe('Admin Config ↔ Runtime Feature Consistency', () => {
+    // Mirrors SubscriptionContext.TIER_FEATURES — must stay in sync
+    const RUNTIME_TIER_FEATURES = {
+      scout: {
+        level: 0,
+        features: ['menu-management', 'pos', 'kitchen', 'server', 'orders', 'payments']
+      },
+      ally: {
+        level: 1,
+        features: ['menu-management', 'pos', 'kitchen', 'server', 'orders', 'payments', 'ai-menu-upload']
+      },
+      guide: {
+        level: 2,
+        features: ['menu-management', 'pos', 'kitchen', 'server', 'orders', 'payments', 'ai-menu-upload', 'basic-analytics', 'website-builder', 'website-integration']
+      },
+      chief: {
+        level: 3,
+        features: ['menu-management', 'pos', 'kitchen', 'server', 'orders', 'payments', 'ai-menu-upload', 'basic-analytics', 'website-builder', 'website-integration', 'seo-social'],
+      },
+      elder: {
+        level: 4,
+        features: ['menu-management', 'pos', 'kitchen', 'server', 'orders', 'payments', 'ai-menu-upload', 'basic-analytics', 'website-builder', 'website-integration', 'seo-social', 'ai-analytics', 'ai-content']
+      }
+    };
+
+    it('should have all admin config features mapped in runtime TIER_FEATURES', () => {
+      const adminFeatures = Object.keys(DEFAULT_CONFIG.features);
+      const runtimeFeatures = new Set();
+      Object.values(RUNTIME_TIER_FEATURES).forEach(tier => {
+        tier.features.forEach(f => runtimeFeatures.add(f));
+      });
+
+      adminFeatures.forEach(featureId => {
+        const isInRuntime = runtimeFeatures.has(featureId);
+        expect(isInRuntime).toBe(true);
+      });
+    });
+
+    it('should enforce features at the tier specified in admin config', () => {
+      const tierOrder = ['scout', 'ally', 'guide', 'chief', 'elder'];
+
+      Object.entries(DEFAULT_CONFIG.features).forEach(([featureId, config]) => {
+        const requiredTier = config.tier;
+        const requiredLevel = tierOrder.indexOf(requiredTier);
+
+        // Feature should NOT be accessible below its required tier
+        tierOrder.forEach((tier, level) => {
+          const hasAccess = RUNTIME_TIER_FEATURES[tier]?.features?.includes(featureId) || false;
+          if (level < requiredLevel) {
+            expect(hasAccess).toBe(false);
+          }
+        });
+
+        // Feature SHOULD be accessible at its required tier
+        expect(RUNTIME_TIER_FEATURES[requiredTier]?.features?.includes(featureId)).toBe(true);
+      });
+    });
+
+    it('should have order limits in admin config match enforcement defaults', () => {
+      const adminLimits = DEFAULT_CONFIG.orderLimits;
+      expect(adminLimits.scout.limit).toBe(75);
+      expect(adminLimits.scout.hardCap).toBe(true);
+      expect(adminLimits.ally.limit).toBe(500);
+      expect(adminLimits.guide.limit).toBe(2000);
+      expect(adminLimits.chief.limit).toBe(5000);
+      expect(adminLimits.elder.limit).toBe(Infinity);
+    });
+  });
+
+  // ==========================================
   // Config Draft/Publish Lifecycle
   // ==========================================
 
@@ -1428,6 +1501,117 @@ describe('Platform Admin Configuration', () => {
           expect(DEFAULT_CONFIG.tierInfo[tier].popular).toBeFalsy();
         }
       });
+    });
+  });
+
+  // ==========================================
+  // Admin Config → Display Consistency
+  // ==========================================
+
+  describe('Admin Order Limit Config → Display Consistency', () => {
+    // Mirrors the FALLBACK_TIER_FEATURES from PricingTiers.js
+    // These have dynamicDescription/dynamicRestrictions that must use ORDER_LIMITS
+    const FALLBACK_ORDER_LIMITS = {
+      scout: { limit: 75, overageRate: 0, hardCap: true },
+      ally: { limit: 500, overageRate: 0.02 },
+      guide: { limit: 2000, overageRate: 0.01 },
+      chief: { limit: 5000, overageRate: 0.005 },
+      elder: { limit: Infinity, overageRate: 0 }
+    };
+
+    // Simulates the dynamic feature descriptions from PricingTiers.js
+    function getScoutOrderDescription(limits) {
+      return `Up to ${limits.scout.limit.toLocaleString()} orders/month`;
+    }
+
+    function getAllyOrderDescription(limits) {
+      return `Up to ${limits.ally.limit.toLocaleString()} orders/month`;
+    }
+
+    function getScoutRestrictions(limits) {
+      return [
+        { icon: '📍', text: 'Single location only' },
+        { icon: '🍽️', text: '10 menu items max' },
+        { icon: '📦', text: `${limits.scout.limit.toLocaleString()} orders/month` },
+      ];
+    }
+
+    it('should display admin-configured scout order limit in feature descriptions', () => {
+      const customLimits = { ...FALLBACK_ORDER_LIMITS, scout: { limit: 90, overageRate: 0, hardCap: true } };
+      expect(getScoutOrderDescription(customLimits)).toBe('Up to 90 orders/month');
+    });
+
+    it('should display admin-configured scout order limit in restrictions', () => {
+      const customLimits = { ...FALLBACK_ORDER_LIMITS, scout: { limit: 90, overageRate: 0, hardCap: true } };
+      const restrictions = getScoutRestrictions(customLimits);
+      expect(restrictions[2].text).toBe('90 orders/month');
+    });
+
+    it('should display admin-configured ally order limit in feature descriptions', () => {
+      const customLimits = { ...FALLBACK_ORDER_LIMITS, ally: { limit: 1000, overageRate: 0.015 } };
+      expect(getAllyOrderDescription(customLimits)).toBe('Up to 1,000 orders/month');
+    });
+
+    it('should use fallback order limits when no admin config is provided', () => {
+      expect(getScoutOrderDescription(FALLBACK_ORDER_LIMITS)).toBe('Up to 75 orders/month');
+      expect(getAllyOrderDescription(FALLBACK_ORDER_LIMITS)).toBe('Up to 500 orders/month');
+    });
+
+    it('should format large order limits with commas', () => {
+      const customLimits = { ...FALLBACK_ORDER_LIMITS, scout: { limit: 1500, overageRate: 0, hardCap: true } };
+      expect(getScoutOrderDescription(customLimits)).toBe('Up to 1,500 orders/month');
+      const restrictions = getScoutRestrictions(customLimits);
+      expect(restrictions[2].text).toBe('1,500 orders/month');
+    });
+
+    it('should display order limit badge from config, not hardcoded', () => {
+      // Simulates the order-limit-badge rendering from PricingTiers.js
+      const tiers = ['scout', 'ally', 'guide', 'chief'];
+      const customLimits = {
+        scout: { limit: 90, overageRate: 0, hardCap: true },
+        ally: { limit: 750, overageRate: 0.02 },
+        guide: { limit: 3000, overageRate: 0.01 },
+        chief: { limit: 7500, overageRate: 0.005 },
+        elder: { limit: Infinity, overageRate: 0 }
+      };
+
+      tiers.forEach(tier => {
+        const limit = customLimits[tier];
+        const displayText = limit.limit === Infinity
+          ? 'Unlimited Orders'
+          : `${limit.limit.toLocaleString()} orders/month`;
+        expect(displayText).toContain(limit.limit.toLocaleString());
+      });
+
+      // Elder should show unlimited
+      expect(customLimits.elder.limit).toBe(Infinity);
+    });
+
+    it('restrictions and feature descriptions should match the order-limit-badge value', () => {
+      // This test ensures all 3 display locations for scout order limits stay in sync
+      const customLimits = { ...FALLBACK_ORDER_LIMITS, scout: { limit: 120, overageRate: 0, hardCap: true } };
+
+      const badgeText = `${customLimits.scout.limit.toLocaleString()} orders/month`;
+      const featureDesc = getScoutOrderDescription(customLimits);
+      const restrictions = getScoutRestrictions(customLimits);
+
+      // All three must reference the same limit value
+      expect(badgeText).toBe('120 orders/month');
+      expect(featureDesc).toBe('Up to 120 orders/month');
+      expect(restrictions[2].text).toBe('120 orders/month');
+    });
+
+    it('should never have hardcoded order limit strings in display functions', () => {
+      // Changing the config should change ALL display strings — no hardcoded "75" or "500"
+      const weirdLimit = { ...FALLBACK_ORDER_LIMITS, scout: { limit: 42, overageRate: 0, hardCap: true } };
+
+      const desc = getScoutOrderDescription(weirdLimit);
+      const restrictions = getScoutRestrictions(weirdLimit);
+
+      expect(desc).not.toContain('75');
+      expect(restrictions[2].text).not.toContain('75');
+      expect(desc).toContain('42');
+      expect(restrictions[2].text).toContain('42');
     });
   });
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { subscribeToPublishedConfig, DEFAULT_CONFIG } from '../../services/adminConfigService';
 import { trackPageView } from '../../services/platformAnalyticsService';
 
@@ -37,108 +37,98 @@ const FALLBACK_TIER_FEATURES = {
     color: '#6b7280',
     features: [
       { name: 'Menu Management', included: true, description: 'Up to 10 menu items' },
-      { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly order taking' },
-      { name: 'Kitchen Display', included: true, description: 'Real-time order display' },
-      { name: 'Server View', included: true, description: 'Table management' },
-      { name: 'Order Management', included: true, description: 'Up to 75 orders/month' },
-      { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
+      { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly, works on any device' },
+      { name: 'Kitchen Display', included: true, description: 'Real-time order queue' },
+      { name: 'Server & Table Mgmt', included: true, description: 'Table layout and order tracking' },
+      { name: 'Order Management', included: true, dynamicDescription: (limits) => `Up to ${limits.scout.limit.toLocaleString()} orders/month` },
+      { name: 'Payment Processing', included: true, description: 'Stripe cards + cash' },
+      { name: 'Digital Receipts', included: true, description: 'Email & SMS receipts' },
       { name: 'AI Menu Upload', included: false, description: 'Available in Ally tier' },
-      { name: 'Basic Analytics', included: false },
+      { name: 'Online Ordering', included: false },
       { name: 'Website Builder', included: false },
     ],
-    restrictions: [
+    dynamicRestrictions: (limits) => [
       { icon: '📍', text: 'Single location only' },
       { icon: '🍽️', text: '10 menu items max' },
-      { icon: '📦', text: '75 orders/month' },
+      { icon: '📦', text: `${limits.scout.limit.toLocaleString()} orders/month` },
     ]
   },
   ally: {
     name: 'Ally',
     tagline: 'Start your journey',
-    description: 'Essential tools for restaurant operations',
+    description: 'Unlimited menu & AI upload',
     icon: '🌱',
     color: '#4ade80',
     features: [
-      { name: 'Menu Management', included: true, description: 'Create and manage your menu with categories and items' },
-      { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly order taking interface' },
-      { name: 'Kitchen Display', included: true, description: 'Real-time order display for kitchen staff' },
-      { name: 'Server View', included: true, description: 'Table management and order status for servers' },
-      { name: 'Order Management', included: true, description: 'Track orders from creation to completion' },
-      { name: 'Payment Processing', included: true, description: 'Integrated Stripe payments' },
-      { name: 'AI Menu Upload', included: true, description: 'Limited time bonus!' },
-      { name: 'Basic Analytics', included: false, description: 'Available in Guide tier and above' },
+      { name: 'Menu Management', included: true, description: 'Unlimited menu items' },
+      { name: 'Point of Sale (POS)', included: true, description: 'Tablet-friendly, any device' },
+      { name: 'Kitchen Display', included: true },
+      { name: 'Server & Table Mgmt', included: true },
+      { name: 'Order Management', included: true, dynamicDescription: (limits) => `Up to ${limits.ally.limit.toLocaleString()} orders/month` },
+      { name: 'Payment Processing', included: true, description: 'Stripe cards + cash + refunds' },
+      { name: 'Digital Receipts', included: true, description: 'Email & SMS receipts' },
+      { name: 'AI Menu Upload', included: true, description: 'Photo-to-menu in seconds' },
+      { name: 'Online Ordering', included: false, description: 'Available in Guide tier' },
       { name: 'Website Builder', included: false },
-      { name: 'Website Integration', included: false },
+      { name: 'Promotions & Rewards', included: false },
       { name: 'SEO & Social', included: false },
-      { name: 'AI-Powered Features', included: false },
     ]
   },
   guide: {
     name: 'Guide',
     tagline: 'Lead the way',
-    description: 'Expand your online presence',
+    description: 'Website, online ordering & loyalty',
     icon: '🧭',
     color: '#60a5fa',
     features: [
-      { name: 'Menu Management', included: true },
-      { name: 'Point of Sale (POS)', included: true },
-      { name: 'Kitchen Display', included: true },
-      { name: 'Server View', included: true },
-      { name: 'Order Management', included: true },
-      { name: 'Payment Processing', included: true },
-      { name: 'Basic Analytics', included: true, description: 'Sales reports and order insights' },
-      { name: 'Website Builder', included: true, description: 'Create a beautiful website for your restaurant' },
-      { name: 'Website Integration', included: true, description: 'Embed your menu on any external website' },
+      { name: 'Everything in Ally', included: true, description: 'All Ally features included' },
+      { name: 'Analytics Dashboard', included: true, description: 'Sales reports and order insights' },
+      { name: 'Website Builder', included: true, description: '4 templates, custom colors & content' },
+      { name: 'Custom Domain', included: true, description: 'Use your own www.yourrestaurant.com' },
+      { name: 'Embeddable Widget', included: true, description: 'Add ordering to any existing website' },
+      { name: 'Online Pickup Ordering', included: true, description: 'Customers order online for pickup' },
+      { name: 'Customer Portal', included: true, description: 'Customer accounts, order history & tracking' },
+      { name: 'Promotions & Rewards', included: true, description: 'Loyalty points, spin wheel & promos' },
+      { name: 'Multi-Location', included: true, description: 'Manage multiple locations' },
+      { name: 'Delivery', included: false, description: 'Available in Chief tier' },
       { name: 'SEO & Social', included: false },
-      { name: 'AI-Powered Features', included: false },
     ]
   },
   chief: {
     name: 'Chief',
     tagline: 'Command respect',
-    description: 'Boost visibility with SEO & Social',
+    description: 'Delivery, SEO & full visibility',
     icon: '🦅',
     color: '#f59e0b',
     popular: true,
     features: [
-      { name: 'Menu Management', included: true },
-      { name: 'Point of Sale (POS)', included: true },
-      { name: 'Kitchen Display', included: true },
-      { name: 'Server View', included: true },
-      { name: 'Order Management', included: true },
-      { name: 'Payment Processing', included: true },
-      { name: 'Basic Analytics', included: true },
-      { name: 'Website Builder', included: true },
-      { name: 'Website Integration', included: true },
-      { name: 'SEO & Social', included: true, description: 'Post to Facebook & Instagram (AI features excluded)' },
-      { name: 'AI-Powered Features', included: 'preview', description: 'View only - upgrade to Elder to unlock' },
+      { name: 'Everything in Guide', included: true, description: 'All Guide features included' },
+      { name: 'DoorDash Delivery', included: true, description: 'White-label delivery with live tracking' },
+      { name: 'SEO & Social', included: true, description: 'Post to Facebook & Instagram' },
+      { name: 'Business Listings', included: true, description: 'Google, Yelp & Apple Maps management' },
+      { name: 'Advanced Order Tracking', included: true, description: 'Delivery stepper, driver info & ETAs' },
+      { name: 'AI-Powered Features', included: 'preview', description: 'Preview only — upgrade to unlock' },
     ]
   },
   elder: {
     name: 'Elder',
     tagline: 'Achieve wisdom',
-    description: 'Unlock the full power of AI',
+    description: 'Full AI power & premium features',
     icon: '👑',
     color: '#a855f7',
     features: [
-      { name: 'Menu Management', included: true },
-      { name: 'Point of Sale (POS)', included: true },
-      { name: 'Kitchen Display', included: true },
-      { name: 'Server View', included: true },
-      { name: 'Order Management', included: true },
-      { name: 'Payment Processing', included: true },
-      { name: 'Basic Analytics', included: true },
-      { name: 'Website Builder', included: true },
-      { name: 'Website Integration', included: true },
-      { name: 'SEO & Social', included: true, description: 'Full access with AI content generation' },
-      { name: 'AI-Powered Analytics', included: true, description: 'AI insights, predictions, and recommendations' },
+      { name: 'Everything in Chief', included: true, description: 'All Chief features included' },
+      { name: 'AI-Powered Analytics', included: true, description: 'AI insights, predictions & recommendations' },
+      { name: 'AI Content Generation', included: true, description: 'AI-written social posts & descriptions' },
+      { name: 'AI SEO & Social', included: true, description: 'Full AI-powered marketing tools' },
+      { name: 'Priority Support', included: true, description: 'Dedicated support channel' },
+      { name: 'Unlimited Orders', included: true, description: 'No order limits or overage fees' },
     ],
     comingSoon: [
       { name: 'Inventory Tracking', icon: '📦', description: 'Real-time stock levels and alerts' },
       { name: 'AI Demand Forecasting', icon: '🔮', description: 'Predict busy periods and prep needs' },
       { name: 'Supplier Management', icon: '🤝', description: 'Manage vendors and automate ordering' },
       { name: 'Smart Staff Scheduling', icon: '📅', description: 'AI-optimized shift planning' },
-      { name: 'Advanced Reporting', icon: '📊', description: 'Custom reports and dashboards' },
     ]
   }
 };
@@ -147,7 +137,6 @@ const PricingTiers = () => {
   const [billingCycle, setBillingCycle] = useState('annual');
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   // Subscribe to live config updates from Firestore
   useEffect(() => {
@@ -229,8 +218,8 @@ const PricingTiers = () => {
     return config.freeTrials[tier].days;
   };
 
-  const handleSelectTier = (tierKey) => {
-    navigate(`/signup?tier=${tierKey}&cycle=${billingCycle}`);
+  const getSignupUrl = (tierKey) => {
+    return `/signup?tier=${tierKey}&cycle=${billingCycle}`;
   };
 
   return (
@@ -242,14 +231,18 @@ const PricingTiers = () => {
           onClick={() => setBillingCycle('monthly')}
         >
           Monthly
-          <span className="toggle-badge red">+20%</span>
+          {BILLING_MULTIPLIERS.monthly > 1 && (
+            <span className="toggle-badge red">+{Math.round((BILLING_MULTIPLIERS.monthly - 1) * 100)}%</span>
+          )}
         </button>
         <button
           className={`toggle-btn ${billingCycle === 'quarterly' ? 'active' : ''}`}
           onClick={() => setBillingCycle('quarterly')}
         >
           Quarterly
-          <span className="toggle-badge yellow">+10%</span>
+          {BILLING_MULTIPLIERS.quarterly > 1 && (
+            <span className="toggle-badge yellow">+{Math.round((BILLING_MULTIPLIERS.quarterly - 1) * 100)}%</span>
+          )}
         </button>
         <button
           className={`toggle-btn ${billingCycle === 'annual' ? 'active' : ''}`}
@@ -342,41 +335,41 @@ const PricingTiers = () => {
                   <span className="hard-cap-badge">Hard cap</span>
                 )}
                 {ORDER_LIMITS[key].overageRate > 0 && (
-                  <span className="overage-rate">{(ORDER_LIMITS[key].overageRate * 100)}% overage per order</span>
+                  <span className="overage-rate">{+((ORDER_LIMITS[key].overageRate * 100).toFixed(4))}% overage per order</span>
                 )}
               </div>
 
               {/* Restrictions for Scout */}
-              {
-                tier.restrictions && (
-                  <div className="restrictions-list">
-                    {tier.restrictions.map((restriction, idx) => (
-                      <div key={idx} className="restriction-item">
-                        <span className="restriction-icon">{restriction.icon}</span>
-                        <span>{restriction.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              }
+              {(tier.restrictions || tier.dynamicRestrictions) && (
+                <div className="restrictions-list">
+                  {(tier.dynamicRestrictions ? tier.dynamicRestrictions(ORDER_LIMITS) : tier.restrictions).map((restriction, idx) => (
+                    <div key={idx} className="restriction-item">
+                      <span className="restriction-icon">{restriction.icon}</span>
+                      <span>{restriction.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               < p className="tier-description" > {tier.description}</p>
 
-              <button
+              <Link
+                to={getSignupUrl(key)}
                 className={`tier-cta ${key === 'scout' ? 'free-cta' : ''}`}
-                onClick={() => handleSelectTier(key)}
               >
                 {key === 'scout' ? 'Start Free' : (tierTrialDays > 0 ? 'Start Free Trial' : 'Get Started')}
-              </button>
+              </Link>
 
               <ul className="feature-list">
-                {tier.features.map((feature, idx) => (
+                {tier.features.map((feature, idx) => {
+                  const desc = feature.dynamicDescription ? feature.dynamicDescription(ORDER_LIMITS) : feature.description;
+                  return (
                   <li
                     key={idx}
                     className={`feature-item ${feature.included === true ? 'included' :
                       feature.included === 'preview' ? 'preview' : 'not-included'
                       }`}
-                    title={feature.description || ''}
+                    title={desc || ''}
                   >
                     {feature.included === true && (
                       <svg className="feature-icon check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -396,18 +389,19 @@ const PricingTiers = () => {
                       </svg>
                     )}
                     <span>{feature.name}</span>
-                    {feature.description && (
+                    {desc && (
                       <span className="feature-tooltip">
                         <svg className="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <circle cx="12" cy="12" r="10" />
                           <line x1="12" y1="16" x2="12" y2="12" />
                           <line x1="12" y1="8" x2="12.01" y2="8" />
                         </svg>
-                        <span className="tooltip-text">{feature.description}</span>
+                        <span className="tooltip-text">{desc}</span>
                       </span>
                     )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
 
               {/* Coming Soon Section for Elder */}

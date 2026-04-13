@@ -9,7 +9,7 @@
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {
@@ -17,6 +17,8 @@
     "cors": "^2.8.5",
     "firebase-admin": "^11.11.1",
     "firebase-functions": "^6.4.0",
+    "google-auth-library": "^10.6.2",
+    "jsonwebtoken": "^9.0.3",
     "otplib": "^13.4.0",
     "qrcode": "^1.5.4",
     "stripe": "^20.1.0"

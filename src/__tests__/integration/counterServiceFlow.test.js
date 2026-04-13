@@ -24,13 +24,14 @@ describe('Counter Service & Food Truck Flows', () => {
   const buildOrderData = (items, options = {}) => {
     const {
       serviceMode = 'counter_service',
+      paymentTiming = 'pre_pay',
       selectedTables = [],
       taxRate = 8,
       paymentMethod = 'cash',
       stripePaymentIntentId = null
     } = options;
 
-    const isPayFirst = serviceMode === 'counter_service' || serviceMode === 'food_truck';
+    const isPayFirst = (serviceMode === 'counter_service' || serviceMode === 'food_truck') && paymentTiming === 'pre_pay';
 
     const subtotal = items.reduce((total, item) => {
       return total + (calculateItemPrice(item) * item.quantity);
@@ -54,7 +55,7 @@ describe('Counter Service & Food Truck Flows', () => {
         subtotal: calculateItemPrice(item) * item.quantity
       })),
       status: 'sent_to_kitchen',
-      orderType: isPayFirst ? 'counter' : 'dine_in',
+      orderType: (serviceMode === 'counter_service' || serviceMode === 'food_truck') ? 'counter' : 'dine_in',
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -399,6 +400,150 @@ describe('Counter Service & Food Truck Flows', () => {
       };
       expect(completed.status).toBe('completed');
       expect(completed.tableNumber).toBeUndefined();
+    });
+  });
+
+  // ==========================================
+  // Post-Pay Counter/Food Truck Flows
+  // ==========================================
+
+  describe('post-pay counter service', () => {
+    it('should NOT include paidAtPOS for counter_service + post_pay', () => {
+      const order = buildOrderData(sampleItems, { serviceMode: 'counter_service', paymentTiming: 'post_pay' });
+      expect(order.paidAtPOS).toBeUndefined();
+      expect(order.paymentDetails).toBeUndefined();
+    });
+
+    it('should still set orderType to counter for post-pay counter_service', () => {
+      const order = buildOrderData(sampleItems, { serviceMode: 'counter_service', paymentTiming: 'post_pay' });
+      expect(order.orderType).toBe('counter');
+    });
+
+    it('should NOT include paidAtPOS for food_truck + post_pay', () => {
+      const order = buildOrderData(sampleItems, { serviceMode: 'food_truck', paymentTiming: 'post_pay' });
+      expect(order.paidAtPOS).toBeUndefined();
+      expect(order.paymentDetails).toBeUndefined();
+    });
+
+    it('should still set orderType to counter for post-pay food_truck', () => {
+      const order = buildOrderData(sampleItems, { serviceMode: 'food_truck', paymentTiming: 'post_pay' });
+      expect(order.orderType).toBe('counter');
+    });
+
+    it('should store subtotal only (no tax) for post-pay orders, like full_service', () => {
+      const order = buildOrderData(sampleItems, { serviceMode: 'counter_service', paymentTiming: 'post_pay' });
+      expect(order.total).toBeCloseTo(29.00, 2); // Subtotal only, tax at payment time
+    });
+
+    it('post-pay counter allows optional table', () => {
+      const order = buildOrderData(sampleItems, {
+        serviceMode: 'counter_service', paymentTiming: 'post_pay', selectedTables: ['4']
+      });
+      expect(order.tableNumber).toBe('4');
+      expect(order.orderType).toBe('counter');
+    });
+
+    it('post-pay food_truck has no table', () => {
+      const order = buildOrderData(sampleItems, {
+        serviceMode: 'food_truck', paymentTiming: 'post_pay'
+      });
+      expect(order.tableNumber).toBeUndefined();
+    });
+  });
+
+  describe('post-pay counter lifecycle', () => {
+    it('should flow: POS(no pay) → kitchen → ready → payment → completed', () => {
+      // Step 1: POS creates order WITHOUT payment
+      const order = buildOrderData(sampleItems, {
+        serviceMode: 'counter_service',
+        paymentTiming: 'post_pay',
+        taxRate: 8
+      });
+      expect(order.status).toBe('sent_to_kitchen');
+      expect(order.paidAtPOS).toBeUndefined();
+      expect(order.paymentDetails).toBeUndefined();
+      expect(order.orderType).toBe('counter');
+
+      // Step 2: Kitchen marks as preparing
+      const preparing = { ...order, status: 'preparing', updatedAt: new Date() };
+      expect(preparing.status).toBe('preparing');
+
+      // Step 3: Kitchen marks as ready
+      const ready = { ...preparing, status: 'ready', readyAt: new Date(), updatedAt: new Date() };
+      expect(ready.status).toBe('ready');
+
+      // Step 4: Payment collected at Payments page (like full_service)
+      const completed = {
+        ...ready,
+        status: 'completed',
+        paymentDate: new Date(),
+        paymentDetails: {
+          subtotal: 29.00,
+          taxRate: 8,
+          taxAmount: 2.32,
+          total: 31.32,
+          paymentMethod: 'cash',
+          paidAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      };
+      expect(completed.status).toBe('completed');
+      expect(completed.paymentDetails.paymentMethod).toBe('cash');
+      expect(completed.paymentDetails.total).toBeCloseTo(31.32, 2);
+    });
+
+    it('post-pay food truck lifecycle with card payment', () => {
+      const order = buildOrderData(sampleItems, {
+        serviceMode: 'food_truck',
+        paymentTiming: 'post_pay',
+        taxRate: 10
+      });
+      expect(order.paidAtPOS).toBeUndefined();
+      expect(order.tableNumber).toBeUndefined();
+
+      // After kitchen ready, payment with card
+      const completed = {
+        ...order,
+        status: 'completed',
+        paymentDetails: {
+          subtotal: 29.00,
+          taxRate: 10,
+          taxAmount: 2.90,
+          total: 31.90,
+          paymentMethod: 'card',
+          stripePaymentIntentId: 'pi_postpay_789',
+          paidAt: new Date().toISOString()
+        }
+      };
+      expect(completed.paymentDetails.stripePaymentIntentId).toBe('pi_postpay_789');
+    });
+  });
+
+  describe('payment page counter order grouping', () => {
+    it('should group counter orders without table under counter key', () => {
+      const orders = [
+        { id: '1', status: 'ready', orderType: 'counter', tableNumber: null, source: undefined },
+        { id: '2', status: 'ready', orderType: 'counter', tableNumber: undefined, source: undefined },
+        { id: '3', status: 'served', orderType: 'dine_in', tableNumber: '5', source: undefined }
+      ];
+
+      const grouped = {};
+      orders.forEach(order => {
+        if (order.source === 'website') return;
+        const hasTable = order.tableNumber != null && order.tableNumber !== '';
+        const tableNumbers = hasTable
+          ? (Array.isArray(order.tableNumber) ? order.tableNumber : [order.tableNumber])
+          : ['counter'];
+        tableNumbers.forEach(tableNum => {
+          if (!grouped[tableNum]) grouped[tableNum] = [];
+          if (!grouped[tableNum].find(o => o.id === order.id)) {
+            grouped[tableNum].push(order);
+          }
+        });
+      });
+
+      expect(grouped['counter']).toHaveLength(2);
+      expect(grouped['5']).toHaveLength(1);
     });
   });
 

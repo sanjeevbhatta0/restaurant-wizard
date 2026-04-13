@@ -41,6 +41,20 @@
       },
       "fonts": ["Nunito", "Quicksand", "Comfortaa", "Varela Round"],
       "features": ["Bright colors", "Rounded elements", "Fun animations", "Friendly vibe"]
+    },
+    {
+      "id": "warm-spice",
+      "name": "Warm Spice",
+      "description": "A warm, food-forward design with golden amber accents and alternating cream sections. Perfect for South Asian, Middle Eastern, and ethnic cuisine restaurants.",
+      "preview": "/templates/warm-spice/preview.png",
+      "category": "warm",
+      "colors": {
+        "primary": "#3d2b1f",
+        "secondary": "#5c4033",
+        "accent": "#ce830c"
+      },
+      "fonts": ["Poppins", "Geist", "Inter", "Nunito"],
+      "features": ["Warm color palette", "Food-forward hero", "Alternating warm sections", "Golden amber accents"]
     }
   ]
 }

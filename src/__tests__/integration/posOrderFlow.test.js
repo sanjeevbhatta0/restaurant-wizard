@@ -548,3 +548,103 @@ describe('POS Order Flow — Integration', () => {
     });
   });
 });
+
+// ==========================================
+// Item Notes & Spice Level Through Order Lifecycle
+// ==========================================
+
+describe('Item Notes & Spice Level in Order Flow', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should preserve notes and spiceLevel when order is created', () => {
+    const orderItems = [
+      { id: 'item-1', name: 'Burger', price: 10.99, quantity: 1, notes: 'extra cheese', spiceLevel: '' },
+      { id: 'item-2', name: 'Curry', price: 15.99, quantity: 2, notes: '', spiceLevel: 'Hot' },
+      { id: 'item-3', name: 'Fries', price: 5.99, quantity: 1, notes: 'extra crispy', spiceLevel: '' }
+    ];
+
+    // Simulate buildOrderData item mapping
+    const builtItems = orderItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      subtotal: item.price * item.quantity,
+      ...(item.notes && { notes: item.notes }),
+      ...(item.spiceLevel && { spiceLevel: item.spiceLevel })
+    }));
+
+    expect(builtItems[0].notes).toBe('extra cheese');
+    expect(builtItems[0]).not.toHaveProperty('spiceLevel');
+    expect(builtItems[1]).not.toHaveProperty('notes');
+    expect(builtItems[1].spiceLevel).toBe('Hot');
+    expect(builtItems[2].notes).toBe('extra crispy');
+  });
+
+  it('should display notes and spiceLevel in Kitchen/Server views', () => {
+    const orderFromFirestore = {
+      orderNumber: 'ORD-20260407-0001',
+      status: 'sent_to_kitchen',
+      items: [
+        { id: 'item-1', name: 'Burger', quantity: 1, notes: 'well done', spiceLevel: '' },
+        { id: 'item-2', name: 'Curry', quantity: 2, spiceLevel: 'Mild' },
+        { id: 'item-3', name: 'Coke', quantity: 1, notes: 'no ice, add straw' }
+      ]
+    };
+
+    // Verify each item has the expected display fields
+    const items = orderFromFirestore.items;
+    expect(items[0].notes).toBe('well done');
+    expect(items[1].spiceLevel).toBe('Mild');
+    expect(items[2].notes).toBe('no ice, add straw');
+
+    // Items without notes/spice should not have those fields
+    expect(items[1]).not.toHaveProperty('notes');
+    expect(items[0].spiceLevel).toBe('');
+  });
+
+  it('should handle orders with no notes or spice levels (backward compat)', () => {
+    const legacyOrder = {
+      orderNumber: 'ORD-20260407-0002',
+      status: 'preparing',
+      items: [
+        { id: 'item-1', name: 'Burger', quantity: 2 },
+        { id: 'item-2', name: 'Fries', quantity: 1 }
+      ]
+    };
+
+    // Legacy items should work without notes/spiceLevel fields
+    legacyOrder.items.forEach(item => {
+      expect(item.notes || item.specialInstructions || '').toBe('');
+      expect(item.spiceLevel || '').toBe('');
+    });
+  });
+
+  it('should keep same item with different notes as separate in order', () => {
+    const addItemToCart = (cart, item, notes = '', spiceLevel = '') => {
+      const existingIndex = cart.findIndex(i =>
+        i.id === item.id && (i.notes || '') === (notes || '') && (i.spiceLevel || '') === (spiceLevel || '')
+      );
+      if (existingIndex >= 0) {
+        const updated = [...cart];
+        updated[existingIndex] = { ...updated[existingIndex], quantity: updated[existingIndex].quantity + 1 };
+        return updated;
+      }
+      return [...cart, { ...item, quantity: 1, notes: notes || '', spiceLevel: spiceLevel || '' }];
+    };
+
+    const burger = { id: 'item-1', name: 'Burger', price: 10.99 };
+    let cart = [];
+    cart = addItemToCart(cart, burger, 'no onion');
+    cart = addItemToCart(cart, burger, 'extra ketchup');
+    cart = addItemToCart(cart, burger, 'no onion'); // should merge with first
+
+    expect(cart).toHaveLength(2);
+    expect(cart[0].notes).toBe('no onion');
+    expect(cart[0].quantity).toBe(2);
+    expect(cart[1].notes).toBe('extra ketchup');
+    expect(cart[1].quantity).toBe(1);
+  });
+});

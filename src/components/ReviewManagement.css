@@ -58,3 +58,17 @@
   display: flex;
   gap: 8px;
 }
+
+@media (max-width: 576px) {
+  .review-card-header {
+    flex-direction: column;
+  }
+  .review-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .review-actions .btn {
+    flex: 1;
+    min-width: 0;
+  }
+}

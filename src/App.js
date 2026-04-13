@@ -24,7 +24,10 @@ import SeoSocialPosts from './components/SeoSocialPosts';
 import WebsiteIntegration from './components/WebsiteIntegration';
 import WebsiteBuilder from './components/WebsiteBuilder';
 import ReviewManagement from './components/ReviewManagement';
+import MobileApp from './components/MobileApp';
+import CustomerDisplay from './components/CustomerDisplay';
 import PrivacyPolicy from './components/PrivacyPolicy';
+import SmsTerms from './components/SmsTerms';
 import LandingPage from './components/landing/LandingPage';
 import AdminDashboard from './components/admin/AdminDashboard';
 import AdminLogin from './components/admin/AdminLogin';
@@ -46,6 +49,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                <Route path="/sms-terms" element={<SmsTerms />} />
 
                 {/* Admin Routes */}
                 <Route path="/admin/login" element={<AdminLogin />} />
@@ -111,6 +115,11 @@ function App() {
                     <Layout><Payments /></Layout>
                   </PrivateRoute>
                 } />
+                <Route path="/customer-display" element={
+                  <PrivateRoute>
+                    <Layout><CustomerDisplay /></Layout>
+                  </PrivateRoute>
+                } />
                 <Route path="/seo-social" element={
                   <PrivateRoute>
                     <Layout><SeoSocialPosts /></Layout>
@@ -129,6 +138,11 @@ function App() {
                 <Route path="/reviews" element={
                   <PrivateRoute>
                     <Layout><ReviewManagement /></Layout>
+                  </PrivateRoute>
+                } />
+                <Route path="/mobile-app" element={
+                  <PrivateRoute>
+                    <Layout><MobileApp /></Layout>
                   </PrivateRoute>
                 } />
                 <Route path="/account" element={

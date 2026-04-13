@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { getAnalytics, getRestaurantStats } from '../../services/adminConfigService';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { adminDb } from '../../adminFirebase';
 
 const MetricsDashboard = () => {
     const [analytics, setAnalytics] = useState([]);
     const [restaurantStats, setRestaurantStats] = useState({ totalCount: 0, tierCounts: {} });
+    const [deliveryStats, setDeliveryStats] = useState({ total: 0, completed: 0, failed: 0, avgDeliveryTime: 0, enabledRestaurants: 0 });
     const [loading, setLoading] = useState(true);
     const [timeRange, setTimeRange] = useState(30);
 
@@ -15,11 +18,34 @@ const MetricsDashboard = () => {
         setLoading(true);
         const [analyticsData, stats] = await Promise.all([
             getAnalytics(timeRange),
-            getRestaurantStats()
+            getRestaurantStats(),
+            loadDeliveryStats()
         ]);
         setAnalytics(analyticsData);
         setRestaurantStats(stats);
         setLoading(false);
+    };
+
+    const loadDeliveryStats = async () => {
+        try {
+            // Count restaurants with delivery enabled using server-side filter
+            const q = query(
+                collection(adminDb, 'restaurants'),
+                where('deliverySettings.enabled', '==', true)
+            );
+            const restaurantsSnap = await getDocs(q);
+            const enabledRestaurants = restaurantsSnap.size;
+
+            setDeliveryStats(prev => ({
+                ...prev,
+                enabledRestaurants
+            }));
+            // Note: Delivery order counts (total/completed/failed) require a Cloud Function
+            // since collectionGroup queries on 'orders' need per-restaurant auth.
+            // TODO: Add getDeliveryAnalytics Cloud Function for full delivery stats.
+        } catch (err) {
+            console.error('Error loading delivery stats:', err);
+        }
     };
 
     // Calculate summary stats
@@ -381,6 +407,42 @@ const MetricsDashboard = () => {
                             })}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            {/* Delivery Analytics */}
+            <div className="admin-card">
+                <h3 style={{ marginBottom: '1.5rem' }}>
+                    <span style={{ marginRight: '8px' }}>🚚</span>
+                    Delivery Analytics
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' }}>
+                    <div style={{ padding: '16px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6' }}>{deliveryStats.total}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Total Deliveries</div>
+                    </div>
+                    <div style={{ padding: '16px', background: 'rgba(34, 197, 94, 0.08)', borderRadius: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#22c55e' }}>{deliveryStats.completed}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Completed</div>
+                    </div>
+                    <div style={{ padding: '16px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#ef4444' }}>{deliveryStats.failed}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Failed</div>
+                    </div>
+                    <div style={{ padding: '16px', background: 'rgba(168, 85, 247, 0.08)', borderRadius: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#a855f7' }}>{deliveryStats.avgDeliveryTime > 0 ? `${deliveryStats.avgDeliveryTime}m` : '--'}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Avg Delivery Time</div>
+                    </div>
+                    <div style={{ padding: '16px', background: 'rgba(245, 158, 11, 0.08)', borderRadius: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#f59e0b' }}>{deliveryStats.enabledRestaurants}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Restaurants w/ Delivery</div>
+                    </div>
+                    <div style={{ padding: '16px', background: 'rgba(34, 197, 94, 0.08)', borderRadius: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#22c55e' }}>
+                            {deliveryStats.total > 0 ? `${Math.round((deliveryStats.completed / deliveryStats.total) * 100)}%` : '--'}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>Completion Rate</div>
+                    </div>
                 </div>
             </div>
 

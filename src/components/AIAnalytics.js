@@ -3,10 +3,11 @@ import { Card, Button, Spinner, Alert, Badge, Row, Col, Form, ProgressBar } from
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../contexts/MenuContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, where, limit, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import analyticsAIService from '../services/analyticsAIService';
 import { useNavigate } from 'react-router-dom';
+import { useLocation } from '../contexts/LocationContext';
 import './AIAnalytics.css';
 
 const AIAnalytics = () => {
@@ -23,6 +24,7 @@ const AIAnalytics = () => {
     const [chatHistory, setChatHistory] = useState([]);
     const { currentUser, restaurantUid } = useAuth();
     const { categories } = useMenu();
+    const { selectedLocation, isMultiLocation } = useLocation();
 
     // Prepare order data for AI
     const prepareOrderData = useCallback(async () => {
@@ -30,7 +32,18 @@ const AIAnalytics = () => {
 
         try {
             const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
-            const q = query(ordersRef, orderBy('createdAt', 'desc'));
+            // Limit to last 90 days and 500 orders for cost control
+            const ninetyDaysAgo = new Date();
+            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+            const constraints = [
+                where('createdAt', '>=', Timestamp.fromDate(ninetyDaysAgo)),
+                orderBy('createdAt', 'desc'),
+                limit(500)
+            ];
+            if (isMultiLocation && selectedLocation) {
+                constraints.push(where('locationId', '==', selectedLocation));
+            }
+            const q = query(ordersRef, ...constraints);
             const snapshot = await getDocs(q);
 
             const orders = snapshot.docs.map(doc => ({
@@ -89,7 +102,7 @@ const AIAnalytics = () => {
             console.error('Error preparing order data:', err);
             return null;
         }
-    }, [currentUser]);
+    }, [currentUser, restaurantUid, isMultiLocation, selectedLocation]);
 
     // Prepare menu data for AI
     const prepareMenuData = useCallback(() => {

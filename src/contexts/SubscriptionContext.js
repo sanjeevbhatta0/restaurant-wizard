@@ -66,7 +66,8 @@ export const TIER_FEATURES = {
             'analytics',
             'website-builder',
             'website-integration',
-            'seo-social' // Without AI features
+            'seo-social', // Without AI features
+            'delivery'
         ],
         // AI features visible but disabled
         previewFeatures: ['ai-analytics', 'ai-content']
@@ -87,7 +88,9 @@ export const TIER_FEATURES = {
             'website-integration',
             'seo-social',
             'ai-analytics',
-            'ai-content'
+            'ai-content',
+            'delivery',
+            'mobile-app'
         ],
         // Coming soon features to entice upgrades
         comingSoon: [
@@ -147,6 +150,8 @@ export const SubscriptionProvider = ({ children }) => {
     const { currentUser, restaurantUid } = useAuth();
     const [subscription, setSubscription] = useState(null);
     const [serviceMode, setServiceMode] = useState('full_service');
+    const [paymentTiming, setPaymentTiming] = useState('pre_pay');
+    const [customerDisplayEnabled, setCustomerDisplayEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -164,9 +169,13 @@ export const SubscriptionProvider = ({ children }) => {
                     const data = docSnap.data();
                     setSubscription(data.subscription || null);
                     setServiceMode(data.serviceMode || 'full_service');
+                    setPaymentTiming(data.paymentTiming || 'pre_pay');
+                    setCustomerDisplayEnabled(!!data.customerDisplayEnabled);
                 } else {
                     setSubscription(null);
                     setServiceMode('full_service');
+                    setPaymentTiming('pre_pay');
+                    setCustomerDisplayEnabled(false);
                 }
                 setLoading(false);
             },
@@ -237,9 +246,76 @@ export const SubscriptionProvider = ({ children }) => {
         return (basePrice * multiplier).toFixed(2);
     };
 
-    // Check subscription status
+    // Check subscription status (considers expiration and trial end)
     const isSubscriptionActive = () => {
-        return subscription?.status === 'active' || subscription?.status === 'trialing';
+        if (!subscription) return false;
+        const status = subscription.status;
+
+        // Explicitly cancelled or past_due
+        if (status === 'cancelled' || status === 'past_due') return false;
+
+        // Trial: check if trial has expired
+        if (status === 'trialing') {
+            if (subscription.trialEnd) {
+                const trialEnd = subscription.trialEnd.toDate
+                    ? subscription.trialEnd.toDate()
+                    : new Date(subscription.trialEnd);
+                if (new Date() > trialEnd) return false;
+            }
+            return true;
+        }
+
+        // Active: check if billing period has expired (grace period of 3 days)
+        if (status === 'active') {
+            if (subscription.currentPeriodEnd) {
+                const periodEnd = subscription.currentPeriodEnd.toDate
+                    ? subscription.currentPeriodEnd.toDate()
+                    : new Date(subscription.currentPeriodEnd);
+                const gracePeriod = new Date(periodEnd);
+                gracePeriod.setDate(gracePeriod.getDate() + 3);
+                if (new Date() > gracePeriod) return false;
+            }
+            return true;
+        }
+
+        // Scout (free) tier is always active
+        if (subscription.tier === 'scout') return true;
+
+        return false;
+    };
+
+    // Check if subscription is expired (past period end + grace)
+    const isSubscriptionExpired = () => {
+        if (!subscription) return false;
+        if (subscription.tier === 'scout') return false;
+
+        if (subscription.status === 'trialing' && subscription.trialEnd) {
+            const trialEnd = subscription.trialEnd.toDate
+                ? subscription.trialEnd.toDate()
+                : new Date(subscription.trialEnd);
+            return new Date() > trialEnd;
+        }
+
+        if (subscription.currentPeriodEnd) {
+            const periodEnd = subscription.currentPeriodEnd.toDate
+                ? subscription.currentPeriodEnd.toDate()
+                : new Date(subscription.currentPeriodEnd);
+            const gracePeriod = new Date(periodEnd);
+            gracePeriod.setDate(gracePeriod.getDate() + 3);
+            return new Date() > gracePeriod;
+        }
+        return false;
+    };
+
+    // Get days remaining in current period
+    const getDaysRemaining = () => {
+        if (!subscription?.currentPeriodEnd) return null;
+        const periodEnd = subscription.currentPeriodEnd.toDate
+            ? subscription.currentPeriodEnd.toDate()
+            : new Date(subscription.currentPeriodEnd);
+        const now = new Date();
+        const diffDays = Math.ceil((periodEnd - now) / (1000 * 60 * 60 * 24));
+        return Math.max(0, diffDays);
     };
 
     // Get days remaining in trial
@@ -288,8 +364,13 @@ export const SubscriptionProvider = ({ children }) => {
     // Service mode helpers
     const getServiceMode = () => serviceMode;
 
+    const getPaymentTiming = () => paymentTiming;
+
     const isPayFirst = () => {
-        return serviceMode === 'counter_service' || serviceMode === 'food_truck';
+        if (serviceMode === 'counter_service' || serviceMode === 'food_truck') {
+            return paymentTiming === 'pre_pay';
+        }
+        return false;
     };
 
     const requiresTables = () => {
@@ -311,6 +392,8 @@ export const SubscriptionProvider = ({ children }) => {
         getNextTier,
         calculatePrice,
         isSubscriptionActive,
+        isSubscriptionExpired,
+        getDaysRemaining,
         getTrialDaysRemaining,
         TIER_FEATURES,
         PRICING,
@@ -323,9 +406,11 @@ export const SubscriptionProvider = ({ children }) => {
         isOverOrderLimit,
         isOrderHardCapped,
         getServiceMode,
+        getPaymentTiming,
         isPayFirst,
         requiresTables,
-        hasServerRole
+        hasServerRole,
+        customerDisplayEnabled
     };
 
     return (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, getDoc, setDoc, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -21,12 +21,13 @@ import {
 } from '../services/terminalService';
 import { initializeNotifications, notifyPayments, unlockAudio } from '../services/notificationService';
 import useFullscreen from '../hooks/useFullscreen';
+import ReceiptModal from './ReceiptModal';
 import './PageHeader.css';
 import './Payments.css';
 
 const Payments = () => {
   const { currentUser, restaurantUid } = useAuth();
-  const { isPayFirst, getServiceMode } = useSubscription();
+  const { isPayFirst, getServiceMode, getPaymentTiming } = useSubscription();
   const [selectedTable, setSelectedTable] = useState(null);
   const [tablesWithOrders, setTablesWithOrders] = useState({}); // { tableNumber: [orders] }
   const [onlineOrders, setOnlineOrders] = useState([]); // Online orders (pickup/delivery)
@@ -64,7 +65,7 @@ const Payments = () => {
 
   // Payment details
   const [subtotal, setSubtotal] = useState(0);
-  const [taxRate, setTaxRate] = useState(8.5); // Default 8.5%
+  const [taxRate, setTaxRate] = useState(8); // Default 8% (must match POS and Account defaults)
   const [taxAmount, setTaxAmount] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountType, setDiscountType] = useState('amount'); // 'amount' or 'percentage'
@@ -83,6 +84,10 @@ const Payments = () => {
   const [processingReimbursement, setProcessingReimbursement] = useState(false);
   const [completedOrders, setCompletedOrders] = useState({}); // { tableNumber: [orders] }
   const [restaurantData, setRestaurantData] = useState(null);
+
+  // Receipt
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
 
   // Promo code
   const [promoCode, setPromoCode] = useState('');
@@ -111,8 +116,8 @@ const Payments = () => {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setRestaurantData(data);
-          // Set tax rate from settings, default to 8.5 if not set
-          setTaxRate(data.taxRate !== undefined ? data.taxRate : 8.5);
+          // Set tax rate from settings, default to 8 if not set
+          setTaxRate(data.taxRate !== undefined ? data.taxRate : 8);
         }
       } catch (error) {
         console.error('Error fetching restaurant settings:', error);
@@ -162,13 +167,21 @@ const Payments = () => {
     checkTerminal();
   }, [currentUser]);
 
-  // Load all served orders grouped by table (EXCLUDING online orders)
+  // Load payable orders grouped by table (EXCLUDING online orders)
+  // For full_service: 'served' orders. For post-pay counter/food_truck: 'ready' orders too.
+  const isPostPayCounter = (getServiceMode() === 'counter_service' || getServiceMode() === 'food_truck') && getPaymentTiming() === 'post_pay';
+
   useEffect(() => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
 
-    let q = query(ordersRef, where('status', '==', 'served'));
+    let q;
+    if (isPostPayCounter) {
+      q = query(ordersRef, where('status', 'in', ['served', 'ready']));
+    } else {
+      q = query(ordersRef, where('status', '==', 'served'));
+    }
 
     // Add location filter if multi-location
     if (isMultiLocation && selectedLocation) {
@@ -206,14 +219,16 @@ const Payments = () => {
       }
 
       // Group orders by table number - EXCLUDE online orders (source='website')
+      // Counter/food truck orders without a table go under 'counter' key
       const grouped = {};
       ordersData.forEach(order => {
         // Skip online orders - they appear in the Online Orders section
         if (order.source === 'website') return;
 
-        const tableNumbers = Array.isArray(order.tableNumber)
-          ? order.tableNumber
-          : [order.tableNumber];
+        const hasTable = order.tableNumber != null && order.tableNumber !== '';
+        const tableNumbers = hasTable
+          ? (Array.isArray(order.tableNumber) ? order.tableNumber : [order.tableNumber])
+          : ['counter'];
 
         tableNumbers.forEach(tableNum => {
           if (!grouped[tableNum]) {
@@ -315,51 +330,37 @@ const Payments = () => {
   }, [currentUser, selectedLocation, isMultiLocation]);
 
   // Load POS-paid transactions (counter service / food truck mode)
+  // Server-side today filter to avoid loading all historical completed orders
   useEffect(() => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayTimestamp = Timestamp.fromDate(todayStart);
 
-    let q;
+    const constraints = [
+      where('paidAtPOS', '==', true),
+      where('status', '==', 'completed'),
+      where('createdAt', '>=', todayTimestamp),
+      orderBy('createdAt', 'desc')
+    ];
+
     if (isMultiLocation && selectedLocation) {
-      q = query(
-        ordersRef,
-        where('paidAtPOS', '==', true),
-        where('status', '==', 'completed'),
-        where('locationId', '==', selectedLocation)
-      );
+      constraints.push(where('locationId', '==', selectedLocation));
     } else if (isMultiLocation && !selectedLocation) {
       setPosTransactions([]);
       return;
-    } else {
-      q = query(
-        ordersRef,
-        where('paidAtPOS', '==', true),
-        where('status', '==', 'completed')
-      );
     }
+
+    const q = query(ordersRef, ...constraints);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const ordersData = snapshot.docs.map(d => ({
         id: d.id,
         ...d.data()
       }));
-
-      // Filter to today's orders only and sort newest first
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayOrders = ordersData.filter(order => {
-        const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0);
-        return orderDate >= today;
-      });
-
-      todayOrders.sort((a, b) => {
-        const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
-        const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt);
-        return dateB - dateA;
-      });
-
-      setPosTransactions(todayOrders);
+      setPosTransactions(ordersData);
     }, (error) => {
       console.error('Error loading POS transactions:', error);
     });
@@ -367,21 +368,29 @@ const Payments = () => {
     return () => unsubscribe();
   }, [currentUser, selectedLocation, isMultiLocation]);
 
-  // Load completed orders for reimbursement
+  // Load completed orders for reimbursement (last 7 days only)
   useEffect(() => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    let q = query(ordersRef, where('status', '==', 'completed'));
+    const constraints = [
+      where('status', '==', 'completed'),
+      where('createdAt', '>=', Timestamp.fromDate(sevenDaysAgo)),
+      orderBy('createdAt', 'desc')
+    ];
 
     // Add location filter if multi-location
     if (isMultiLocation && selectedLocation) {
-      q = query(q, where('locationId', '==', selectedLocation));
+      constraints.push(where('locationId', '==', selectedLocation));
     } else if (isMultiLocation && !selectedLocation) {
       setCompletedOrders({});
       return;
     }
+
+    const q = query(ordersRef, ...constraints);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const ordersData = snapshot.docs.map(doc => ({
@@ -436,62 +445,86 @@ const Payments = () => {
       setError('');
 
       const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
-
-      // Get table numbers - handle both single table and array
-      const tableNumbers = Array.isArray(selectedTable) ? selectedTable : [selectedTable];
-
-      // Query for orders with "served" status and matching table number
       const ordersData = [];
 
-      for (const tableNum of tableNumbers) {
+      // For counter orders (no table), query by status and orderType
+      if (selectedTable === 'counter') {
+        const statuses = isPostPayCounter ? ['served', 'ready'] : ['served'];
         let q = query(
           ordersRef,
-          where('status', '==', 'served'),
-          where('tableNumber', '==', tableNum)
+          where('status', 'in', statuses),
+          where('orderType', '==', 'counter')
         );
-
-        // Add location filter if multi-location
         if (isMultiLocation && selectedLocation) {
           q = query(q, where('locationId', '==', selectedLocation));
         }
-
         const snapshot = await getDocs(q);
+        snapshot.docs.forEach(d => {
+          const data = d.data();
+          // Only include orders without a table number
+          if (!data.tableNumber) {
+            ordersData.push({ id: d.id, ...data });
+          }
+        });
+      } else {
+        // Get table numbers - handle both single table and array
+        const tableNumbers = Array.isArray(selectedTable) ? selectedTable : [selectedTable];
+        const statuses = isPostPayCounter ? ['served', 'ready'] : ['served'];
 
-        snapshot.docs.forEach(doc => {
-          ordersData.push({
-            id: doc.id,
-            ...doc.data()
+        // Query for orders with matching status and table number
+        for (const tableNum of tableNumbers) {
+          let q = query(
+            ordersRef,
+            where('status', 'in', statuses),
+            where('tableNumber', '==', tableNum)
+          );
+
+          // Add location filter if multi-location
+          if (isMultiLocation && selectedLocation) {
+            q = query(q, where('locationId', '==', selectedLocation));
+          }
+
+          const snapshot = await getDocs(q);
+
+          snapshot.docs.forEach(d => {
+            ordersData.push({
+              id: d.id,
+              ...d.data()
+            });
           });
+        }
+
+        // Also check for orders where tableNumber is an array
+        let allOrdersQuery = query(ordersRef, where('status', 'in', statuses));
+
+        // Add location filter if multi-location
+        if (isMultiLocation && selectedLocation) {
+          allOrdersQuery = query(allOrdersQuery, where('locationId', '==', selectedLocation));
+        }
+
+        const allOrdersSnapshot = await getDocs(allOrdersQuery);
+
+        allOrdersSnapshot.docs.forEach(d => {
+          const orderData = d.data();
+          if (Array.isArray(orderData.tableNumber)) {
+            const hasMatchingTable = orderData.tableNumber.some(t => tableNumbers.includes(t));
+            if (hasMatchingTable && !ordersData.find(o => o.id === d.id)) {
+              ordersData.push({
+                id: d.id,
+                ...orderData
+              });
+            }
+          }
         });
       }
-
-      // Also check for orders where tableNumber is an array
-      let allOrdersQuery = query(ordersRef, where('status', '==', 'served'));
-
-      // Add location filter if multi-location
-      if (isMultiLocation && selectedLocation) {
-        allOrdersQuery = query(allOrdersQuery, where('locationId', '==', selectedLocation));
-      }
-
-      const allOrdersSnapshot = await getDocs(allOrdersQuery);
-
-      allOrdersSnapshot.docs.forEach(doc => {
-        const orderData = doc.data();
-        if (Array.isArray(orderData.tableNumber)) {
-          const hasMatchingTable = orderData.tableNumber.some(t => tableNumbers.includes(t));
-          if (hasMatchingTable && !ordersData.find(o => o.id === doc.id)) {
-            ordersData.push({
-              id: doc.id,
-              ...orderData
-            });
-          }
-        }
-      });
 
       setOrders(ordersData);
 
       if (ordersData.length === 0) {
-        setError(`No orders served at ${Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}`);
+        const label = selectedTable === 'counter'
+          ? 'No counter orders ready for payment'
+          : `No orders served at ${Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}`;
+        setError(label);
       }
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -706,6 +739,9 @@ const Payments = () => {
       setSuccess(`Cash payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
       setShowPaymentModal(false);
 
+      // Show receipt
+      buildAndShowReceipt('cash', selectedOrders, Array.from(tableNumbers));
+
       // Reset form
       resetPaymentForm();
     } catch (error) {
@@ -765,6 +801,9 @@ const Payments = () => {
       setSuccess(`Card payment processed successfully for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}. Tables released.`);
       setShowPaymentModal(false);
 
+      // Show receipt
+      buildAndShowReceipt('card', selectedOrders, Array.from(tableNumbers));
+
       // Reset form
       resetPaymentForm();
     } catch (error) {
@@ -772,6 +811,7 @@ const Payments = () => {
       // Payment was successful, but there was an error updating local state
       setSuccess(`Payment processed! Total: $${total.toFixed(2)}. Note: ${error.message}`);
       setShowPaymentModal(false);
+      buildAndShowReceipt('card', selectedOrders, []);
       resetPaymentForm();
     }
   };
@@ -877,6 +917,10 @@ const Payments = () => {
 
       setSuccess(`Terminal payment processed for ${selectedOrders.length} order(s). Total: $${total.toFixed(2)}.`);
       setShowPaymentModal(false);
+
+      // Show receipt
+      buildAndShowReceipt('terminal', selectedOrders, Array.from(tableNumbers));
+
       resetPaymentForm();
     } catch (err) {
       if (err.message?.includes('canceled')) {
@@ -924,12 +968,43 @@ const Payments = () => {
     }
   };
 
+  // Build receipt data from current payment state and show receipt modal
+  const buildAndShowReceipt = (method, orderIds, tableNums) => {
+    const receiptOrders = orderIds.map(id => orders.find(o => o.id === id)).filter(Boolean);
+    const allItems = receiptOrders.flatMap(o => (o.items || []).map(item => ({
+      name: item.name,
+      quantity: item.quantity || 1,
+      price: item.price || 0
+    })));
+    const orderNums = receiptOrders.map(o => o.orderNumber || o.id);
+
+    setReceiptData({
+      restaurantName: restaurantData?.restaurantName || '',
+      restaurantAddress: restaurantData?.address || '',
+      restaurantPhone: restaurantData?.phone || '',
+      orderNumbers: orderNums,
+      items: allItems,
+      subtotal,
+      taxRate,
+      taxAmount,
+      discountAmount,
+      discountType,
+      promoCode: promoValidation?.promoCode || null,
+      tipAmount,
+      total,
+      paymentMethod: method,
+      tableNumbers: tableNums || [],
+      paidAt: new Date().toISOString()
+    });
+    setShowReceiptModal(true);
+  };
+
   // Reset payment form
   const resetPaymentForm = () => {
     setSelectedOrders([]);
     setDiscountAmount(0);
     setTipAmount(0);
-    setTaxRate(8.5);
+    setTaxRate(8);
     setPaymentMethod('cash');
     setPromoCode('');
     setPromoValidation(null);
@@ -1526,7 +1601,7 @@ const Payments = () => {
                     <Card.Body>
                       <div className="table-card-header">
                         <h4>
-                          <i className="bi bi-table"></i> Table {tableNumber}
+                          <i className={`bi ${tableNumber === 'counter' ? 'bi-shop' : 'bi-table'}`}></i> {tableNumber === 'counter' ? 'Counter Orders' : `Table ${tableNumber}`}
                         </h4>
                         <Badge bg={isSelected ? 'primary' : 'secondary'}>
                           {tableOrders.length} {tableOrders.length === 1 ? 'Order' : 'Orders'}
@@ -1569,7 +1644,7 @@ const Payments = () => {
           {/* Orders List */}
           <Card className="mb-4">
             <Card.Header>
-              <h5>Served Orders for {Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}</h5>
+              <h5>{selectedTable === 'counter' ? 'Counter Orders Ready for Payment' : `Served Orders for ${Array.isArray(selectedTable) ? `Tables ${selectedTable.join(', ')}` : `Table ${selectedTable}`}`}</h5>
             </Card.Header>
             <Card.Body>
               <Table responsive hover>
@@ -2652,6 +2727,13 @@ const Payments = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Receipt Modal */}
+      <ReceiptModal
+        show={showReceiptModal}
+        onHide={() => setShowReceiptModal(false)}
+        receiptData={receiptData}
+      />
     </Container>
   );
 };

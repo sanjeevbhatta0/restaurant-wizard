@@ -5,6 +5,12 @@
  * Works with Firebase Auth for authentication and Firestore for data.
  */
 
+// HTML escape helper — prevents XSS when rendering user-controlled text
+function _escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 class CustomerPortal {
   constructor(config = {}) {
     this.config = {
@@ -13,6 +19,7 @@ class CustomerPortal {
       themeConfig: config.themeConfig || {},
       firebaseConfig: config.firebaseConfig || null,
       useMockData: config.useMockData !== false, // Default true for development
+      skipPhoneVerification: config.skipPhoneVerification || false, // Bypass Twilio SMS when disabled
       promoId: config.promoId || '',
       embedMode: config.embedMode || false,
       initialTab: config.initialTab || 'menu'
@@ -38,6 +45,9 @@ class CustomerPortal {
     this.overlay = null;
     this.modal = null;
     this.portalRoot = null;
+
+    // Phone verification state
+    this.verifiedPhone = null; // Phone number verified via OTP
 
     // Bind methods
     this.toggleAuth = this.toggleAuth.bind(this);
@@ -232,7 +242,7 @@ class CustomerPortal {
     const navLink = document.getElementById('portal-nav-link');
     if (navLink) {
       if (this.isAuthenticated && this.user) {
-        navLink.innerHTML = `<i class="bi bi-person-circle"></i> ${this.user.fullName.split(' ')[0]}`;
+        navLink.innerHTML = `<i class="bi bi-person-circle"></i> ${_escHtml(this.user.fullName.split(' ')[0])}`;
       } else {
         navLink.innerHTML = '<i class="bi bi-person-circle"></i> My Account';
       }
@@ -293,7 +303,7 @@ class CustomerPortal {
 
         // Time-based active orders: within 30 minutes OR has active status
         const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
-        const activeStatuses = ['new', 'pending', 'confirmed', 'preparing', 'ready'];
+        const activeStatuses = ['new', 'pending', 'confirmed', 'sent_to_kitchen', 'preparing', 'ready', 'out_for_delivery'];
 
         this.activeOrders = allOrders.filter(o => {
           const orderTime = o.createdAt?.toMillis?.() || o.createdAt?.seconds * 1000 || 0;
@@ -458,12 +468,198 @@ class CustomerPortal {
   }
 
   showAuth(mode = 'signin') {
-    this.modal.innerHTML = this.renderAuth(mode);
+    // If phone already verified this session, go straight to auth form
+    if (this.verifiedPhone) {
+      this.modal.innerHTML = this.renderAuth(mode);
+      this.overlay.classList.add('active');
+      this.modal.classList.add('active');
+      this.attachAuthListeners();
+      return;
+    }
+
+    // Otherwise, start with phone verification
+    this.modal.innerHTML = this.renderPhoneVerification();
     this.overlay.classList.add('active');
     this.modal.classList.add('active');
+    this.attachPhoneVerificationListeners();
+  }
 
-    // Attach event listeners
-    this.attachAuthListeners();
+  renderPhoneVerification() {
+    const promo = this.pendingPromoData;
+    const promoBanner = promo ? `
+      <div class="cp-promo-banner">
+        <div class="cp-promo-banner-icon"><i class="bi bi-gift-fill"></i></div>
+        <div class="cp-promo-banner-text">
+          <strong>${promo.discount} OFF — ${promo.title}</strong>
+          <span>Verify your phone to claim your exclusive discount!</span>
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <button class="cp-modal-close" onclick="customerPortal.close()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+      <div class="cp-auth-container">
+        ${promoBanner}
+        <div class="cp-auth-header">
+          <div class="cp-phone-icon"><i class="bi bi-phone-fill"></i></div>
+          <h2>Verify Your Phone</h2>
+          <p>Enter your phone number to get started. We'll send you a verification code.</p>
+        </div>
+
+        <div id="cp-auth-alert"></div>
+
+        <form id="cp-phone-form">
+          <div class="cp-form-group">
+            <label class="cp-form-label">Phone Number</label>
+            <input type="tel" class="cp-form-input" name="phone" placeholder="(555) 123-4567" required
+              style="font-size:1.1rem; letter-spacing:1px; text-align:center;">
+          </div>
+
+          <button type="submit" class="cp-btn cp-btn-primary" id="cp-phone-submit">
+            <span class="btn-text">Send Verification Code</span>
+          </button>
+        </form>
+      </div>
+    `;
+  }
+
+  renderOTPVerification(phoneLastFour) {
+    return `
+      <button class="cp-modal-close" onclick="customerPortal.close()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+      <div class="cp-auth-container">
+        <div class="cp-auth-header">
+          <div class="cp-phone-icon"><i class="bi bi-shield-lock-fill"></i></div>
+          <h2>Enter Verification Code</h2>
+          <p>We sent a 6-digit code to the number ending in <strong>${phoneLastFour}</strong></p>
+        </div>
+
+        <div id="cp-auth-alert"></div>
+
+        <form id="cp-otp-form">
+          <div class="cp-form-group">
+            <label class="cp-form-label">Verification Code</label>
+            <input type="text" class="cp-form-input" name="code" placeholder="000000" required
+              maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code"
+              style="font-size:1.8rem; letter-spacing:8px; text-align:center; font-weight:700;">
+          </div>
+
+          <button type="submit" class="cp-btn cp-btn-primary" id="cp-otp-submit">
+            <span class="btn-text">Verify Code</span>
+          </button>
+        </form>
+
+        <div style="text-align:center; margin-top:12px;">
+          <button class="cp-text-btn" onclick="customerPortal.resendOTP()" id="cp-resend-btn">
+            Didn't receive it? Resend code
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  attachPhoneVerificationListeners() {
+    const form = this.modal.querySelector('#cp-phone-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const phone = form.querySelector('input[name="phone"]').value.trim();
+      if (!phone) return;
+
+      const submitBtn = form.querySelector('#cp-phone-submit');
+      const alertBox = this.modal.querySelector('#cp-auth-alert');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<div class="cp-spinner"></div>';
+      alertBox.innerHTML = '';
+
+      try {
+        this._pendingPhone = phone;
+
+        if (this.config.skipPhoneVerification) {
+          // Twilio bypass: auto-approve phone and go straight to auth
+          await this.delay(500);
+          this.verifiedPhone = phone;
+          this.modal.innerHTML = this.renderAuth('signin');
+          this.attachAuthListeners();
+          return;
+        }
+
+        if (this.config.useMockData) {
+          // Mock mode: skip real SMS
+          await this.delay(1000);
+          this.modal.innerHTML = this.renderOTPVerification('0000');
+          this.attachOTPListeners();
+          return;
+        }
+
+        const sendCode = firebase.functions().httpsCallable('sendVerificationCode');
+        const result = await sendCode({ phone, restaurantId: this.config.restaurantId });
+
+        this.modal.innerHTML = this.renderOTPVerification(result.data.phoneLastFour);
+        this.attachOTPListeners();
+
+      } catch (error) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span class="btn-text">Send Verification Code</span>';
+        alertBox.innerHTML = `<div class="cp-alert cp-alert-error">${error.message || 'Failed to send code'}</div>`;
+      }
+    });
+  }
+
+  attachOTPListeners() {
+    const form = this.modal.querySelector('#cp-otp-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = form.querySelector('input[name="code"]').value.trim();
+      if (!code) return;
+
+      const submitBtn = form.querySelector('#cp-otp-submit');
+      const alertBox = this.modal.querySelector('#cp-auth-alert');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<div class="cp-spinner"></div>';
+      alertBox.innerHTML = '';
+
+      try {
+        if (this.config.useMockData) {
+          // Mock mode: accept any 6-digit code
+          await this.delay(800);
+          this.verifiedPhone = this._pendingPhone;
+        } else {
+          const verifyCode = firebase.functions().httpsCallable('verifyPhoneCode');
+          const result = await verifyCode({ phone: this._pendingPhone, code });
+          this.verifiedPhone = result.data.phone || this._pendingPhone;
+        }
+
+        // Phone verified — proceed to sign-in/sign-up form
+        this.modal.innerHTML = this.renderAuth('signin');
+        this.attachAuthListeners();
+
+      } catch (error) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span class="btn-text">Verify Code</span>';
+        alertBox.innerHTML = `<div class="cp-alert cp-alert-error">${error.message || 'Invalid code'}</div>`;
+      }
+    });
+  }
+
+  async resendOTP() {
+    const btn = this.modal.querySelector('#cp-resend-btn');
+    if (btn) btn.textContent = 'Sending...';
+
+    try {
+      if (!this.config.useMockData) {
+        const sendCode = firebase.functions().httpsCallable('sendVerificationCode');
+        await sendCode({ phone: this._pendingPhone, restaurantId: this.config.restaurantId });
+      } else {
+        await this.delay(1000);
+      }
+      if (btn) btn.textContent = 'Code resent!';
+      setTimeout(() => { if (btn) btn.textContent = "Didn't receive it? Resend code"; }, 3000);
+    } catch (error) {
+      if (btn) btn.textContent = 'Failed — try again';
+    }
   }
 
   showLoadingState() {
@@ -594,10 +790,11 @@ class CustomerPortal {
           
           ${mode === 'signup' ? `
             <div class="cp-form-group">
-              <label class="cp-form-label">Phone Number</label>
-              <input type="tel" class="cp-form-input" name="phone" placeholder="(555) 123-4567">
+              <label class="cp-form-label">Phone Number <span style="opacity:0.5">(Verified ✓)</span></label>
+              <input type="tel" class="cp-form-input" name="phone" value="${this.verifiedPhone || ''}" readonly
+                style="background:#f0f0f0; cursor:not-allowed; opacity:0.8;">
             </div>
-            
+
             <div class="cp-form-group">
               <label class="cp-form-label">Address <span style="opacity: 0.5">(Optional)</span></label>
               <input type="text" class="cp-form-input" name="address" placeholder="123 Main St, City, State">
@@ -687,6 +884,17 @@ class CustomerPortal {
           this.user = { id: firebaseUser.uid, email: firebaseUser.email, fullName: firebaseUser.displayName || 'Customer' };
         }
         this.isAuthenticated = true;
+
+        // Persist verified phone to customer record if not already saved
+        if (this.verifiedPhone) {
+          const existingPhone = customerDoc.exists && customerDoc.data().phone;
+          if (!existingPhone) {
+            await firebase.firestore()
+              .doc(`restaurants/${this.config.restaurantId}/customers/${firebaseUser.uid}`)
+              .set({ phone: this.verifiedPhone }, { merge: true });
+            this.user.phone = this.verifiedPhone;
+          }
+        }
       }
 
       // Show loading state while data loads (replaces tiny button spinner with full loading screen)
@@ -750,7 +958,7 @@ class CustomerPortal {
 
       const customerData = {
         fullName: data.fullName,
-        phone: data.phone || '',
+        phone: this.verifiedPhone || data.phone || '',
         address: data.address || '',
         rewardPoints: 100, // Welcome bonus
         nextRewardAt: 500,
@@ -847,6 +1055,7 @@ class CustomerPortal {
 
     this.user = null;
     this.isAuthenticated = false;
+    this.verifiedPhone = null;
     this.promotions = [];
     this.activeOrders = [];
     this.pastOrders = [];
@@ -886,7 +1095,7 @@ class CustomerPortal {
       <div class="cp-dashboard">
         <aside class="cp-sidebar">
           <div class="cp-sidebar-header">
-            <h3>${user.fullName || 'Guest'}</h3>
+            <h3>${_escHtml(user.fullName || 'Guest')}</h3>
             <p>${user.tier || 'Member'}</p>
           </div>
           
@@ -1030,25 +1239,67 @@ class CustomerPortal {
 
   renderOrderCard(order, isActive) {
     const statusBadge = isActive
-      ? `<span class="cp-order-status-badge cp-status-active">${this.formatStatus(order.status)}</span>`
-      : `<span class="cp-order-status ${order.status}">${this.formatStatus(order.status)}</span>`;
+      ? `<span class="cp-order-status-badge cp-status-active">${this.formatStatus(order.status, order.orderType)}</span>`
+      : `<span class="cp-order-status ${order.status}">${this.formatStatus(order.status, order.orderType)}</span>`;
 
     const items = order.items || [];
     const itemSummary = items.map(i => `${i.quantity || 1}x ${i.name}`).join(', ');
     const orderTime = this.formatDate(order.createdAt || order.date);
     const total = typeof order.total === 'number' ? order.total.toFixed(2) : '0.00';
+    const isDelivery = order.orderType === 'delivery';
 
-    const pickupHtml = order.pickupTime ? `
-      <div style="font-size: 0.85rem; color: var(--cp-text-light); margin-top: 4px;">
-        <i class="bi bi-clock"></i> Pickup: ${new Date(order.pickupTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-      </div>
-    ` : '';
+    let pickupHtml = '';
+    if (!isDelivery && isActive) {
+      pickupHtml = `
+        <div style="margin-top:8px; padding:10px; background:#f5faf7; border-radius:8px; border-left:3px solid var(--cp-primary, #2d6a4f);">
+          <div style="font-weight:600; font-size:0.85rem; margin-bottom:6px;"><i class="bi bi-bag-check"></i> Pickup Details</div>
+          ${order.pickupTime ? '<div style="font-size:0.85rem; color:var(--cp-text-light); margin-bottom:6px;"><i class="bi bi-clock"></i> Pickup time: <strong>' + new Date(order.pickupTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</strong></div>' : ''}
+          <div>${this.getPickupSteps(order.status)}</div>
+        </div>
+      `;
+    } else if (!isDelivery && order.pickupTime) {
+      pickupHtml = `
+        <div style="font-size: 0.85rem; color: var(--cp-text-light); margin-top: 4px;">
+          <i class="bi bi-clock"></i> Pickup: ${new Date(order.pickupTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+        </div>
+      `;
+    }
+
+    // Delivery tracking info for active delivery orders
+    let deliveryHtml = '';
+    if (isDelivery && isActive) {
+      const dd = order.doordash || {};
+      const steps = this.getDeliverySteps(dd.deliveryStatus, order.status);
+      const eta = dd.estimatedDropoffTime
+        ? new Date(dd.estimatedDropoffTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        : null;
+
+      deliveryHtml = `
+        <div class="cp-delivery-tracker" style="margin-top: 8px;">
+          <div class="cp-delivery-steps">${steps}</div>
+          ${dd.dasherName ? `<div style="font-size: 0.85rem; margin-top: 6px;"><i class="bi bi-person-fill"></i> Driver: ${dd.dasherName}</div>` : ''}
+          ${eta ? `<div style="font-size: 0.85rem; color: var(--cp-text-light);"><i class="bi bi-clock"></i> ETA: ${eta}</div>` : ''}
+          ${dd.trackingUrl ? `<a href="${dd.trackingUrl}" target="_blank" class="cp-track-link" style="display: inline-block; margin-top: 6px; font-size: 0.85rem; color: var(--cp-primary); text-decoration: none;"><i class="bi bi-truck"></i> Track Delivery</a>` : ''}
+        </div>
+      `;
+    } else if (isDelivery && !isActive) {
+      deliveryHtml = `
+        <div style="font-size: 0.85rem; color: var(--cp-text-light); margin-top: 4px;">
+          <i class="bi bi-truck"></i> Delivery to: ${order.deliveryAddress?.fullAddress || 'N/A'}
+        </div>
+      `;
+    }
+
+    // Order type badge
+    const typeBadge = isDelivery
+      ? '<span style="font-size: 0.75rem; background: #e3f2fd; color: #1565c0; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"><i class="bi bi-truck"></i> Delivery</span>'
+      : '';
 
     return `
       <div class="cp-order-card ${isActive ? 'cp-order-active' : ''}">
         <div class="cp-order-card-header">
           <div>
-            <strong>Order #${order.orderNumber || order.id}</strong>
+            <strong>Order #${order.orderNumber || order.id}</strong>${typeBadge}
             <span style="color: var(--cp-text-light); font-size: 0.85rem; margin-left: 8px;">${orderTime}</span>
           </div>
           ${statusBadge}
@@ -1056,6 +1307,7 @@ class CustomerPortal {
         <div class="cp-order-card-body">
           <div style="font-size: 0.9rem; color: var(--cp-text-light);">${itemSummary}</div>
           ${pickupHtml}
+          ${deliveryHtml}
         </div>
         <div class="cp-order-card-footer">
           <strong>Total: $${total}</strong>
@@ -1063,6 +1315,87 @@ class CustomerPortal {
         </div>
       </div>
     `;
+  }
+
+  getDeliverySteps(deliveryStatus, orderStatus) {
+    const allSteps = [
+      { key: 'placed', label: 'Order Placed', icon: 'bi-check-circle' },
+      { key: 'preparing', label: 'Preparing', icon: 'bi-fire' },
+      { key: 'driver_assigned', label: 'Driver Assigned', icon: 'bi-person-check' },
+      { key: 'picked_up', label: 'Picked Up', icon: 'bi-box-seam' },
+      { key: 'on_the_way', label: 'On The Way', icon: 'bi-truck' },
+      { key: 'delivered', label: 'Delivered', icon: 'bi-house-check' },
+    ];
+
+    // Map DoorDash deliveryStatus to step index
+    const statusToStep = {
+      'quoted': 0, 'awaiting_driver': 1,
+      'driver_assigned': 2, 'driver_enroute_pickup': 2, 'driver_at_pickup': 2,
+      'picked_up': 3,
+      'driver_enroute_dropoff': 4, 'driver_at_dropoff': 4,
+      'delivered': 5,
+      'cancelled': -1,
+    };
+
+    // Use the furthest-along of DoorDash status and order status
+    const ddStep = statusToStep[deliveryStatus] ?? 0;
+    const orderToStep = { 'new': 0, 'sent_to_kitchen': 0, 'preparing': 1, 'ready': 1, 'out_for_delivery': 4, 'completed': 5 };
+    const orderStep = orderToStep[orderStatus] ?? 0;
+    let currentStep = deliveryStatus === 'cancelled' ? -1 : Math.max(ddStep, orderStep);
+
+    if (deliveryStatus === 'cancelled') {
+      return '<div style="color: #e74c3c; font-size: 0.85rem;"><i class="bi bi-x-circle"></i> Delivery cancelled</div>';
+    }
+
+    return `<div style="display:flex; gap:2px; flex-wrap:wrap; align-items:center;">${allSteps.map((step, i) => {
+      const isComplete = i <= currentStep;
+      const isCurrent = i === currentStep;
+      const bg = isComplete ? 'var(--cp-primary, #2d6a4f)' : '#e0e0e0';
+      const textColor = isComplete ? 'white' : '#999';
+      const scale = isCurrent ? 'transform:scale(1.05);' : '';
+      return `<div style="display:flex; align-items:center;">
+        <div style="display:flex; flex-direction:column; align-items:center; padding:4px 6px; border-radius:6px; background:${isCurrent ? bg : 'transparent'}; ${scale}">
+          <i class="${step.icon}" style="font-size:0.8rem; color:${isComplete ? 'var(--cp-primary, #2d6a4f)' : '#ccc'};${isCurrent ? 'color:white;' : ''}"></i>
+          <span style="font-size:0.65rem; color:${isCurrent ? 'white' : (isComplete ? 'var(--cp-primary, #2d6a4f)' : '#999')}; white-space:nowrap; font-weight:${isCurrent ? '600' : '400'};">${step.label}</span>
+        </div>
+        ${i < allSteps.length - 1 ? '<div style="width:12px; height:2px; background:' + (i < currentStep ? 'var(--cp-primary, #2d6a4f)' : '#e0e0e0') + '; margin:0 1px;"></div>' : ''}
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  getPickupSteps(orderStatus) {
+    const allSteps = [
+      { key: 'placed', label: 'Order Placed', icon: 'bi-check-circle' },
+      { key: 'preparing', label: 'Preparing', icon: 'bi-fire' },
+      { key: 'ready', label: 'Ready for Pickup', icon: 'bi-bag-check' },
+      { key: 'completed', label: 'Picked Up', icon: 'bi-hand-thumbs-up' },
+    ];
+
+    const statusToStep = {
+      'new': 0, 'sent_to_kitchen': 0, 'pending': 0, 'confirmed': 0,
+      'preparing': 1,
+      'ready': 2,
+      'completed': 3, 'picked_up': 3,
+      'cancelled': -1,
+    };
+
+    const currentStep = statusToStep[orderStatus] ?? 0;
+
+    if (orderStatus === 'cancelled') {
+      return '<div style="color: #e74c3c; font-size: 0.85rem;"><i class="bi bi-x-circle"></i> Order cancelled</div>';
+    }
+
+    return `<div style="display:flex; gap:2px; flex-wrap:wrap; align-items:center;">${allSteps.map((step, i) => {
+      const isComplete = i <= currentStep;
+      const isCurrent = i === currentStep;
+      return `<div style="display:flex; align-items:center;">
+        <div style="display:flex; flex-direction:column; align-items:center; padding:4px 8px; border-radius:6px; background:${isCurrent ? 'var(--cp-primary, #2d6a4f)' : 'transparent'}; ${isCurrent ? 'transform:scale(1.05);' : ''}">
+          <i class="${step.icon}" style="font-size:0.8rem; color:${isCurrent ? 'white' : (isComplete ? 'var(--cp-primary, #2d6a4f)' : '#ccc')};"></i>
+          <span style="font-size:0.65rem; color:${isCurrent ? 'white' : (isComplete ? 'var(--cp-primary, #2d6a4f)' : '#999')}; white-space:nowrap; font-weight:${isCurrent ? '600' : '400'};">${step.label}</span>
+        </div>
+        ${i < allSteps.length - 1 ? '<div style="width:16px; height:2px; background:' + (i < currentStep ? 'var(--cp-primary, #2d6a4f)' : '#e0e0e0') + '; margin:0 2px;"></div>' : ''}
+      </div>`;
+    }).join('')}</div>`;
   }
 
   renderAccountOverview() {
@@ -1101,7 +1434,7 @@ class CustomerPortal {
         <div class="cp-user-info">
           <div class="cp-info-item">
             <label>Full Name</label>
-            <span>${user.fullName || 'Not set'}</span>
+            <span>${_escHtml(user.fullName || 'Not set')}</span>
           </div>
           <div class="cp-info-item">
             <label>Email</label>
@@ -1150,7 +1483,7 @@ class CustomerPortal {
 
       return `
         <div class="cp-promo-card claimed ${isUsed ? 'cp-promo-used' : ''}">
-          <div class="cp-promo-image" style="background-image: url('${promo.imageUrl || promo.image || 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=250&fit=crop'}')">
+          <div class="cp-promo-image" style="background-image: url('${promo.imageUrl || promo.image || ''}')">
             <span class="cp-promo-badge">${discountText}</span>
             <span class="cp-promo-claimed-badge ${isUsed ? 'cp-badge-used' : ''}">${isUsed ? 'Used' : 'Ready to Use'}</span>
           </div>
@@ -1210,7 +1543,7 @@ class CustomerPortal {
               : '';
             return `
               <div class="cp-promo-card">
-                <div class="cp-promo-image" style="background-image: url('${promo.imageUrl || promo.image || 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=250&fit=crop'}')">
+                <div class="cp-promo-image" style="background-image: url('${promo.imageUrl || promo.image || ''}')">
                   <span class="cp-promo-badge">${promo.discount || promo.type}</span>
                 </div>
                 <div class="cp-promo-content">
@@ -1262,14 +1595,21 @@ class CustomerPortal {
               Order Now
             </button>
           </div>
-        ` : orders.map(order => `
+        ` : orders.map(order => {
+          const isDelivery = order.orderType === 'delivery';
+          const dd = order.doordash || {};
+          const eta = dd.estimatedDropoffTime
+            ? new Date(dd.estimatedDropoffTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+            : null;
+          return `
           <div class="cp-order-card">
             <div class="cp-order-card-header">
               <div>
                 <span class="cp-order-number">Order #${order.orderNumber || order.id.slice(-6).toUpperCase()}</span>
+                ${isDelivery ? '<span style="font-size:0.75rem; background:#e3f2fd; color:#1565c0; padding:2px 8px; border-radius:4px; margin-left:6px;"><i class="bi bi-truck"></i> Delivery</span>' : ''}
                 <span class="cp-order-date">${this.formatDateTime(order.createdAt)}</span>
               </div>
-              <span class="cp-order-status-badge ${order.status}">${this.formatStatus(order.status)}</span>
+              <span class="cp-order-status-badge ${order.status}">${this.formatStatus(order.status, order.orderType)}</span>
             </div>
             <div class="cp-order-card-body">
               <div class="cp-order-items">
@@ -1280,24 +1620,45 @@ class CustomerPortal {
                   </div>
                 `).join('')}
               </div>
-              <div class="cp-order-card-footer">
-                <div class="cp-order-pickup">
-                  <i class="bi bi-clock"></i>
-                  <span>Pickup: ${this.formatPickupTime(order.pickupTime)}</span>
-                </div>
+
+              ${isDelivery ? `
+              <div style="margin-top:10px; padding:12px; background:#f8f9ff; border-radius:8px; border-left:3px solid #1565c0;">
+                <div style="font-weight:600; font-size:0.9rem; margin-bottom:8px;"><i class="bi bi-truck"></i> Delivery Details</div>
+                <div style="font-size:0.85rem; color:var(--cp-text-light); margin-bottom:4px;"><i class="bi bi-geo-alt"></i> ${order.deliveryAddress?.fullAddress || 'Address on file'}</div>
+                ${eta ? '<div style="font-size:0.85rem; color:var(--cp-text-light); margin-bottom:4px;"><i class="bi bi-clock"></i> Estimated arrival: <strong>' + eta + '</strong></div>' : ''}
+                ${dd.dasherName ? '<div style="font-size:0.85rem; color:var(--cp-text-light); margin-bottom:4px;"><i class="bi bi-person-fill"></i> Driver: <strong>' + dd.dasherName + '</strong>' + (dd.dasherVehicle ? ' (' + dd.dasherVehicle.make + ' ' + dd.dasherVehicle.model + ')' : '') + '</div>' : ''}
+                <div style="margin-top:8px;">${this.getDeliverySteps(dd.deliveryStatus || 'quoted', order.status)}</div>
+                ${dd.trackingUrl ? '<a href="' + dd.trackingUrl + '" target="_blank" style="display:inline-block; margin-top:8px; padding:6px 14px; background:#1565c0; color:white; border-radius:6px; font-size:0.85rem; text-decoration:none;"><i class="bi bi-truck"></i> Track Live on DoorDash</a>' : ''}
+              </div>
+              ` : `
+              <div style="margin-top:10px; padding:12px; background:#f5faf7; border-radius:8px; border-left:3px solid var(--cp-primary, #2d6a4f);">
+                <div style="font-weight:600; font-size:0.9rem; margin-bottom:8px;"><i class="bi bi-bag-check"></i> Pickup Details</div>
+                ${order.pickupTime ? '<div style="font-size:0.85rem; color:var(--cp-text-light); margin-bottom:8px;"><i class="bi bi-clock"></i> Pickup time: <strong>' + this.formatPickupTime(order.pickupTime) + '</strong></div>' : ''}
+                <div style="margin-top:4px;">${this.getPickupSteps(order.status)}</div>
+              </div>
+              `}
+
+              <div class="cp-order-card-footer" style="margin-top:8px;">
+                ${isDelivery && order.deliveryFee ? '<div style="font-size:0.85rem; color:var(--cp-text-light);"><span>Delivery Fee (DoorDash): $' + order.deliveryFee.toFixed(2) + '</span>' + (order.driverTip ? ' &bull; Tip: $' + order.driverTip.toFixed(2) : '') + '</div>' : ''}
                 <div class="cp-order-total-display">
                   <strong>Total: $${order.total.toFixed(2)}</strong>
                 </div>
               </div>
             </div>
-            ${order.status === 'ready' ? `
+            ${!isDelivery && order.status === 'ready' ? `
               <div class="cp-order-ready-banner">
                 <i class="bi bi-check-circle-fill"></i>
                 Your order is ready for pickup!
               </div>
             ` : ''}
+            ${isDelivery && order.status === 'out_for_delivery' ? `
+              <div class="cp-order-ready-banner" style="background:#e3f2fd; color:#1565c0;">
+                <i class="bi bi-truck"></i>
+                Your order is on its way!
+              </div>
+            ` : ''}
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }
@@ -1322,7 +1683,7 @@ class CustomerPortal {
           <div class="cp-order-row">
             <span class="cp-order-date">${this.formatDate(order.createdAt || order.date)}</span>
             <span class="cp-order-total">$${order.total.toFixed(2)}</span>
-            <span class="cp-order-status ${order.status}">${this.formatStatus(order.status)}</span>
+            <span class="cp-order-status ${order.status}">${this.formatStatus(order.status, order.orderType)}</span>
             <span style="flex: 1; color: var(--cp-text-light); font-size: 0.85rem">
               ${order.items.length} item${order.items.length > 1 ? 's' : ''}
             </span>
@@ -1335,16 +1696,19 @@ class CustomerPortal {
     `;
   }
 
-  formatStatus(status) {
+  formatStatus(status, orderType) {
     const statusMap = {
       'new': 'Order Received',
       'pending': 'Pending',
       'confirmed': 'Confirmed',
+      'sent_to_kitchen': 'Order Received',
       'preparing': 'Preparing',
-      'ready': 'Ready for Pickup',
+      'ready': orderType === 'delivery' ? 'Awaiting Driver' : 'Ready for Pickup',
       'picked_up': 'Picked Up',
-      'completed': 'Completed',
+      'out_for_delivery': 'Out for Delivery',
+      'completed': orderType === 'delivery' ? 'Delivered' : 'Completed',
       'delivered': 'Delivered',
+      'delivery_failed': 'Delivery Failed',
       'cancelled': 'Cancelled'
     };
     return statusMap[status] || status.replace('_', ' ');
@@ -1502,7 +1866,7 @@ class CustomerPortal {
         </div>
         <div class="cp-form-group">
           <label class="cp-form-label">Name</label>
-          <input type="text" class="cp-form-input" id="cp-review-name" placeholder="Your name" value="${this.user?.fullName || ''}" />
+          <input type="text" class="cp-form-input" id="cp-review-name" placeholder="Your name" value="${_escHtml(this.user?.fullName || '')}" />
         </div>
         <div class="cp-form-group">
           <label class="cp-form-label">Email (optional)</label>
@@ -1880,7 +2244,7 @@ class CustomerPortal {
             discountType: item.discountType || 'amount'
           };
           for (let i = 0; i < (item.quantity || 1); i++) {
-            embedApp.addToCart(cartItem);
+            embedApp.addToCart(cartItem, item.notes || item.specialInstructions || '', item.spiceLevel || '');
           }
         });
         embedApp.updateCartBar();

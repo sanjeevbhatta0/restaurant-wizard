@@ -293,7 +293,7 @@ const Kitchen = () => {
       }
     } catch (error) {
       console.error('Error updating order status:', error);
-      alert('Failed to update order status: ' + error.message);
+      setError('Failed to update order status: ' + error.message);
     } finally {
       setUpdatingOrders(prev => {
         const newSet = new Set(prev);
@@ -367,7 +367,7 @@ const Kitchen = () => {
       }
     } catch (error) {
       console.error('Error completing order:', error);
-      alert('Failed to complete order: ' + error.message);
+      setError('Failed to complete order: ' + error.message);
     } finally {
       setUpdatingOrders(prev => {
         const newSet = new Set(prev);
@@ -535,7 +535,13 @@ const Kitchen = () => {
                         Table: {formatTableNumber(order.tableNumber)}
                       </span>
                     )}
-                    {order.pickupTime && (
+                    {order.orderType === 'delivery' && order.deliveryAddress && (
+                      <span className="pickup-time" title={order.deliveryAddress.fullAddress}>
+                        <i className="bi bi-geo-alt"></i>
+                        {(order.deliveryAddress.fullAddress || '').substring(0, 30)}...
+                      </span>
+                    )}
+                    {order.orderType !== 'delivery' && order.pickupTime && (
                       <span className="pickup-time">
                         <i className="bi bi-clock-history"></i>
                         Pickup: {order.pickupTime}
@@ -544,6 +550,27 @@ const Kitchen = () => {
                   </div>
                 </Card.Header>
                 <Card.Body>
+                  {/* Delivery driver status */}
+                  {order.orderType === 'delivery' && order.doordash && (
+                    <div style={{
+                      padding: '8px 12px', marginBottom: '10px',
+                      background: '#e3f2fd', borderRadius: '8px', fontSize: '0.85rem'
+                    }}>
+                      <i className="bi bi-truck" style={{ marginRight: '4px' }}></i>
+                      <strong>
+                        {order.doordash.deliveryStatus === 'driver_assigned' || order.doordash.deliveryStatus === 'driver_enroute_pickup'
+                          ? 'Driver on the way to pick up'
+                          : order.doordash.deliveryStatus === 'driver_at_pickup'
+                          ? 'Driver is here!'
+                          : order.doordash.deliveryStatus === 'picked_up' || order.doordash.deliveryStatus === 'driver_enroute_dropoff'
+                          ? 'Out for delivery'
+                          : order.doordash.deliveryStatus === 'awaiting_driver'
+                          ? 'Awaiting DoorDash driver'
+                          : order.doordash.deliveryStatus || 'Delivery dispatched'}
+                      </strong>
+                      {order.doordash.dasherName && <span style={{ marginLeft: '8px' }}>({order.doordash.dasherName})</span>}
+                    </div>
+                  )}
                   <div className="order-items">
                     <h6 className="items-title">Items:</h6>
                     <ul className="items-list">
@@ -556,6 +583,16 @@ const Kitchen = () => {
                               {item.categoryName}
                             </Badge>
                           )}
+                          {item.spiceLevel && (
+                            <Badge bg="danger" className="item-category" style={{ marginLeft: '4px' }}>
+                              {item.spiceLevel}
+                            </Badge>
+                          )}
+                          {(item.notes || item.specialInstructions) && (
+                            <div style={{ fontSize: '0.8rem', color: '#e67e22', fontStyle: 'italic', marginLeft: '28px' }}>
+                              {item.notes || item.specialInstructions}
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -565,7 +602,16 @@ const Kitchen = () => {
                   </div>
                 </Card.Body>
                 <Card.Footer className="kitchen-order-footer">
-                  {isReady && order.paidAtPOS ? (
+                  {isReady && order.orderType === 'delivery' ? (
+                    <Button
+                      variant="info"
+                      className="kitchen-action-button"
+                      disabled
+                      style={{ opacity: 0.8 }}
+                    >
+                      <i className="bi bi-truck"></i> Awaiting DoorDash Pickup
+                    </Button>
+                  ) : isReady && order.paidAtPOS ? (
                     <Button
                       variant="success"
                       className="kitchen-action-button kitchen-pickup-btn"

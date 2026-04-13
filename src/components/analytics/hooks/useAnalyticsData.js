@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, where, Timestamp } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLocation } from '../../../contexts/LocationContext';
@@ -12,42 +12,52 @@ const useAnalyticsData = (startDate, endDate, prevStartDate, prevEndDate) => {
   const { currentUser, restaurantUid } = useAuth();
   const { selectedLocation, isMultiLocation } = useLocation();
 
-  // Listen to orders
+  // Listen to orders — server-side date + location filter
+  // Use prevStartDate as lower bound to include both current and comparison periods
   useEffect(() => {
     if (!currentUser) return;
 
     const ordersRef = collection(db, `restaurants/${restaurantUid}/orders`);
-    const q = query(ordersRef, orderBy('createdAt', 'desc'));
+    const constraints = [orderBy('createdAt', 'desc')];
+    // Server-side date filter: only fetch orders from the comparison start date onward
+    if (prevStartDate) {
+      constraints.push(where('createdAt', '>=', Timestamp.fromDate(prevStartDate)));
+    }
+    if (isMultiLocation && selectedLocation) {
+      constraints.push(where('locationId', '==', selectedLocation));
+    }
+    const q = query(ordersRef, ...constraints);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (isMultiLocation && selectedLocation) {
-        data = data.filter(o => o.locationId === selectedLocation);
-      }
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllOrders(data);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [currentUser, isMultiLocation, selectedLocation]);
+  }, [currentUser, restaurantUid, isMultiLocation, selectedLocation, prevStartDate]);
 
-  // Listen to reimbursements
+  // Listen to reimbursements — server-side date + location filter
   useEffect(() => {
     if (!currentUser) return;
 
     const reimbRef = collection(db, `restaurants/${restaurantUid}/reimbursements`);
-    const q = query(reimbRef, orderBy('processedAt', 'desc'));
+    const constraints = [orderBy('processedAt', 'desc')];
+    if (prevStartDate) {
+      constraints.push(where('processedAt', '>=', Timestamp.fromDate(prevStartDate)));
+    }
+    if (isMultiLocation && selectedLocation) {
+      constraints.push(where('locationId', '==', selectedLocation));
+    }
+    const q = query(reimbRef, ...constraints);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (isMultiLocation && selectedLocation) {
-        data = data.filter(r => r.locationId === selectedLocation);
-      }
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllReimbursements(data);
     });
 
     return () => unsubscribe();
-  }, [currentUser, isMultiLocation, selectedLocation]);
+  }, [currentUser, restaurantUid, isMultiLocation, selectedLocation, prevStartDate]);
 
   // Filter by date range
   const filterByRange = (items, start, end, dateField = 'createdAt') => {

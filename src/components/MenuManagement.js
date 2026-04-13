@@ -16,7 +16,10 @@ import { useLocation } from '../contexts/LocationContext';
 import { useSubscription } from '../contexts/SubscriptionContext';
 import { useMenu } from '../contexts/MenuContext';
 import { Button, Form, Alert, Spinner, Modal, Badge, ProgressBar } from 'react-bootstrap';
+import ConfirmModal from './ConfirmModal';
 import menuParserService from '../services/menuParserService';
+import { compressImage } from '../services/imageService';
+import MenuItemImage from './MenuItemImage';
 import './PageHeader.css';
 import './MenuManagement.css';
 
@@ -29,7 +32,7 @@ const MenuManagement = () => {
   const [saving, setSaving] = useState(false);
   const { currentUser, restaurantUid } = useAuth();
   const { isMultiLocation, locations, selectedLocation } = useLocation();
-  const { getCurrentTier, getMenuLimit } = useSubscription();
+  const { getCurrentTier, getMenuLimit, getOrderLimit } = useSubscription();
 
   // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
@@ -45,8 +48,11 @@ const MenuManagement = () => {
     discountType: 'amount',
     image: null,
     imageUrl: '',
-    locations: [] // Empty array = all locations, otherwise specific location IDs
+    locations: [], // Empty array = all locations, otherwise specific location IDs
+    spiceLevelEnabled: false,
+    spiceLevels: []
   });
+  const [newSpiceLevel, setNewSpiceLevel] = useState('');
   const [categoryForm, setCategoryForm] = useState({ name: '' });
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -60,6 +66,7 @@ const MenuManagement = () => {
 
   // Menu limit modal for scout tier
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [confirmState, setConfirmState] = useState(null);
 
   // Calculate total menu items across all categories
   const totalMenuItems = categories.reduce((sum, cat) => sum + (cat.items?.length || 0), 0);
@@ -109,8 +116,15 @@ const MenuManagement = () => {
   };
 
   const handleDeleteCategory = async (categoryId) => {
-    if (!window.confirm('Are you sure you want to delete this category and all its items?')) return;
+    setConfirmState({
+      title: 'Delete Category',
+      message: 'Are you sure you want to delete this category and all its items?',
+      confirmText: 'Delete',
+      onConfirm: () => doDeleteCategory(categoryId)
+    });
+  };
 
+  const doDeleteCategory = async (categoryId) => {
     try {
       setError('');
       // Delete all items in the category first
@@ -161,8 +175,11 @@ const MenuManagement = () => {
       discountType: 'amount',
       image: null,
       imageUrl: '',
-      locations: [] // Default: all locations
+      locations: [], // Default: all locations
+      spiceLevelEnabled: false,
+      spiceLevels: []
     });
+    setNewSpiceLevel('');
     setImagePreview(null);
     setShowItemModal(true);
   };
@@ -178,8 +195,11 @@ const MenuManagement = () => {
       discountType: item.discountType || 'amount',
       image: null,
       imageUrl: item.imageUrl || '',
-      locations: item.locations || [] // Preserve location assignments
+      locations: item.locations || [], // Preserve location assignments
+      spiceLevelEnabled: item.spiceLevelEnabled || false,
+      spiceLevels: item.spiceLevels || []
     });
+    setNewSpiceLevel('');
     setImagePreview(item.imageUrl || null);
     setShowEditItemModal(true);
   };
@@ -221,10 +241,12 @@ const MenuManagement = () => {
           }
         }
 
-        const fileName = `${Date.now()}-${itemForm.image.name}`;
+        // Compress image before upload (max 800x800, JPEG 0.8 quality)
+        const compressed = await compressImage(itemForm.image);
+        const fileName = `${Date.now()}-${compressed.name}`;
         imageStoragePath = `restaurants/${restaurantUid}/menuItems/${currentCategory.id}/${fileName}`;
         const storageRef = ref(storage, imageStoragePath);
-        await uploadBytes(storageRef, itemForm.image);
+        await uploadBytes(storageRef, compressed);
         imageUrl = await getDownloadURL(storageRef);
       }
 
@@ -237,6 +259,8 @@ const MenuManagement = () => {
         imageUrl,
         imageStoragePath,
         locations: itemForm.locations || [], // Empty array = all locations
+        spiceLevelEnabled: itemForm.spiceLevelEnabled || false,
+        spiceLevels: itemForm.spiceLevelEnabled ? (itemForm.spiceLevels || []) : [],
         updatedAt: new Date()
       };
 
@@ -263,8 +287,11 @@ const MenuManagement = () => {
         discountType: 'amount',
         image: null,
         imageUrl: '',
-        locations: []
+        locations: [],
+        spiceLevelEnabled: false,
+        spiceLevels: []
       });
+      setNewSpiceLevel('');
       setImagePreview(null);
       refreshMenu(); // Refresh cached menu data
       setTimeout(() => setSuccess(''), 3000);
@@ -276,8 +303,15 @@ const MenuManagement = () => {
   };
 
   const handleDeleteItem = async (categoryId, itemId, imageStoragePath) => {
-    if (!window.confirm('Are you sure you want to delete this item?')) return;
+    setConfirmState({
+      title: 'Delete Item',
+      message: 'Are you sure you want to delete this item?',
+      confirmText: 'Delete',
+      onConfirm: () => doDeleteItem(categoryId, itemId, imageStoragePath)
+    });
+  };
 
+  const doDeleteItem = async (categoryId, itemId, imageStoragePath) => {
     try {
       setError('');
       if (imageStoragePath) {
@@ -599,17 +633,7 @@ const MenuManagement = () => {
                 key={item.id}
                 className="menu-item-tile"
               >
-                {item.imageUrl ? (
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="menu-item-image"
-                  />
-                ) : (
-                  <div className="menu-item-placeholder">
-                    <i className="bi bi-cup-straw"></i>
-                  </div>
-                )}
+                <MenuItemImage src={item.imageUrl} alt={item.name} size={80} />
                 <div className="menu-item-name">{item.name}</div>
                 {isMultiLocation && item.locations && item.locations.length > 0 && (
                   <div className="menu-item-locations">
@@ -705,8 +729,11 @@ const MenuManagement = () => {
             discountType: 'amount',
             image: null,
             imageUrl: '',
-            locations: []
+            locations: [],
+            spiceLevelEnabled: false,
+            spiceLevels: []
           });
+          setNewSpiceLevel('');
           setImagePreview(null);
         }}
         size="lg"
@@ -843,6 +870,80 @@ const MenuManagement = () => {
               </Form.Group>
             )}
 
+            {/* Spice Level Configuration */}
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="switch"
+                id="spice-level-toggle"
+                label="Enable Spice Levels"
+                checked={itemForm.spiceLevelEnabled}
+                onChange={(e) => setItemForm({ ...itemForm, spiceLevelEnabled: e.target.checked })}
+              />
+              <Form.Text className="text-muted">
+                When enabled, customers must select a spice level when ordering this item.
+              </Form.Text>
+            </Form.Group>
+
+            {itemForm.spiceLevelEnabled && (
+              <Form.Group className="mb-3">
+                <Form.Label>Spice Levels (up to 10)</Form.Label>
+                <div className="d-flex gap-2 mb-2">
+                  <Form.Control
+                    type="text"
+                    placeholder="e.g. Mild, Medium, Hot"
+                    value={newSpiceLevel}
+                    onChange={(e) => setNewSpiceLevel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = newSpiceLevel.trim();
+                        if (val && itemForm.spiceLevels.length < 10 && !itemForm.spiceLevels.includes(val)) {
+                          setItemForm({ ...itemForm, spiceLevels: [...itemForm.spiceLevels, val] });
+                          setNewSpiceLevel('');
+                        }
+                      }
+                    }}
+                    disabled={itemForm.spiceLevels.length >= 10}
+                  />
+                  <Button
+                    variant="outline-primary"
+                    size="sm"
+                    disabled={!newSpiceLevel.trim() || itemForm.spiceLevels.length >= 10 || itemForm.spiceLevels.includes(newSpiceLevel.trim())}
+                    onClick={() => {
+                      const val = newSpiceLevel.trim();
+                      if (val && itemForm.spiceLevels.length < 10 && !itemForm.spiceLevels.includes(val)) {
+                        setItemForm({ ...itemForm, spiceLevels: [...itemForm.spiceLevels, val] });
+                        setNewSpiceLevel('');
+                      }
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+                {itemForm.spiceLevels.length > 0 && (
+                  <div className="d-flex flex-wrap gap-2">
+                    {itemForm.spiceLevels.map((level, idx) => (
+                      <Badge key={idx} bg="warning" text="dark" className="d-flex align-items-center gap-1" style={{ fontSize: '0.85em', padding: '6px 10px' }}>
+                        {level}
+                        <span
+                          style={{ cursor: 'pointer', marginLeft: '4px', fontWeight: 'bold' }}
+                          onClick={() => setItemForm({
+                            ...itemForm,
+                            spiceLevels: itemForm.spiceLevels.filter((_, i) => i !== idx)
+                          })}
+                        >
+                          &times;
+                        </span>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {itemForm.spiceLevels.length === 0 && (
+                  <Form.Text className="text-danger">Add at least one spice level.</Form.Text>
+                )}
+              </Form.Group>
+            )}
+
             <Form.Group className="mb-3">
               <Form.Label>Image</Form.Label>
               <Form.Control
@@ -878,8 +979,11 @@ const MenuManagement = () => {
                     discountType: 'amount',
                     image: null,
                     imageUrl: '',
-                    locations: []
+                    locations: [],
+                    spiceLevelEnabled: false,
+                    spiceLevels: []
                   });
+                  setNewSpiceLevel('');
                   setImagePreview(null);
                 }}
               >
@@ -1021,7 +1125,7 @@ const MenuManagement = () => {
             <ul style={{ marginBottom: 0 }}>
               <li>Unlimited menu items</li>
               <li>AI-powered menu uploads</li>
-              <li>500 orders per month</li>
+              <li>{getOrderLimit().limit.toLocaleString()} orders per month</li>
               <li>All POS features</li>
             </ul>
           </div>
@@ -1040,6 +1144,7 @@ const MenuManagement = () => {
           </Link>
         </Modal.Footer>
       </Modal>
+      <ConfirmModal state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 };

@@ -64,7 +64,7 @@ function calculateFinalPrice(price, discount, discountType) {
 // ==========================================
 
 function calculateOrderTotals(cart, taxRate) {
-  const rate = parseFloat(taxRate) || 8.5;
+  const rate = parseFloat(taxRate) || 8;
   const subtotal = cartTotal(cart);
   const tax = subtotal * (rate / 100);
   const total = subtotal + tax;
@@ -77,7 +77,7 @@ function calculateOrderTotals(cart, taxRate) {
 
 function buildOrderData(cart, customer, config, options = {}) {
   const subtotal = cartTotal(cart);
-  const taxRate = parseFloat(config.taxRate) || 8.5;
+  const taxRate = parseFloat(config.taxRate) || 8;
   const tax = subtotal * (taxRate / 100);
   const total = subtotal + tax;
 
@@ -142,12 +142,38 @@ function validateStripeConfig(config) {
 // Pickup Time Generation (mirrors generatePickupTimes)
 // ==========================================
 
-function generatePickupTimes(now) {
-  const start = new Date(now.getTime() + 30 * 60000);
-  start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15);
-  const times = [];
-  for (let i = 0; i < 12; i++) {
-    const t = new Date(start.getTime() + i * 15 * 60000);
+function generatePickupTimes(now, hours) {
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const todayKey = dayNames[now.getDay()];
+  const todayHours = hours && hours[todayKey];
+
+  let openTime = null;
+  let closeTime = null;
+  if (todayHours && todayHours.open) {
+    const [oh, om] = todayHours.open.split(':').map(Number);
+    openTime = new Date(now);
+    openTime.setHours(oh, om, 0, 0);
+  }
+  if (todayHours && todayHours.close) {
+    const [ch, cm] = todayHours.close.split(':').map(Number);
+    closeTime = new Date(now);
+    closeTime.setHours(ch, cm, 0, 0);
+  }
+
+  // Start 1 hour from now, round up to next 20-min mark
+  let start = new Date(now.getTime() + 60 * 60000);
+  // If before opening time, push start to opening time
+  if (openTime && start < openTime) {
+    start = new Date(openTime);
+  }
+  const rem = start.getMinutes() % 20;
+  if (rem !== 0) start.setMinutes(start.getMinutes() + (20 - rem));
+  start.setSeconds(0, 0);
+
+  const times = ['ASAP'];
+  for (let i = 0; i < 18; i++) {
+    const t = new Date(start.getTime() + i * 20 * 60000);
+    if (closeTime && t > closeTime) break;
     times.push(t.toISOString());
   }
   return times;
@@ -186,7 +212,7 @@ const ITEM_FLAT_DISCOUNT = { id: 'soup-1', name: 'Tomato Soup', price: 8.00, fin
 const TEST_CONFIG = {
   restaurantId: 'VkDL7WErBCRCvegCKDKD7BLPAZI2',
   locationId: 'VkDL7WErBCRCvegCKDKD7BLPAZI2',
-  taxRate: 8.5
+  taxRate: 8
 };
 
 // ==========================================
@@ -304,12 +330,12 @@ describe('Embed App Business Logic', () => {
   // ---- Tax Calculation ----
 
   describe('Tax Calculation', () => {
-    it('should apply default 8.5% tax rate', () => {
+    it('should apply default 8% tax rate', () => {
       const cart = [{ ...ITEM_BURGER, qty: 1 }]; // $12.99
       const totals = calculateOrderTotals(cart, undefined);
-      expect(totals.taxRate).toBe(8.5);
-      expect(totals.tax).toBeCloseTo(12.99 * 0.085, 2);
-      expect(totals.total).toBeCloseTo(12.99 + 12.99 * 0.085, 2);
+      expect(totals.taxRate).toBe(8);
+      expect(totals.tax).toBeCloseTo(12.99 * 0.08, 2);
+      expect(totals.total).toBeCloseTo(12.99 + 12.99 * 0.08, 2);
     });
 
     it('should apply custom tax rate', () => {
@@ -400,7 +426,7 @@ describe('Embed App Business Logic', () => {
       });
 
       expect(order.paymentDetails.amount).toBe(order.total);
-      expect(order.paymentDetails.amount).toBeCloseTo(25.98 + 25.98 * 0.085, 2);
+      expect(order.paymentDetails.amount).toBeCloseTo(25.98 + 25.98 * 0.08, 2);
     });
 
     it('should set paymentDetails to null when payNow but no paymentMethodId', () => {
@@ -423,7 +449,7 @@ describe('Embed App Business Logic', () => {
       const order = buildOrderData(cart, customer, TEST_CONFIG);
 
       const expectedSubtotal = 25.98 + 5.99;
-      const expectedTax = expectedSubtotal * 0.085;
+      const expectedTax = expectedSubtotal * 0.08;
       expect(order.subtotal).toBeCloseTo(expectedSubtotal, 2);
       expect(order.tax).toBeCloseTo(expectedTax, 2);
       expect(order.total).toBeCloseTo(expectedSubtotal + expectedTax, 2);
@@ -433,36 +459,88 @@ describe('Embed App Business Logic', () => {
   // ---- Pickup Time Generation ----
 
   describe('Pickup Time Generation', () => {
-    it('should generate 12 time slots', () => {
-      const now = new Date('2026-03-26T12:00:00');
-      const times = generatePickupTimes(now);
-      expect(times).toHaveLength(12);
+    const testHours = {
+      monday: { open: '10:00', close: '21:00' },
+      tuesday: { open: '10:00', close: '21:00' },
+      wednesday: { open: '10:00', close: '21:00' },
+      thursday: { open: '10:00', close: '22:00' },
+      friday: { open: '10:00', close: '23:00' },
+      saturday: { open: '11:00', close: '23:00' },
+      sunday: { open: '11:00', close: '20:00' }
+    };
+
+    it('should have ASAP as the first option', () => {
+      const now = new Date('2026-03-26T12:00:00'); // Thursday
+      const times = generatePickupTimes(now, testHours);
+      expect(times[0]).toBe('ASAP');
     });
 
-    it('should start at least 30 minutes from now', () => {
-      const now = new Date('2026-03-26T12:00:00');
-      const times = generatePickupTimes(now);
-      const firstTime = new Date(times[0]);
-      const diffMinutes = (firstTime - now) / 60000;
-      expect(diffMinutes).toBeGreaterThanOrEqual(30);
+    it('should start timed slots at least 1 hour from now', () => {
+      const now = new Date('2026-03-26T12:00:00'); // Thursday
+      const times = generatePickupTimes(now, testHours);
+      const firstTimed = new Date(times[1]); // skip ASAP
+      const diffMinutes = (firstTimed - now) / 60000;
+      expect(diffMinutes).toBeGreaterThanOrEqual(60);
     });
 
-    it('should use 15-minute intervals between slots', () => {
-      const now = new Date('2026-03-26T12:00:00');
-      const times = generatePickupTimes(now);
-      for (let i = 1; i < times.length; i++) {
-        const diff = new Date(times[i]) - new Date(times[i - 1]);
-        expect(diff).toBe(15 * 60000); // 15 minutes in ms
+    it('should use 20-minute intervals between timed slots', () => {
+      const now = new Date('2026-03-26T12:00:00'); // Thursday
+      const times = generatePickupTimes(now, testHours);
+      const timed = times.filter(t => t !== 'ASAP');
+      for (let i = 1; i < timed.length; i++) {
+        const diff = new Date(timed[i]) - new Date(timed[i - 1]);
+        expect(diff).toBe(20 * 60000); // 20 minutes in ms
       }
     });
 
-    it('should return valid ISO string format', () => {
-      const now = new Date('2026-03-26T12:00:00');
-      const times = generatePickupTimes(now);
-      times.forEach(t => {
-        expect(() => new Date(t)).not.toThrow();
-        expect(new Date(t).toISOString()).toBe(t);
+    it('should not include times past closing hour', () => {
+      // Thursday closes at 22:00
+      const now = new Date('2026-03-26T12:00:00'); // Thursday
+      const times = generatePickupTimes(now, testHours);
+      const timed = times.filter(t => t !== 'ASAP');
+      timed.forEach(t => {
+        const d = new Date(t);
+        const close = new Date(now);
+        close.setHours(22, 0, 0, 0);
+        expect(d.getTime()).toBeLessThanOrEqual(close.getTime());
       });
+    });
+
+    it('should return valid ISO string format for timed slots', () => {
+      const now = new Date('2026-03-26T12:00:00');
+      const times = generatePickupTimes(now, testHours);
+      times.filter(t => t !== 'ASAP').forEach(t => {
+        expect(() => new Date(t)).not.toThrow();
+        const d = new Date(t);
+        expect(d.getTime()).not.toBeNaN();
+      });
+    });
+
+    it('should return only ASAP when close to closing time', () => {
+      // Thursday closes at 22:00. At 21:30, 1hr later = 22:30 → past close
+      const now = new Date('2026-03-26T21:30:00');
+      const times = generatePickupTimes(now, testHours);
+      expect(times).toHaveLength(1);
+      expect(times[0]).toBe('ASAP');
+    });
+
+    it('should generate all 18 timed slots when no hours provided', () => {
+      const now = new Date('2026-03-26T12:00:00');
+      const times = generatePickupTimes(now, null);
+      expect(times[0]).toBe('ASAP');
+      const timed = times.filter(t => t !== 'ASAP');
+      expect(timed).toHaveLength(18);
+    });
+
+    it('should not show times before opening hour', () => {
+      // Sunday opens at 11:00 AM. At 3:00 AM, 1hr = 4:00 AM < 11:00 AM.
+      // Should push start to 11:00 AM, not show 4:00 AM.
+      const now = new Date('2026-03-29T03:00:00'); // Sunday
+      const times = generatePickupTimes(now, testHours);
+      const timed = times.filter(t => t !== 'ASAP');
+      const firstTimed = new Date(timed[0]);
+      expect(firstTimed.getHours()).toBe(11);
+      expect(firstTimed.getMinutes()).toBe(0);
     });
   });
 
@@ -627,6 +705,152 @@ describe('Embed App Business Logic', () => {
     it('should return empty array for null/undefined stored data', () => {
       expect(loadCartFromStorage(null)).toEqual([]);
       expect(loadCartFromStorage(undefined)).toEqual([]);
+    });
+  });
+});
+
+// ==========================================
+// Item Notes & Spice Level Tests (Widget)
+// ==========================================
+
+describe('Widget Item Notes & Spice Level', () => {
+  // Updated addToCart with notes/spiceLevel support (mirrors embed-app.js)
+  function addToCartWithOptions(cart, item, notes = '', spiceLevel = '') {
+    const itemNotes = notes || '';
+    const itemSpice = spiceLevel || '';
+    const existing = cart.find(i =>
+      i.id === item.id &&
+      (i.notes || '') === itemNotes &&
+      (i.spiceLevel || '') === itemSpice
+    );
+    if (existing) {
+      existing.qty += 1;
+      return [...cart];
+    }
+    return [...cart, { ...item, qty: 1, notes: itemNotes, spiceLevel: itemSpice }];
+  }
+
+  // Index-based removeFromCart (mirrors embed-app.js)
+  function removeByIndex(cart, index) {
+    return cart.filter((_, i) => i !== index);
+  }
+
+  // Index-based updateQty (mirrors embed-app.js)
+  function updateQtyByIndex(cart, index, delta) {
+    if (!cart[index]) return cart;
+    const updated = [...cart];
+    updated[index] = { ...updated[index], qty: updated[index].qty + delta };
+    if (updated[index].qty <= 0) {
+      return removeByIndex(updated, index);
+    }
+    return updated;
+  }
+
+  // Build order items with notes/spice (mirrors embed-app.js placeOrder)
+  function buildOrderPayload(cart) {
+    return cart.map(i => ({
+      id: i.id, name: i.name, price: i.price,
+      finalPrice: i.finalPrice, quantity: i.qty,
+      ...(i.notes && { notes: i.notes }),
+      ...(i.spiceLevel && { spiceLevel: i.spiceLevel })
+    }));
+  }
+
+  const BURGER = { id: 'burger-1', name: 'Classic Burger', price: 12.99, finalPrice: 12.99, discount: 0, discountType: 'amount' };
+  const CURRY = { id: 'curry-1', name: 'Chicken Curry', price: 15.99, finalPrice: 15.99, discount: 0, discountType: 'amount', spiceLevelEnabled: true, spiceLevels: ['Mild', 'Medium', 'Hot'] };
+
+  describe('addToCartWithOptions', () => {
+    it('should add item with notes', () => {
+      const cart = addToCartWithOptions([], BURGER, 'no pickles');
+      expect(cart).toHaveLength(1);
+      expect(cart[0].notes).toBe('no pickles');
+      expect(cart[0].qty).toBe(1);
+    });
+
+    it('should add item with spice level', () => {
+      const cart = addToCartWithOptions([], CURRY, '', 'Hot');
+      expect(cart).toHaveLength(1);
+      expect(cart[0].spiceLevel).toBe('Hot');
+    });
+
+    it('should keep same item with different notes as separate entries', () => {
+      let cart = addToCartWithOptions([], BURGER, 'well done');
+      cart = addToCartWithOptions(cart, BURGER, 'rare');
+      expect(cart).toHaveLength(2);
+    });
+
+    it('should keep same item with different spice levels as separate entries', () => {
+      let cart = addToCartWithOptions([], CURRY, '', 'Mild');
+      cart = addToCartWithOptions(cart, CURRY, '', 'Hot');
+      expect(cart).toHaveLength(2);
+    });
+
+    it('should merge items with same id + notes + spiceLevel', () => {
+      let cart = addToCartWithOptions([], CURRY, 'extra sauce', 'Mild');
+      cart = addToCartWithOptions(cart, CURRY, 'extra sauce', 'Mild');
+      expect(cart).toHaveLength(1);
+      expect(cart[0].qty).toBe(2);
+    });
+
+    it('should merge items with no notes and no spice (backward compat)', () => {
+      let cart = addToCartWithOptions([], BURGER);
+      cart = addToCartWithOptions(cart, BURGER);
+      expect(cart).toHaveLength(1);
+      expect(cart[0].qty).toBe(2);
+    });
+  });
+
+  describe('index-based cart operations', () => {
+    it('should remove correct item by index', () => {
+      let cart = addToCartWithOptions([], BURGER, 'A');
+      cart = addToCartWithOptions(cart, BURGER, 'B');
+      const result = removeByIndex(cart, 0);
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('B');
+    });
+
+    it('should update quantity at correct index', () => {
+      let cart = addToCartWithOptions([], BURGER, 'A');
+      cart = addToCartWithOptions(cart, BURGER, 'B');
+      const result = updateQtyByIndex(cart, 1, 2);
+      expect(result[0].qty).toBe(1);
+      expect(result[1].qty).toBe(3);
+    });
+
+    it('should remove item at index when qty reaches zero', () => {
+      let cart = addToCartWithOptions([], BURGER, 'A');
+      cart = addToCartWithOptions(cart, BURGER, 'B');
+      const result = updateQtyByIndex(cart, 0, -1);
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('B');
+    });
+  });
+
+  describe('buildOrderPayload with notes/spice', () => {
+    it('should include notes and spiceLevel in order items', () => {
+      const cart = [{ ...CURRY, qty: 1, notes: 'extra naan', spiceLevel: 'Hot' }];
+      const payload = buildOrderPayload(cart);
+      expect(payload[0].notes).toBe('extra naan');
+      expect(payload[0].spiceLevel).toBe('Hot');
+    });
+
+    it('should omit notes and spiceLevel when empty', () => {
+      const cart = [{ ...BURGER, qty: 1, notes: '', spiceLevel: '' }];
+      const payload = buildOrderPayload(cart);
+      expect(payload[0]).not.toHaveProperty('notes');
+      expect(payload[0]).not.toHaveProperty('spiceLevel');
+    });
+
+    it('should handle mixed items (some with notes, some without)', () => {
+      const cart = [
+        { ...BURGER, qty: 1, notes: 'no ketchup', spiceLevel: '' },
+        { ...CURRY, qty: 2, notes: '', spiceLevel: 'Mild' }
+      ];
+      const payload = buildOrderPayload(cart);
+      expect(payload[0].notes).toBe('no ketchup');
+      expect(payload[0]).not.toHaveProperty('spiceLevel');
+      expect(payload[1]).not.toHaveProperty('notes');
+      expect(payload[1].spiceLevel).toBe('Mild');
     });
   });
 });

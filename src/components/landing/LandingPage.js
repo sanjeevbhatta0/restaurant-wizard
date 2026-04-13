@@ -40,6 +40,7 @@ const LandingPage = () => {
     };
 
     const [submitting, setSubmitting] = useState(false);
+    const [contactError, setContactError] = useState('');
 
     const handleContactSubmit = async (e) => {
         e.preventDefault();
@@ -47,12 +48,13 @@ const LandingPage = () => {
         try {
             const submitContact = httpsCallable(functions, 'submitContactForm');
             await submitContact(contactForm);
+            setContactError('');
             setFormSubmitted(true);
             setContactForm({ name: '', email: '', restaurant: '', message: '' });
             setTimeout(() => setFormSubmitted(false), 5000);
         } catch (error) {
             console.error('Error submitting contact form:', error);
-            alert('Failed to send message. Please try again or email us at support@kodacarte.com');
+            setContactError('Failed to send message. Please try again or email us at support@kodacarte.com');
         } finally {
             setSubmitting(false);
         }
@@ -69,15 +71,15 @@ const LandingPage = () => {
 
                 <ul className={`nav-links ${mobileNavOpen ? 'mobile-open' : ''}`}>
                     <li><a href="#hero" onClick={(e) => { e.preventDefault(); scrollToSection('hero'); }}>Meet Koda Carte</a></li>
-                    <li><a href="#who-we-are" onClick={(e) => { e.preventDefault(); scrollToSection('who-we-are'); }}>Who We Are</a></li>
-                    <li><a href="#why-we-are" onClick={(e) => { e.preventDefault(); scrollToSection('why-we-are'); }}>Why We Are</a></li>
-                    <li><a href="#contact" onClick={(e) => { e.preventDefault(); scrollToSection('contact'); }}>Where We Are</a></li>
-                    <li><a href="#pricing" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }}>Our Offerings</a></li>
-                    <li><a href="#customers" onClick={(e) => { e.preventDefault(); scrollToSection('customers'); }}>Our Customers</a></li>
+                    <li><a href="#features" onClick={(e) => { e.preventDefault(); scrollToSection('features'); }}>Features</a></li>
+                    <li><a href="#why-we-are" onClick={(e) => { e.preventDefault(); scrollToSection('why-we-are'); }}>Why Us</a></li>
+                    <li><a href="#pricing" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }}>Pricing</a></li>
+                    <li><a href="#customers" onClick={(e) => { e.preventDefault(); scrollToSection('customers'); }}>Customers</a></li>
+                    <li><a href="#contact" onClick={(e) => { e.preventDefault(); scrollToSection('contact'); }}>Contact</a></li>
                 </ul>
 
                 <div className="nav-right">
-                    <Link to="/login" className="nav-login-link">Existing customer? Login here</Link>
+                    <Link to="/login" className="nav-login-link">Login</Link>
                     <a href="#pricing" className="nav-cta-btn" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }}>
                         Get Started
                     </a>
@@ -101,7 +103,7 @@ const LandingPage = () => {
                         </h1>
                         <p className="hero-subtitle">
                             Koda Carte brings the wisdom of community and collaboration to modern restaurant management.
-                            From menu management to AI-powered analytics, we've got every aspect of your business covered.
+                            POS, online ordering, delivery, customer loyalty, AI analytics, and a website for your brand — all in one platform. No hardware lock-in. No hidden fees.
                         </p>
                         <div className="hero-buttons">
                             <a href="#pricing" className="hero-btn-primary" onClick={(e) => { e.preventDefault(); scrollToSection('pricing'); }}>
@@ -110,8 +112,8 @@ const LandingPage = () => {
                                     <path d="M5 12h14M12 5l7 7-7 7" />
                                 </svg>
                             </a>
-                            <a href="#why-we-are" className="hero-btn-secondary" onClick={(e) => { e.preventDefault(); scrollToSection('why-we-are'); }}>
-                                Learn More
+                            <a href="#features" className="hero-btn-secondary" onClick={(e) => { e.preventDefault(); scrollToSection('features'); }}>
+                                See All Features
                             </a>
                         </div>
                     </div>
@@ -120,20 +122,20 @@ const LandingPage = () => {
                         <div className="hero-card">
                             <div className="hero-stats">
                                 <div className="stat-item">
-                                    <div className="stat-number">100+</div>
-                                    <div className="stat-label">Restaurant Features</div>
+                                    <div className="stat-number">All-in-One</div>
+                                    <div className="stat-label">POS to Delivery</div>
                                 </div>
                                 <div className="stat-item">
-                                    <div className="stat-number">24/7</div>
-                                    <div className="stat-label">System Uptime</div>
+                                    <div className="stat-number">BYOD</div>
+                                    <div className="stat-label">Use Any Device</div>
                                 </div>
                                 <div className="stat-item">
                                     <div className="stat-number">AI</div>
-                                    <div className="stat-label">Powered Analytics</div>
+                                    <div className="stat-label">Powered Platform</div>
                                 </div>
                                 <div className="stat-item">
-                                    <div className="stat-number">5</div>
-                                    <div className="stat-label">Flexible Tiers</div>
+                                    <div className="stat-number">$0</div>
+                                    <div className="stat-label">To Start Free</div>
                                 </div>
                             </div>
                         </div>
@@ -157,15 +159,6 @@ const LandingPage = () => {
 
                 <div className="who-grid">
                     <div className="who-card">
-                        <div className="who-icon">🦅</div>
-                        <h3>Visionary Platform</h3>
-                        <p>
-                            Built with foresight and wisdom, our platform anticipates your needs and grows with your business.
-                            We see the bigger picture so you can focus on what you love.
-                        </p>
-                    </div>
-
-                    <div className="who-card">
                         <div className="who-icon">🤝</div>
                         <h3>Community First</h3>
                         <p>
@@ -175,65 +168,116 @@ const LandingPage = () => {
                     </div>
 
                     <div className="who-card">
+                        <div className="who-icon">🔓</div>
+                        <h3>No Hardware Lock-in</h3>
+                        <p>
+                            Use the devices you already own — any tablet, laptop, or phone. We believe you should choose your own hardware, not be forced to rent or buy proprietary equipment.
+                        </p>
+                    </div>
+
+                    <div className="who-card">
                         <div className="who-icon">⚡</div>
                         <h3>Modern Technology</h3>
                         <p>
-                            From AI-powered analytics to seamless payment processing, we bring the latest innovations
-                            to help your restaurant thrive in the digital age.
+                            From AI-powered analytics to DoorDash delivery and customer loyalty programs, we bring the latest innovations to help your restaurant thrive.
                         </p>
                     </div>
                 </div>
             </section>
 
-            {/* Why We Are Section */}
-            <section className="section section-dark" id="why-we-are">
+            {/* Features Section */}
+            <section className="section section-dark" id="features">
                 <div className="section-content">
-                    <h2 className="section-title">Why <span>We Are</span></h2>
+                    <h2 className="section-title">Everything Your <span>Restaurant Needs</span></h2>
                     <p className="section-subtitle">
-                        We exist because restaurant owners deserve better tools. Here's what drives us every day.
+                        One platform. Every tool. From the kitchen to the customer's door.
                     </p>
 
-                    <div className="why-content">
-                        <div className="why-image">
-                            <div className="why-image-wrapper">
-                                <div className="why-image-inner">
-                                    <img src="/koda-carte-logo.png" alt="Koda Carte Platform" style={{ maxHeight: '200px' }} />
-                                </div>
+                    <div className="features-showcase">
+                        {/* Row 1: Operations */}
+                        <div className="feature-group">
+                            <div className="feature-group-label">Operations</div>
+                            <div className="feature-group-items">
+                                <div className="feature-pill"><span className="fp-icon">🖥️</span><span className="fp-text">Point of Sale</span></div>
+                                <div className="feature-pill"><span className="fp-icon">👨‍🍳</span><span className="fp-text">Kitchen Display</span></div>
+                                <div className="feature-pill"><span className="fp-icon">🍽️</span><span className="fp-text">Table Management</span></div>
+                                <div className="feature-pill"><span className="fp-icon">💳</span><span className="fp-text">Payments & Refunds</span></div>
+                                <div className="feature-pill"><span className="fp-icon">🧾</span><span className="fp-text">Digital Receipts</span></div>
                             </div>
+                            <p className="feature-group-desc">Run your floor with a tablet-friendly POS, real-time kitchen queue, visual table layout, and Stripe-powered payments. Works on any device.</p>
                         </div>
 
-                        <div className="why-points">
-                            <div className="why-point">
-                                <div className="why-point-icon">📊</div>
-                                <div className="why-point-content">
-                                    <h4>Data-Driven Decisions</h4>
-                                    <p>Make informed choices with real-time analytics and AI-powered insights that understand your business patterns.</p>
-                                </div>
+                        {/* Row 2: Online & Delivery */}
+                        <div className="feature-group">
+                            <div className="feature-group-label">Online & Delivery</div>
+                            <div className="feature-group-items">
+                                <div className="feature-pill"><span className="fp-icon">🛒</span><span className="fp-text">Online Ordering</span></div>
+                                <div className="feature-pill"><span className="fp-icon">🚗</span><span className="fp-text">DoorDash Delivery</span></div>
+                                <div className="feature-pill"><span className="fp-icon">👤</span><span className="fp-text">Customer Portal</span></div>
+                                <div className="feature-pill"><span className="fp-icon">📱</span><span className="fp-text">Embeddable Widget</span></div>
                             </div>
+                            <p className="feature-group-desc">Customers order directly from your website or an embedded widget. White-label DoorDash delivery under your brand, with real-time tracking.</p>
+                        </div>
 
-                            <div className="why-point">
-                                <div className="why-point-icon">🎯</div>
-                                <div className="why-point-content">
-                                    <h4>All-in-One Solution</h4>
-                                    <p>Stop juggling multiple tools. Manage menus, orders, payments, staff, and marketing from one unified platform.</p>
-                                </div>
+                        {/* Row 3: Growth & Marketing */}
+                        <div className="feature-group">
+                            <div className="feature-group-label">Growth & Marketing</div>
+                            <div className="feature-group-items">
+                                <div className="feature-pill"><span className="fp-icon">🌐</span><span className="fp-text">Website Builder</span></div>
+                                <div className="feature-pill"><span className="fp-icon">🔗</span><span className="fp-text">Custom Domain</span></div>
+                                <div className="feature-pill"><span className="fp-icon">🎁</span><span className="fp-text">Promotions & Rewards</span></div>
+                                <div className="feature-pill"><span className="fp-icon">📣</span><span className="fp-text">SEO & Social</span></div>
                             </div>
+                            <p className="feature-group-desc">Build your website in minutes, connect your own domain, run loyalty programs, and post to Facebook and Instagram — all from one dashboard.</p>
+                        </div>
 
-                            <div className="why-point">
-                                <div className="why-point-icon">🚀</div>
-                                <div className="why-point-content">
-                                    <h4>Scale With Confidence</h4>
-                                    <p>Whether you're a food truck or a multi-location chain, our tiered system grows with you without breaking the bank.</p>
-                                </div>
+                        {/* Row 4: Intelligence */}
+                        <div className="feature-group">
+                            <div className="feature-group-label">Intelligence</div>
+                            <div className="feature-group-items">
+                                <div className="feature-pill"><span className="fp-icon">📊</span><span className="fp-text">Analytics & AI</span></div>
+                                <div className="feature-pill"><span className="fp-icon">🤖</span><span className="fp-text">AI Menu Upload</span></div>
+                                <div className="feature-pill"><span className="fp-icon">📍</span><span className="fp-text">Multi-Location</span></div>
                             </div>
+                            <p className="feature-group-desc">AI-powered analytics, menu photo upload, and multi-location management. Every location gets its own menu, orders, and insights.</p>
+                        </div>
+                    </div>
 
-                            <div className="why-point">
-                                <div className="why-point-icon">💡</div>
-                                <div className="why-point-content">
-                                    <h4>Innovation at Heart</h4>
-                                    <p>We're constantly evolving, adding new features based on what restaurant owners actually need.</p>
-                                </div>
-                            </div>
+                    {/* BYOD Callout */}
+                    <div className="byod-banner">
+                        <span className="byod-label">BYOD</span>
+                        <span className="byod-text">Bring your own device — any tablet, laptop, or phone. No proprietary hardware. No lock-in.</span>
+                    </div>
+                </div>
+            </section>
+
+            {/* Why Us Section */}
+            <section className="section" id="why-we-are">
+                <h2 className="section-title">Why <span>Koda Carte</span></h2>
+                <p className="section-subtitle">
+                    We exist because restaurant owners deserve better tools.
+                </p>
+
+                <div className="why-showcase">
+                    <div className="why-item">
+                        <div className="why-number">01</div>
+                        <div className="why-content">
+                            <h4>Your brand, not a marketplace</h4>
+                            <p>Customers order from your website. Delivery runs under your name. You keep the relationship — and the data.</p>
+                        </div>
+                    </div>
+                    <div className="why-item">
+                        <div className="why-number">02</div>
+                        <div className="why-content">
+                            <h4>Start free, scale infinitely</h4>
+                            <p>Free tier with real features. No setup fees, no contracts. Grow from one location to many — upgrade only when you're ready.</p>
+                        </div>
+                    </div>
+                    <div className="why-item">
+                        <div className="why-number">03</div>
+                        <div className="why-content">
+                            <h4>AI that saves you hours</h4>
+                            <p>Upload a menu photo and we'll build it. Generate social posts. Get analytics insights. Practical AI, not buzzwords.</p>
                         </div>
                     </div>
                 </div>
@@ -355,6 +399,18 @@ const LandingPage = () => {
                     </div>
 
                     <form className="contact-form" onSubmit={handleContactSubmit}>
+                        {contactError && (
+                            <div style={{
+                                padding: '1rem',
+                                background: 'rgba(220, 53, 69, 0.1)',
+                                borderRadius: '12px',
+                                marginBottom: '1rem',
+                                color: '#dc3545',
+                                textAlign: 'center'
+                            }}>
+                                {contactError}
+                            </div>
+                        )}
                         {formSubmitted && (
                             <div style={{
                                 padding: '1rem',

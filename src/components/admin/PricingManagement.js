@@ -443,11 +443,11 @@ const PricingManagement = ({ showToast }) => {
                                         <input
                                             type="number"
                                             className="admin-input"
-                                            value={(draftConfig.orderLimits?.[tier]?.overageRate || 0) * 100}
-                                            onChange={(e) => updateOrderLimit(tier, { overageRate: parseFloat(e.target.value) / 100 })}
+                                            value={+((draftConfig.orderLimits?.[tier]?.overageRate || 0) * 100).toFixed(4)}
+                                            onChange={(e) => updateOrderLimit(tier, { overageRate: +(parseFloat(e.target.value) / 100).toFixed(6) })}
                                             min="0"
                                             max="100"
-                                            step="0.1"
+                                            step="0.01"
                                         />
                                         <span className="admin-price-suffix">%</span>
                                     </div>

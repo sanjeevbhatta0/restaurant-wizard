@@ -1,10 +1,40 @@
 /**
  * Order Usage Tracking Service
- * Tracks order volume per billing cycle and calculates overage charges
+ * Tracks order volume per billing cycle and calculates overage charges.
+ * Order limits are read from platformConfig/current in Firestore (admin-configured),
+ * falling back to hardcoded defaults if the config is unavailable.
  */
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ORDER_LIMITS, MENU_LIMITS } from '../contexts/SubscriptionContext';
+import { ORDER_LIMITS as FALLBACK_ORDER_LIMITS, MENU_LIMITS } from '../contexts/SubscriptionContext';
+
+// Cache the platform config to avoid reading it on every order
+let _cachedOrderLimits = null;
+let _cacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get order limits from platform config, with caching and fallback
+ */
+const getOrderLimitsFromConfig = async () => {
+    const now = Date.now();
+    if (_cachedOrderLimits && (now - _cacheTimestamp) < CACHE_TTL) {
+        return _cachedOrderLimits;
+    }
+
+    try {
+        const configDoc = await getDoc(doc(db, 'platformConfig', 'current'));
+        if (configDoc.exists() && configDoc.data().orderLimits) {
+            _cachedOrderLimits = configDoc.data().orderLimits;
+            _cacheTimestamp = now;
+            return _cachedOrderLimits;
+        }
+    } catch (err) {
+        console.error('Failed to load platform order limits, using fallback:', err);
+    }
+
+    return FALLBACK_ORDER_LIMITS;
+};
 
 /**
  * Get or initialize order usage data for a restaurant
@@ -106,6 +136,7 @@ export const incrementOrderCount = async (restaurantId, orderTotal) => {
 
     const data = restaurantDoc.data();
     const tier = data.subscription?.tier || 'ally';
+    const ORDER_LIMITS = await getOrderLimitsFromConfig();
     const tierLimits = ORDER_LIMITS[tier] || ORDER_LIMITS.ally;
 
     // Get current usage or initialize
@@ -168,6 +199,7 @@ export const getUsageStats = async (restaurantId) => {
 
     const data = restaurantDoc.data();
     const tier = data.subscription?.tier || 'ally';
+    const ORDER_LIMITS = await getOrderLimitsFromConfig();
     const tierLimits = ORDER_LIMITS[tier] || ORDER_LIMITS.ally;
     const menuLimits = MENU_LIMITS[tier] || MENU_LIMITS.ally;
     const usage = await getOrderUsage(restaurantId);

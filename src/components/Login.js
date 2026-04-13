@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getApiBaseUrl } from '../config';
@@ -20,6 +20,10 @@ const Login = () => {
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [backupCode, setBackupCode] = useState('');
   const [backupWarning, setBackupWarning] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const navigate = useNavigate();
   const functions = getFunctions();
 
@@ -101,15 +105,17 @@ const Login = () => {
 
       navigate('/home');
     } catch (error) {
-      if (error.code === 'auth/user-not-found') {
-        setError('Username or email not found');
-      } else if (error.code === 'auth/wrong-password') {
-        setError('Incorrect password');
-      } else if (error.code === 'auth/invalid-email') {
-        setError('Invalid email format');
-      } else {
-        setError('Failed to sign in: ' + error.message);
-      }
+      const friendlyErrors = {
+        'auth/user-not-found': 'No account found with that email or username.',
+        'auth/wrong-password': 'Incorrect password. Please try again.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/invalid-login-credentials': 'Invalid email/username or password. Please try again.',
+        'auth/invalid-credential': 'Invalid email/username or password. Please try again.',
+        'auth/too-many-requests': 'Too many failed attempts. Please wait a moment and try again.',
+        'auth/user-disabled': 'This account has been disabled. Please contact support.',
+        'auth/network-request-failed': 'Network error. Please check your connection and try again.',
+      };
+      setError(friendlyErrors[error.code] || 'Unable to sign in. Please try again.');
     }
     setLoading(false);
   };
@@ -149,6 +155,28 @@ const Login = () => {
       }
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+    try {
+      setResetLoading(true);
+      setError('');
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetSent(true);
+    } catch (error) {
+      const friendlyErrors = {
+        'auth/user-not-found': 'No account found with that email address.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/too-many-requests': 'Too many requests. Please wait a moment and try again.',
+      };
+      setError(friendlyErrors[error.code] || 'Unable to send reset email. Please try again.');
+    }
+    setResetLoading(false);
   };
 
   const handleCancel2FA = async () => {
@@ -274,38 +302,104 @@ const Login = () => {
             </div>
             <Card.Body className="auth-card-body">
               {error && <Alert variant="danger" className="auth-alert">{error}</Alert>}
-              <Form onSubmit={handleSubmit}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Username or Email</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={usernameOrEmail}
-                    onChange={(e) => setUsernameOrEmail(e.target.value)}
-                    required
-                    className="auth-input"
-                    placeholder="Enter your username or email"
-                  />
-                  <Form.Text className="text-muted">
-                    You can login with either your username or email address
-                  </Form.Text>
-                </Form.Group>
-                <Form.Group className="mb-4">
-                  <Form.Label>Password</Form.Label>
-                  <PasswordInput
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="auth-input"
-                  />
-                </Form.Group>
-                <Button
-                  disabled={loading}
-                  className="auth-button w-100"
-                  type="submit"
-                >
-                  {loading ? 'Signing in...' : 'Log In'}
-                </Button>
-              </Form>
+
+              {showForgotPassword ? (
+                /* Forgot Password Form */
+                resetSent ? (
+                  <div className="text-center" style={{ padding: '20px 0' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📧</div>
+                    <h5 style={{ marginBottom: '12px' }}>Check Your Email</h5>
+                    <p className="text-muted" style={{ fontSize: '0.9rem', marginBottom: '20px' }}>
+                      We've sent a password reset link to <strong>{resetEmail}</strong>. Check your inbox and follow the instructions.
+                    </p>
+                    <Button
+                      className="auth-button w-100"
+                      onClick={() => { setShowForgotPassword(false); setResetSent(false); setResetEmail(''); setError(''); }}
+                    >
+                      Back to Login
+                    </Button>
+                  </div>
+                ) : (
+                  <Form onSubmit={handleForgotPassword}>
+                    <p className="text-muted" style={{ fontSize: '0.9rem', marginBottom: '16px' }}>
+                      Enter your email address and we'll send you a link to reset your password.
+                    </p>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Email Address</Form.Label>
+                      <Form.Control
+                        type="email"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        required
+                        className="auth-input"
+                        placeholder="your@email.com"
+                        autoFocus
+                      />
+                    </Form.Group>
+                    <Button
+                      disabled={resetLoading}
+                      className="auth-button w-100"
+                      type="submit"
+                    >
+                      {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                    </Button>
+                    <div className="text-center mt-3">
+                      <button
+                        type="button"
+                        className="btn btn-link text-decoration-none"
+                        style={{ fontSize: '0.85rem' }}
+                        onClick={() => { setShowForgotPassword(false); setError(''); }}
+                      >
+                        ← Back to Login
+                      </button>
+                    </div>
+                  </Form>
+                )
+              ) : (
+                /* Normal Login Form */
+                <Form onSubmit={handleSubmit}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Username or Email</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={usernameOrEmail}
+                      onChange={(e) => setUsernameOrEmail(e.target.value)}
+                      required
+                      className="auth-input"
+                      placeholder="Enter your username or email"
+                    />
+                    <Form.Text className="text-muted">
+                      You can login with either your username or email address
+                    </Form.Text>
+                  </Form.Group>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Password</Form.Label>
+                    <PasswordInput
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="auth-input"
+                    />
+                  </Form.Group>
+                  <div className="text-end mb-3">
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 text-decoration-none"
+                      style={{ fontSize: '0.85rem', color: '#40e0d0' }}
+                      onClick={() => { setShowForgotPassword(true); setError(''); setResetEmail(usernameOrEmail.includes('@') ? usernameOrEmail : ''); }}
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <Button
+                    disabled={loading}
+                    className="auth-button w-100"
+                    type="submit"
+                  >
+                    {loading ? 'Signing in...' : 'Log In'}
+                  </Button>
+                </Form>
+              )}
             </Card.Body>
             <Card.Footer className="auth-card-footer">
               <div className="text-center">

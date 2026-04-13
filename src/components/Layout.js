@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Nav, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Nav, Form, OverlayTrigger, Tooltip, Modal, Button } from 'react-bootstrap';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,11 +22,13 @@ const ROUTE_TO_FEATURE = {
   '/table-layout': 'menu-management', // Part of basic features
   '/payments': 'payments',
   '/orders': 'orders',
+  '/customer-display': 'payments', // Same tier as payments
   '/promotions': 'menu-management', // Promotions is accessible to all tiers
   '/seo-social': 'seo-social',
   '/website-integration': 'website-integration',
   '/website-builder': 'website-builder',
   '/reviews': 'menu-management', // Reviews is accessible to all tiers
+  '/mobile-app': 'mobile-app',
   '/account': 'menu-management' // Account is always accessible
 };
 
@@ -41,11 +43,13 @@ const ROUTE_TO_PERMISSION = {
   '/table-layout': 'table-layout',
   '/payments': 'payments',
   '/orders': 'orders',
+  '/customer-display': 'payments',
   '/promotions': 'promotions',
   '/seo-social': 'seo-social',
   '/website-integration': 'website-integration',
   '/website-builder': 'website-builder',
   '/reviews': 'reviews',
+  '/mobile-app': 'mobile-app',
   '/account': 'account'
 };
 
@@ -60,7 +64,7 @@ const TIER_NAMES = {
 const Layout = ({ children }) => {
   const { currentUser, isStaff, staffPermissions } = useAuth();
   const { isMultiLocation, locations, selectedLocation, setSelectedLocation } = useLocationContext();
-  const { hasFeatureAccess, getMinimumTierForFeature, getCurrentTier, getServiceMode } = useSubscription();
+  const { hasFeatureAccess, getMinimumTierForFeature, getCurrentTier, getServiceMode, customerDisplayEnabled, isSubscriptionExpired, getDaysRemaining, getTrialDaysRemaining, subscription } = useSubscription();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -114,36 +118,54 @@ const Layout = ({ children }) => {
     { to: '/server', icon: 'person-badge', text: 'Server' },
     { to: '/table-layout', icon: 'grid-3x3-gap', text: 'Table Layout' },
     { to: '/payments', icon: 'credit-card', text: 'Payments' },
+    { to: '/customer-display', icon: 'display', text: 'Customer Display' },
     { to: '/orders', icon: 'cart', text: 'Orders' },
     { to: '/promotions', icon: 'gift', text: 'Promotions' },
     { to: '/reviews', icon: 'chat-quote', text: 'Reviews' },
     { to: '/seo-social', icon: 'share', text: 'SEO & Social' },
     { to: '/website-integration', icon: 'code-slash', text: 'Website Integration' },
     { to: '/website-builder', icon: 'brush', text: 'Website Builder' },
+    { to: '/mobile-app', icon: 'phone', text: 'Mobile App' },
     { to: '/account', icon: 'person-circle', text: 'Account' }
   ];
+
+  const [lockedFeatureAlert, setLockedFeatureAlert] = useState(null);
 
   const handleLockedLinkClick = (e, link) => {
     e.preventDefault();
     const requiredTier = getRequiredTierForRoute(link.to);
     const tierName = TIER_NAMES[requiredTier] || requiredTier;
+    setLockedFeatureAlert({ feature: link.text, tierName, requiredTier });
+  };
 
-    // Show alert with upgrade prompt
-    if (window.confirm(
-      `The "${link.text}" feature requires the ${tierName} plan or higher.\n\nWould you like to view upgrade options?`
-    )) {
-      navigate('/account');
-      // Scroll to subscription section after navigation
-      setTimeout(() => {
-        const subscriptionBtn = document.querySelector('[data-section="subscription"]');
-        if (subscriptionBtn) subscriptionBtn.click();
-      }, 100);
-    }
+  const handleUpgradeFromAlert = () => {
+    setLockedFeatureAlert(null);
+    navigate('/account');
+    setTimeout(() => {
+      const subscriptionBtn = document.querySelector('[data-section="subscription"]');
+      if (subscriptionBtn) subscriptionBtn.click();
+    }, 100);
   };
 
   return (
     <div className="layout-container">
       <NetworkStatus />
+      {/* Subscription status banners */}
+      {isSubscriptionExpired() && getCurrentTier() !== 'scout' && (
+        <div style={{ background: '#ef4444', color: 'white', padding: '8px 16px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
+          Your subscription has expired. <Link to="/account" style={{ color: 'white', textDecoration: 'underline' }}>Renew now</Link> to continue using all features.
+        </div>
+      )}
+      {subscription?.status === 'trialing' && getTrialDaysRemaining() > 0 && getTrialDaysRemaining() <= 7 && (
+        <div style={{ background: '#f59e0b', color: 'white', padding: '8px 16px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
+          Your free trial ends in {getTrialDaysRemaining()} day{getTrialDaysRemaining() !== 1 ? 's' : ''}. <Link to="/account" style={{ color: 'white', textDecoration: 'underline' }}>Add payment method</Link> to keep your plan.
+        </div>
+      )}
+      {!isSubscriptionExpired() && getCurrentTier() !== 'scout' && getDaysRemaining() !== null && getDaysRemaining() <= 5 && getDaysRemaining() > 0 && subscription?.status === 'active' && (
+        <div style={{ background: '#f59e0b', color: 'white', padding: '8px 16px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
+          Your billing period ends in {getDaysRemaining()} day{getDaysRemaining() !== 1 ? 's' : ''}. <Link to="/account" style={{ color: 'white', textDecoration: 'underline' }}>Manage subscription</Link>
+        </div>
+      )}
       <header className="header">
         <div className="header-left">
           <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Toggle menu">
@@ -202,6 +224,7 @@ const Layout = ({ children }) => {
               const mode = getServiceMode();
               if (link.to === '/server' && mode !== 'full_service') return false;
               if (link.to === '/table-layout' && mode === 'food_truck') return false;
+              if (link.to === '/customer-display' && !customerDisplayEnabled) return false;
               return true;
             }).map((link, index) => {
               const isActive = location.pathname === link.to;
@@ -280,6 +303,32 @@ const Layout = ({ children }) => {
         </main>
         <OnboardingChecklist />
       </div>
+
+      {/* Locked feature upgrade modal (replaces window.confirm) */}
+      <Modal show={!!lockedFeatureAlert} onHide={() => setLockedFeatureAlert(null)} centered>
+        <Modal.Header closeButton style={{ background: 'linear-gradient(135deg, #1a1a2e, #16213e)', color: 'white', border: 'none' }}>
+          <Modal.Title><i className="bi bi-lock-fill me-2" style={{ color: '#f59e0b' }} />Feature Locked</Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ padding: '24px' }}>
+          <p style={{ fontSize: '1rem', marginBottom: '8px' }}>
+            <strong>{lockedFeatureAlert?.feature}</strong> requires the <strong>{lockedFeatureAlert?.tierName}</strong> plan or higher.
+          </p>
+          <p style={{ color: '#666', fontSize: '0.9rem' }}>
+            Upgrade your plan to unlock this feature and grow your business.
+          </p>
+        </Modal.Body>
+        <Modal.Footer style={{ border: 'none', padding: '16px 24px' }}>
+          <Button variant="outline-secondary" onClick={() => setLockedFeatureAlert(null)}>
+            Maybe Later
+          </Button>
+          <Button
+            onClick={handleUpgradeFromAlert}
+            style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', border: 'none', fontWeight: 600 }}
+          >
+            <i className="bi bi-rocket-takeoff me-2" />View Upgrade Options
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

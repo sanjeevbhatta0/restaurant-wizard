@@ -548,3 +548,191 @@ describe('getOrderTypeInfo', () => {
     expect(info.label).toBe('Dine-In');
   });
 });
+
+// ==========================================
+// Item Notes & Spice Level Tests
+// ==========================================
+
+describe('Item Notes & Spice Level', () => {
+  // Mirrors the updated addToOrder logic from POS.js using composite key
+  const addItemToCart = (orderItems, item, notes = '', spiceLevel = '') => {
+    const existingIndex = orderItems.findIndex(i =>
+      i.id === item.id &&
+      (i.notes || '') === (notes || '') &&
+      (i.spiceLevel || '') === (spiceLevel || '')
+    );
+    if (existingIndex >= 0) {
+      const updated = [...orderItems];
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        quantity: updated[existingIndex].quantity + 1
+      };
+      return updated;
+    }
+    return [...orderItems, { ...item, quantity: 1, notes: notes || '', spiceLevel: spiceLevel || '' }];
+  };
+
+  // Index-based updateQuantity (mirrors POS.js)
+  const updateQuantity = (orderItems, index, delta) => {
+    return orderItems.map((item, i) => {
+      if (i === index) {
+        const newQuantity = item.quantity + delta;
+        if (newQuantity <= 0) return null;
+        return { ...item, quantity: newQuantity };
+      }
+      return item;
+    }).filter(Boolean);
+  };
+
+  // Index-based removeItem (mirrors POS.js)
+  const removeItem = (orderItems, index) => {
+    return orderItems.filter((_, i) => i !== index);
+  };
+
+  // Mirrors buildOrderData item mapping
+  const buildOrderItems = (orderItems) => {
+    return orderItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      ...(item.notes && { notes: item.notes }),
+      ...(item.spiceLevel && { spiceLevel: item.spiceLevel })
+    }));
+  };
+
+  describe('addItemToCart with notes/spiceLevel', () => {
+    const burger = { id: 'item-1', name: 'Burger', price: 10.00 };
+
+    it('should add item with notes', () => {
+      const result = addItemToCart([], burger, 'extra cheese');
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('extra cheese');
+      expect(result[0].quantity).toBe(1);
+    });
+
+    it('should add item with spice level', () => {
+      const result = addItemToCart([], burger, '', 'Hot');
+      expect(result).toHaveLength(1);
+      expect(result[0].spiceLevel).toBe('Hot');
+    });
+
+    it('should add item with both notes and spice level', () => {
+      const result = addItemToCart([], burger, 'no onion', 'Mild');
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('no onion');
+      expect(result[0].spiceLevel).toBe('Mild');
+    });
+
+    it('should keep same item with different notes as separate line items', () => {
+      let cart = addItemToCart([], burger, 'extra cheese');
+      cart = addItemToCart(cart, burger, 'no pickles');
+      expect(cart).toHaveLength(2);
+      expect(cart[0].notes).toBe('extra cheese');
+      expect(cart[1].notes).toBe('no pickles');
+    });
+
+    it('should keep same item with different spice levels as separate line items', () => {
+      let cart = addItemToCart([], burger, '', 'Mild');
+      cart = addItemToCart(cart, burger, '', 'Hot');
+      expect(cart).toHaveLength(2);
+      expect(cart[0].spiceLevel).toBe('Mild');
+      expect(cart[1].spiceLevel).toBe('Hot');
+    });
+
+    it('should merge same item with same notes and spice level', () => {
+      let cart = addItemToCart([], burger, 'extra cheese', 'Hot');
+      cart = addItemToCart(cart, burger, 'extra cheese', 'Hot');
+      expect(cart).toHaveLength(1);
+      expect(cart[0].quantity).toBe(2);
+    });
+
+    it('should merge items with no notes and no spice (backward compat)', () => {
+      let cart = addItemToCart([], burger);
+      cart = addItemToCart(cart, burger);
+      expect(cart).toHaveLength(1);
+      expect(cart[0].quantity).toBe(2);
+    });
+
+    it('should treat empty string notes same as no notes', () => {
+      let cart = addItemToCart([], burger, '');
+      cart = addItemToCart(cart, burger);
+      expect(cart).toHaveLength(1);
+      expect(cart[0].quantity).toBe(2);
+    });
+  });
+
+  describe('index-based updateQuantity', () => {
+    it('should update quantity at specific index', () => {
+      const items = [
+        { id: 'item-1', name: 'Burger', quantity: 1, notes: 'extra cheese', spiceLevel: '' },
+        { id: 'item-1', name: 'Burger', quantity: 1, notes: 'no pickles', spiceLevel: '' }
+      ];
+      const result = updateQuantity(items, 0, 1);
+      expect(result[0].quantity).toBe(2);
+      expect(result[1].quantity).toBe(1);
+    });
+
+    it('should remove item at index when quantity reaches zero', () => {
+      const items = [
+        { id: 'item-1', name: 'Burger', quantity: 1, notes: 'extra cheese', spiceLevel: '' },
+        { id: 'item-1', name: 'Burger', quantity: 1, notes: 'no pickles', spiceLevel: '' }
+      ];
+      const result = updateQuantity(items, 0, -1);
+      expect(result).toHaveLength(1);
+      expect(result[0].notes).toBe('no pickles');
+    });
+  });
+
+  describe('index-based removeItem', () => {
+    it('should remove correct item by index', () => {
+      const items = [
+        { id: 'item-1', name: 'Burger', notes: 'A' },
+        { id: 'item-1', name: 'Burger', notes: 'B' },
+        { id: 'item-2', name: 'Fries', notes: '' }
+      ];
+      const result = removeItem(items, 1);
+      expect(result).toHaveLength(2);
+      expect(result[0].notes).toBe('A');
+      expect(result[1].name).toBe('Fries');
+    });
+  });
+
+  describe('buildOrderItems with notes/spiceLevel', () => {
+    it('should include notes and spiceLevel in order items', () => {
+      const items = [
+        { id: 'item-1', name: 'Burger', price: 10, quantity: 2, notes: 'well done', spiceLevel: 'Hot' }
+      ];
+      const result = buildOrderItems(items);
+      expect(result[0].notes).toBe('well done');
+      expect(result[0].spiceLevel).toBe('Hot');
+    });
+
+    it('should omit notes and spiceLevel when empty', () => {
+      const items = [
+        { id: 'item-1', name: 'Burger', price: 10, quantity: 1, notes: '', spiceLevel: '' }
+      ];
+      const result = buildOrderItems(items);
+      expect(result[0]).not.toHaveProperty('notes');
+      expect(result[0]).not.toHaveProperty('spiceLevel');
+    });
+
+    it('should handle items with only notes (no spice)', () => {
+      const items = [
+        { id: 'item-1', name: 'Coke', price: 3, quantity: 1, notes: 'no ice, add straw', spiceLevel: '' }
+      ];
+      const result = buildOrderItems(items);
+      expect(result[0].notes).toBe('no ice, add straw');
+      expect(result[0]).not.toHaveProperty('spiceLevel');
+    });
+
+    it('should handle items with only spice (no notes)', () => {
+      const items = [
+        { id: 'item-1', name: 'Curry', price: 15, quantity: 1, notes: '', spiceLevel: 'Extra Hot' }
+      ];
+      const result = buildOrderItems(items);
+      expect(result[0]).not.toHaveProperty('notes');
+      expect(result[0].spiceLevel).toBe('Extra Hot');
+    });
+  });
+});

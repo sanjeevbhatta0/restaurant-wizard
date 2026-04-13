@@ -1,0 +1,152 @@
+/* Receipt Modal */
+.receipt-modal .modal-body {
+  padding: 16px;
+}
+
+/* Receipt Paper */
+.receipt-paper {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 360px;
+  margin: 0 auto;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  color: #222;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* Receipt Header */
+.receipt-paper .receipt-header {
+  text-align: center;
+  border-bottom: 1px dashed #999;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+
+.receipt-paper .receipt-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.receipt-paper .receipt-header p {
+  font-size: 11px;
+  color: #555;
+  margin-bottom: 2px;
+  line-height: 1.4;
+}
+
+/* Order Meta */
+.receipt-paper .receipt-meta {
+  border-bottom: 1px dashed #999;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.receipt-paper .receipt-meta div {
+  margin-bottom: 2px;
+}
+
+/* Items Table */
+.receipt-paper .receipt-items {
+  border-bottom: 1px dashed #999;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.receipt-paper .receipt-items table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.receipt-paper .receipt-items th {
+  font-size: 11px;
+  font-weight: 700;
+  border-bottom: 1px solid #999;
+  padding: 2px 0 4px;
+  text-transform: uppercase;
+}
+
+.receipt-paper .receipt-items td {
+  font-size: 12px;
+  padding: 4px 0;
+  vertical-align: top;
+}
+
+/* Totals */
+.receipt-paper .receipt-totals {
+  margin-bottom: 10px;
+}
+
+.receipt-paper .total-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+
+.receipt-paper .total-row.discount {
+  color: #28a745;
+}
+
+.receipt-paper .total-row.grand-total {
+  font-size: 16px;
+  font-weight: 700;
+  border-top: 2px solid #222;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+/* Payment */
+.receipt-paper .receipt-payment {
+  text-align: center;
+  font-size: 12px;
+  border-bottom: 1px dashed #999;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+/* Footer */
+.receipt-paper .receipt-footer .thank-you {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+/* Branding */
+.receipt-paper .receipt-branding {
+  text-align: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #999;
+}
+
+.receipt-paper .receipt-branding p {
+  font-size: 9px;
+  color: #888;
+  margin-bottom: 4px;
+  font-family: Arial, sans-serif;
+  letter-spacing: 0.5px;
+}
+
+.receipt-paper .receipt-branding img {
+  height: 22px;
+  opacity: 0.8;
+}
+
+/* Delivery Options */
+.receipt-delivery-options {
+  border-top: 1px solid #e9ecef;
+  padding-top: 12px;
+}
+
+.receipt-delivery-options h6 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}

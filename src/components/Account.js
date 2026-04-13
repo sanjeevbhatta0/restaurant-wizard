@@ -6,10 +6,13 @@ import lanSyncService from '../services/lanSyncService';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useSubscription, TIER_FEATURES, PRICING, BILLING_MULTIPLIERS, ORDER_LIMITS } from '../contexts/SubscriptionContext';
+import { getStripe, calculateTierPrice, updateSubscriptionPlan } from '../services/stripeService';
+import { getPublishedConfig } from '../services/adminConfigService';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge, ProgressBar } from 'react-bootstrap';
+import { Container, Card, Form, Button, Alert, Spinner, Modal, Table, Badge, ProgressBar, Row, Col } from 'react-bootstrap';
 import AddressAutocomplete from './AddressAutocomplete';
 import PasswordInput from './PasswordInput';
+import ConfirmModal from './ConfirmModal';
 import activityService from '../services/activityService';
 import { getUsageStats } from '../services/orderUsageService';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -42,6 +45,7 @@ const Account = () => {
   const [email, setEmail] = useState('');
   const [restaurantName, setRestaurantName] = useState('');
   const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
   const [taxRate, setTaxRate] = useState(8); // Default 8%
 
   // Password change
@@ -49,6 +53,8 @@ const Account = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+
+  const [confirmState, setConfirmState] = useState(null);
 
   // Reimbursement PIN
   const [showPinForm, setShowPinForm] = useState(false);
@@ -65,6 +71,14 @@ const Account = () => {
 
   // Service mode
   const [serviceMode, setServiceMode] = useState('full_service');
+  const [paymentTiming, setPaymentTiming] = useState('pre_pay');
+  const [customerDisplayEnabled, setCustomerDisplayEnabled] = useState(false);
+  const [customerDisplayConfig, setCustomerDisplayConfig] = useState({
+    showTip: true,
+    showSignature: true,
+    showReceiptOptions: true,
+    tipPresets: [15, 18, 20, 25]
+  });
 
   // Sidebar navigation — deep-link via ?section=xxx query param
   const [searchParams] = useSearchParams();
@@ -74,6 +88,7 @@ const Account = () => {
   // Plan change modal state
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [pendingPlanChange, setPendingPlanChange] = useState(null);
+  const [adminConfig, setAdminConfig] = useState(null);
 
   // Order usage tracking
   const [usageStats, setUsageStats] = useState(null);
@@ -123,8 +138,12 @@ const Account = () => {
           setUsername(data.username || '');
           setRestaurantName(data.restaurantName || '');
           setAddress(data.address || '');
+          setPhone(data.phone || '');
           setTaxRate(data.taxRate !== undefined ? data.taxRate : 8);
           setServiceMode(data.serviceMode || 'full_service');
+          setPaymentTiming(data.paymentTiming || 'pre_pay');
+          setCustomerDisplayEnabled(!!data.customerDisplayEnabled);
+          if (data.customerDisplayConfig) setCustomerDisplayConfig(prev => ({ ...prev, ...data.customerDisplayConfig }));
           setHasPin(!!data.reimbursementPin);
           setTwoFactorEnabled(!!data.twoFactorEnabled);
         }
@@ -141,6 +160,8 @@ const Account = () => {
     };
 
     fetchAccountData();
+    // Load admin config for discount-aware pricing
+    getPublishedConfig().then(setAdminConfig);
   }, [currentUser]);
 
   // Sync locations from context
@@ -272,10 +293,16 @@ const Account = () => {
     }
   };
 
-  const handleDisconnectStripe = async () => {
-    if (!window.confirm('Are you sure you want to disconnect your Stripe account?\n\nPayments will revert to going through the Koda Carte platform account.')) {
-      return;
-    }
+  const handleDisconnectStripe = () => {
+    setConfirmState({
+      title: 'Disconnect Stripe',
+      message: 'Are you sure you want to disconnect your Stripe account? Payments will revert to going through the Koda Carte platform account.',
+      confirmText: 'Disconnect',
+      onConfirm: doDisconnectStripe
+    });
+  };
+
+  const doDisconnectStripe = async () => {
     setStripeConnectLoading(true);
     setError('');
     try {
@@ -354,8 +381,16 @@ const Account = () => {
     }
   };
 
-  const handleDeleteReader = async (readerId, label) => {
-    if (!window.confirm(`Remove reader "${label || readerId}"? The reader will need to be re-registered to use again.`)) return;
+  const handleDeleteReader = (readerId, label) => {
+    setConfirmState({
+      title: 'Remove Reader',
+      message: `Remove reader "${label || readerId}"? The reader will need to be re-registered to use again.`,
+      confirmText: 'Remove',
+      onConfirm: () => doDeleteReader(readerId)
+    });
+  };
+
+  const doDeleteReader = async (readerId) => {
     setError('');
     try {
       await deleteReader(readerId);
@@ -412,6 +447,7 @@ const Account = () => {
         username,
         restaurantName,
         address,
+        phone,
         taxRate: parseFloat(taxRate),
         updatedAt: new Date().toISOString()
       });
@@ -432,16 +468,85 @@ const Account = () => {
 
     try {
       const docRef = doc(db, "restaurants", currentUser.uid);
-      await updateDoc(docRef, {
+      const updateData = {
         serviceMode: mode,
         updatedAt: new Date().toISOString()
-      });
+      };
+      // Reset paymentTiming to pre_pay when switching to full_service
+      if (mode === 'full_service') {
+        updateData.paymentTiming = 'pre_pay';
+        setPaymentTiming('pre_pay');
+      }
+      await updateDoc(docRef, updateData);
 
       setServiceMode(mode);
       setSuccess('Service mode updated successfully!');
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to update service mode: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSavePaymentTiming = async (timing) => {
+    setError('');
+    setSuccess('');
+    setSaving(true);
+
+    try {
+      const docRef = doc(db, "restaurants", currentUser.uid);
+      await updateDoc(docRef, {
+        paymentTiming: timing,
+        updatedAt: new Date().toISOString()
+      });
+
+      setPaymentTiming(timing);
+      setSuccess(`Payment timing updated to ${timing === 'pre_pay' ? 'Pre-Pay' : 'Post-Pay'}!`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      setError('Failed to update payment timing: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleCustomerDisplay = async (enabled) => {
+    setError('');
+    setSuccess('');
+    setSaving(true);
+
+    try {
+      const docRef = doc(db, "restaurants", currentUser.uid);
+      await updateDoc(docRef, {
+        customerDisplayEnabled: enabled,
+        updatedAt: new Date().toISOString()
+      });
+
+      setCustomerDisplayEnabled(enabled);
+      setSuccess(`Customer display ${enabled ? 'enabled' : 'disabled'}!`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      setError('Failed to update customer display setting: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveCustomerDisplayConfig = async (newConfig) => {
+    setError('');
+    setSaving(true);
+    try {
+      const docRef = doc(db, "restaurants", currentUser.uid);
+      await updateDoc(docRef, {
+        customerDisplayConfig: newConfig,
+        updatedAt: new Date().toISOString()
+      });
+      setCustomerDisplayConfig(newConfig);
+      setSuccess('Customer display settings saved!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      setError('Failed to save display settings: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -609,6 +714,19 @@ const Account = () => {
                   />
                   <Form.Text className="text-muted">
                     Start typing to see address suggestions. Select an address from the dropdown.
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Phone Number</Form.Label>
+                  <Form.Control
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(555) 123-4567"
+                  />
+                  <Form.Text className="text-muted">
+                    Restaurant phone number. Required for delivery orders.
                   </Form.Text>
                 </Form.Group>
 
@@ -1086,17 +1204,22 @@ const Account = () => {
                           <Button
                             variant="outline-danger"
                             size="sm"
-                            onClick={async () => {
-                              if (window.confirm(`Are you sure you want to delete ${location.name}?`)) {
-                                try {
-                                  await deleteDoc(doc(db, `restaurants/${currentUser.uid}/locations/${location.id}`));
-                                  setLocationList(locationList.filter(l => l.id !== location.id));
-                                  loadRestaurantData();
-                                  setSuccess('Location deleted successfully');
-                                } catch (error) {
-                                  setError('Failed to delete location: ' + error.message);
+                            onClick={() => {
+                              setConfirmState({
+                                title: 'Delete Location',
+                                message: `Are you sure you want to delete ${location.name}?`,
+                                confirmText: 'Delete',
+                                onConfirm: async () => {
+                                  try {
+                                    await deleteDoc(doc(db, `restaurants/${currentUser.uid}/locations/${location.id}`));
+                                    setLocationList(locationList.filter(l => l.id !== location.id));
+                                    loadRestaurantData();
+                                    setSuccess('Location deleted successfully');
+                                  } catch (error) {
+                                    setError('Failed to delete location: ' + error.message);
+                                  }
                                 }
-                              }
+                              });
                             }}
                           >
                             Delete
@@ -1158,11 +1281,11 @@ const Account = () => {
                   </div>
                   <div className="service-mode-info">
                     <h5>Counter Service</h5>
-                    <p>Pay-first at counter. Order number called when ready. Tables optional, no server needed.</p>
+                    <p>Order at counter, number called when ready. Tables optional, no server needed. Configure pre-pay or post-pay below.</p>
                     <div className="service-mode-features">
-                      <Badge bg="secondary" className="me-1">Pay First</Badge>
                       <Badge bg="secondary" className="me-1">Counter Pickup</Badge>
                       <Badge bg="secondary" className="me-1">Optional Tables</Badge>
+                      <Badge bg="info" className="me-1">{paymentTiming === 'pre_pay' ? 'Pre-Pay' : 'Post-Pay'}</Badge>
                     </div>
                   </div>
                   {serviceMode === 'counter_service' && (
@@ -1181,11 +1304,11 @@ const Account = () => {
                   </div>
                   <div className="service-mode-info">
                     <h5>Food Truck</h5>
-                    <p>Pay-first at window. Simplest workflow — no tables, no servers. Customer picks up when ready.</p>
+                    <p>Order at window, no tables, no servers. Customer picks up when ready. Configure pre-pay or post-pay below.</p>
                     <div className="service-mode-features">
-                      <Badge bg="secondary" className="me-1">Pay First</Badge>
                       <Badge bg="secondary" className="me-1">Window Pickup</Badge>
                       <Badge bg="secondary" className="me-1">No Tables</Badge>
+                      <Badge bg="info" className="me-1">{paymentTiming === 'pre_pay' ? 'Pre-Pay' : 'Post-Pay'}</Badge>
                     </div>
                   </div>
                   {serviceMode === 'food_truck' && (
@@ -1194,6 +1317,154 @@ const Account = () => {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Payment Timing Option — only for counter_service and food_truck */}
+              {(serviceMode === 'counter_service' || serviceMode === 'food_truck') && (
+                <div className="payment-timing-section mt-4">
+                  <h5 className="mb-2"><i className="bi bi-clock-history me-2"></i>Payment Timing</h5>
+                  <p className="text-muted small mb-3">
+                    Choose when customers pay for their orders. Both options support Cash, Card, and KodaPay.
+                  </p>
+                  <Row className="g-3">
+                    <Col md={6}>
+                      <div
+                        className={`payment-timing-card ${paymentTiming === 'pre_pay' ? 'active' : ''}`}
+                        onClick={() => !saving && handleSavePaymentTiming('pre_pay')}
+                      >
+                        <div className="payment-timing-icon">
+                          <i className="bi bi-cash-coin"></i>
+                        </div>
+                        <div className="payment-timing-info">
+                          <h6>Pre-Pay</h6>
+                          <p className="small mb-1">Customer pays at time of order before food is prepared.</p>
+                          <div>
+                            <Badge bg="success" className="me-1">Cash</Badge>
+                            <Badge bg="primary" className="me-1">Card</Badge>
+                            <Badge bg="info" className="me-1">KodaPay</Badge>
+                          </div>
+                        </div>
+                        {paymentTiming === 'pre_pay' && (
+                          <div className="payment-timing-check">
+                            <i className="bi bi-check-circle-fill text-success"></i>
+                          </div>
+                        )}
+                      </div>
+                    </Col>
+                    <Col md={6}>
+                      <div
+                        className={`payment-timing-card ${paymentTiming === 'post_pay' ? 'active' : ''}`}
+                        onClick={() => !saving && handleSavePaymentTiming('post_pay')}
+                      >
+                        <div className="payment-timing-icon">
+                          <i className="bi bi-receipt-cutoff"></i>
+                        </div>
+                        <div className="payment-timing-info">
+                          <h6>Post-Pay</h6>
+                          <p className="small mb-1">Customer pays after food is prepared or when picking up.</p>
+                          <div>
+                            <Badge bg="success" className="me-1">Cash</Badge>
+                            <Badge bg="primary" className="me-1">Card</Badge>
+                            <Badge bg="info" className="me-1">KodaPay</Badge>
+                          </div>
+                        </div>
+                        {paymentTiming === 'post_pay' && (
+                          <div className="payment-timing-check">
+                            <i className="bi bi-check-circle-fill text-success"></i>
+                          </div>
+                        )}
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              )}
+
+              {/* Customer Payment Display */}
+              <div className="customer-display-section mt-4">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <h5 className="mb-0"><i className="bi bi-display me-2"></i>Customer Payment Display</h5>
+                  <Form.Check
+                    type="switch"
+                    id="customer-display-toggle"
+                    checked={customerDisplayEnabled}
+                    onChange={(e) => handleToggleCustomerDisplay(e.target.checked)}
+                    disabled={saving}
+                  />
+                </div>
+                <p className="text-muted small mb-3">
+                  Show a payment review screen on a second customer-facing device. Customers can verify the amount, add a tip, sign, and choose receipt delivery.
+                </p>
+
+                {customerDisplayEnabled && (
+                  <div className="customer-display-options p-3 rounded" style={{ background: '#f8f9fa' }}>
+                    <Form.Check
+                      type="switch"
+                      id="display-show-tip"
+                      label="Allow tip selection"
+                      checked={customerDisplayConfig.showTip}
+                      onChange={(e) => {
+                        const updated = { ...customerDisplayConfig, showTip: e.target.checked };
+                        handleSaveCustomerDisplayConfig(updated);
+                      }}
+                      disabled={saving}
+                      className="mb-2"
+                    />
+                    <Form.Check
+                      type="switch"
+                      id="display-show-signature"
+                      label="Require signature"
+                      checked={customerDisplayConfig.showSignature}
+                      onChange={(e) => {
+                        const updated = { ...customerDisplayConfig, showSignature: e.target.checked };
+                        handleSaveCustomerDisplayConfig(updated);
+                      }}
+                      disabled={saving}
+                      className="mb-2"
+                    />
+                    <Form.Check
+                      type="switch"
+                      id="display-show-receipt"
+                      label="Receipt delivery options (print, email, text)"
+                      checked={customerDisplayConfig.showReceiptOptions}
+                      onChange={(e) => {
+                        const updated = { ...customerDisplayConfig, showReceiptOptions: e.target.checked };
+                        handleSaveCustomerDisplayConfig(updated);
+                      }}
+                      disabled={saving}
+                      className="mb-2"
+                    />
+                    {customerDisplayConfig.showTip && (
+                      <div className="mt-2">
+                        <Form.Label className="small">Tip Presets (%)</Form.Label>
+                        <div className="d-flex gap-2">
+                          {customerDisplayConfig.tipPresets.map((tip, i) => (
+                            <Form.Control
+                              key={i}
+                              type="number"
+                              size="sm"
+                              value={tip}
+                              min={0}
+                              max={100}
+                              style={{ width: '65px' }}
+                              onChange={(e) => {
+                                const updated = { ...customerDisplayConfig };
+                                updated.tipPresets = [...updated.tipPresets];
+                                updated.tipPresets[i] = parseInt(e.target.value) || 0;
+                                handleSaveCustomerDisplayConfig(updated);
+                              }}
+                              disabled={saving}
+                            />
+                          ))}
+                          <span className="text-muted small align-self-center">%</span>
+                        </div>
+                      </div>
+                    )}
+                    <Alert variant="info" className="mt-3 mb-0 small">
+                      <i className="bi bi-info-circle me-1"></i>
+                      Open <strong>Customer Display</strong> from the sidebar on a second device facing the customer.
+                    </Alert>
+                  </div>
+                )}
               </div>
 
               {saving && (
@@ -1209,7 +1480,8 @@ const Account = () => {
         const currentTier = getCurrentTier();
         const tierInfo = TIER_FEATURES[currentTier];
         const billingCycle = subscription?.billingCycle || 'annual';
-        const currentPrice = calculatePrice(currentTier, billingCycle);
+        const currentPricing = calculateTierPrice(currentTier, billingCycle, 1, adminConfig);
+        const currentPrice = currentPricing.monthlyPerLocation.toFixed(2);
         const locationCount = subscription?.locationCount || 1;
 
         // All tier keys in order (including scout free tier)
@@ -1223,7 +1495,7 @@ const Account = () => {
         const handleChangeBillingCycle = (newCycle) => {
           if (newCycle === billingCycle) return;
 
-          const newPrice = calculatePrice(currentTier, newCycle);
+          const newPricing = calculateTierPrice(currentTier, newCycle, 1, adminConfig);
           const newCycleLabel = billingOptions.find(b => b.value === newCycle)?.label || newCycle;
 
           setPendingPlanChange({
@@ -1231,7 +1503,8 @@ const Account = () => {
             newTier: currentTier,
             newCycle: newCycle,
             cycleLabel: newCycleLabel,
-            newPrice: newPrice,
+            newPrice: newPricing.monthlyPerLocation.toFixed(2),
+            newPricing,
             isUpgrade: false,
             action: 'change billing cycle'
           });
@@ -1243,7 +1516,7 @@ const Account = () => {
 
           const isUpgrade = TIER_FEATURES[newTier].level > TIER_FEATURES[currentTier].level;
           const action = newTier === currentTier ? 'update billing for' : (isUpgrade ? 'upgrade' : 'downgrade');
-          const newPrice = calculatePrice(newTier, selectedBillingCycle);
+          const newPricing = calculateTierPrice(newTier, selectedBillingCycle, 1, adminConfig);
           const cycleLabel = billingOptions.find(b => b.value === selectedBillingCycle)?.label || selectedBillingCycle;
 
           setPendingPlanChange({
@@ -1251,7 +1524,8 @@ const Account = () => {
             newTier: newTier,
             newCycle: selectedBillingCycle,
             cycleLabel: cycleLabel,
-            newPrice: newPrice,
+            newPrice: newPricing.monthlyPerLocation.toFixed(2),
+            newPricing,
             isUpgrade: isUpgrade,
             action: action
           });
@@ -1310,7 +1584,8 @@ const Account = () => {
                 }}>
                   {allTiers.map((tierKey) => {
                     const tier = TIER_FEATURES[tierKey];
-                    const price = calculatePrice(tierKey, billingCycle);
+                    const tierPricing = calculateTierPrice(tierKey, billingCycle, 1, adminConfig);
+                    const price = tierPricing.monthlyPerLocation.toFixed(2);
                     const isCurrent = tierKey === currentTier;
                     const isHigher = tier.level > TIER_FEATURES[currentTier].level;
                     const isLower = tier.level < TIER_FEATURES[currentTier].level;
@@ -1339,10 +1614,28 @@ const Account = () => {
                             Current
                           </Badge>
                         )}
+                        {tierPricing.discount && (
+                          <Badge
+                            bg="success"
+                            style={{
+                              position: 'absolute',
+                              top: '-10px',
+                              left: '12px',
+                              fontSize: '0.65rem'
+                            }}
+                          >
+                            {tierPricing.discount.isPercentage ? `${tierPricing.discount.amount}% off` : `$${tierPricing.discount.amount} off`}
+                          </Badge>
+                        )}
                         <div style={{ textAlign: 'center', marginBottom: '16px' }}>
                           <span style={{ fontSize: '2rem' }}>{tier.icon}</span>
                           <h5 style={{ margin: '8px 0 4px', fontWeight: 700 }}>{tier.name}</h5>
                           <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>
+                            {tierPricing.originalMonthlyPerLocation && (
+                              <span style={{ fontSize: '1rem', textDecoration: 'line-through', color: '#999', marginRight: '6px' }}>
+                                ${tierPricing.originalMonthlyPerLocation}
+                              </span>
+                            )}
                             ${price}
                             <span style={{ fontSize: '0.85rem', fontWeight: 400, color: '#666' }}>/mo</span>
                           </div>
@@ -1476,7 +1769,8 @@ const Account = () => {
                 }}>
                   {billingOptions.map((option) => {
                     const isSelected = billingCycle === option.value;
-                    const optionPrice = calculatePrice(currentTier, option.value);
+                    const optionPricing = calculateTierPrice(currentTier, option.value, 1, adminConfig);
+                    const optionPrice = optionPricing.monthlyPerLocation.toFixed(2);
                     return (
                       <div
                         key={option.value}
@@ -2756,6 +3050,182 @@ const Account = () => {
       case 'access_control':
         return <AccessControl />;
 
+      case 'delivery': {
+        const currentTier = getCurrentTier();
+        const tierInfo = TIER_FEATURES[currentTier];
+        const hasDeliveryFeature = tierInfo?.features?.includes('delivery');
+        const deliverySettings = restaurantData?.deliverySettings || {};
+
+        if (!hasDeliveryFeature) {
+          return (
+            <Card className="account-card">
+              <Card.Header className="account-card-header">
+                <h3><i className="bi bi-truck"></i> Delivery Settings</h3>
+              </Card.Header>
+              <Card.Body>
+                <div style={{
+                  textAlign: 'center', padding: '40px 20px',
+                  background: 'linear-gradient(135deg, rgba(102,126,234,0.08) 0%, rgba(118,75,162,0.08) 100%)',
+                  borderRadius: '12px'
+                }}>
+                  <i className="bi bi-lock" style={{ fontSize: '3rem', color: '#8b5cf6', marginBottom: '16px', display: 'block' }}></i>
+                  <h4>Delivery via DoorDash Drive</h4>
+                  <p style={{ color: '#666', maxWidth: '400px', margin: '0 auto 20px' }}>
+                    Enable delivery for your restaurant with DoorDash Drive. Available on Chief and Elder plans.
+                  </p>
+                  <Button variant="primary" onClick={() => setActiveSection('subscription')}>
+                    <i className="bi bi-arrow-up-circle me-1"></i> Upgrade Plan
+                  </Button>
+                </div>
+              </Card.Body>
+            </Card>
+          );
+        }
+
+        return (
+          <Card className="account-card">
+            <Card.Header className="account-card-header">
+              <h3><i className="bi bi-truck"></i> Delivery Settings</h3>
+            </Card.Header>
+            <Card.Body>
+              <div style={{
+                padding: '20px',
+                background: 'linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(45,106,79,0.08) 100%)',
+                borderRadius: '12px',
+                marginBottom: '24px'
+              }}>
+                <h5 style={{ margin: '0 0 8px', fontWeight: 700 }}>
+                  <i className="bi bi-truck me-1"></i> DoorDash Drive Integration
+                </h5>
+                <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>
+                  Enable delivery for your customers through DoorDash Drive. Customers can order delivery directly from your website.
+                </p>
+              </div>
+
+              {deliverySettings.registrationError && (
+                <Alert variant="warning" className="mb-3">
+                  <i className="bi bi-exclamation-triangle me-1"></i>
+                  DoorDash registration issue: {deliverySettings.registrationError}. Try toggling delivery off and on again.
+                </Alert>
+              )}
+
+              <Form onSubmit={async (e) => {
+                e.preventDefault();
+                setSaving(true);
+                setError('');
+                try {
+                  const fn = httpsCallable(getFunctions(), 'configureDelivery');
+                  const formData = new FormData(e.target);
+                  const result = await fn({
+                    enabled: formData.get('deliveryEnabled') === 'on',
+                    pickupInstructions: formData.get('pickupInstructions'),
+                    defaultPrepTime: parseInt(formData.get('defaultPrepTime')) || 20,
+                    contactlessDefault: formData.get('contactlessDefault') === 'on',
+                    tipSuggestions: [
+                      parseInt(formData.get('tip1')) || 15,
+                      parseInt(formData.get('tip2')) || 20,
+                      parseInt(formData.get('tip3')) || 25
+                    ],
+                  });
+                  // Update local state
+                  setRestaurantData(prev => ({
+                    ...prev,
+                    deliverySettings: result.data.settings
+                  }));
+                  setSuccess('Delivery settings saved successfully!');
+                  setTimeout(() => setSuccess(''), 3000);
+                } catch (err) {
+                  setError(err.message || 'Failed to save delivery settings');
+                }
+                setSaving(false);
+              }}>
+                <Form.Group className="mb-4">
+                  <Form.Check
+                    type="switch"
+                    id="deliveryEnabled"
+                    name="deliveryEnabled"
+                    label={<span style={{ fontWeight: 600, fontSize: '1.05rem' }}>Enable Delivery</span>}
+                    defaultChecked={deliverySettings.enabled || false}
+                  />
+                  <Form.Text className="text-muted">
+                    When enabled, customers will see a "Delivery" option at checkout on your website.
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label style={{ fontWeight: 600 }}>Pickup Instructions for Driver</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    name="pickupInstructions"
+                    rows={2}
+                    defaultValue={deliverySettings.pickupInstructions || ''}
+                    placeholder="e.g., Ask for online orders at the counter"
+                  />
+                  <Form.Text className="text-muted">
+                    Instructions for the DoorDash driver when picking up orders.
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label style={{ fontWeight: 600 }}>Default Prep Time (minutes)</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="defaultPrepTime"
+                    defaultValue={deliverySettings.defaultPrepTime || 20}
+                    min="5"
+                    max="120"
+                    style={{ maxWidth: '150px' }}
+                  />
+                  <Form.Text className="text-muted">
+                    How long your kitchen typically takes to prepare an order. DoorDash schedules pickup accordingly.
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Check
+                    type="switch"
+                    id="contactlessDefault"
+                    name="contactlessDefault"
+                    label="Default to contactless delivery"
+                    defaultChecked={deliverySettings.contactlessDefault || false}
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label style={{ fontWeight: 600 }}>Tip Suggestions (%)</Form.Label>
+                  <div style={{ display: 'flex', gap: '12px', maxWidth: '300px' }}>
+                    <Form.Control type="number" name="tip1" defaultValue={(deliverySettings.tipSuggestions || [15,20,25])[0]} min="0" max="50" />
+                    <Form.Control type="number" name="tip2" defaultValue={(deliverySettings.tipSuggestions || [15,20,25])[1]} min="0" max="50" />
+                    <Form.Control type="number" name="tip3" defaultValue={(deliverySettings.tipSuggestions || [15,20,25])[2]} min="0" max="50" />
+                  </div>
+                </Form.Group>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+                  <Button type="submit" variant="primary" disabled={saving} style={{ fontWeight: 600 }}>
+                    {saving ? <><Spinner size="sm" className="me-1" /> Saving...</> : <><i className="bi bi-check-circle me-1"></i> Save Settings</>}
+                  </Button>
+                </div>
+              </Form>
+
+              {deliverySettings.doordashBusinessId && (
+                <div style={{
+                  marginTop: '24px', padding: '16px',
+                  background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0'
+                }}>
+                  <h6 style={{ fontWeight: 700, color: '#15803d', marginBottom: '8px' }}>
+                    <i className="bi bi-check-circle-fill me-1"></i> DoorDash Connected
+                  </h6>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#555' }}>
+                    Business ID: {deliverySettings.doordashBusinessId}
+                    {deliverySettings.doordashStoreId && <><br />Store ID: {deliverySettings.doordashStoreId}</>}
+                  </p>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        );
+      }
+
       default:
         return null;
     }
@@ -2866,6 +3336,13 @@ const Account = () => {
             >
               <i className="bi bi-broadcast"></i>
               <span>LAN Relay</span>
+            </button>
+            <button
+              className={`account-nav-item ${activeSection === 'delivery' ? 'active' : ''}`}
+              onClick={() => setActiveSection('delivery')}
+            >
+              <i className="bi bi-truck"></i>
+              <span>Delivery</span>
             </button>
           </nav>
         </div>
@@ -3104,8 +3581,33 @@ const Account = () => {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem' }}>Price per Location</span>
-                  <span style={{ color: 'white', fontWeight: 600 }}>${pendingPlanChange?.newPrice}/mo</span>
+                  <div style={{ textAlign: 'right' }}>
+                    {pendingPlanChange?.newPricing?.originalMonthlyPerLocation && (
+                      <span style={{ textDecoration: 'line-through', color: 'rgba(255,255,255,0.4)', marginRight: '6px', fontSize: '0.85rem' }}>
+                        ${pendingPlanChange.newPricing.originalMonthlyPerLocation}
+                      </span>
+                    )}
+                    <span style={{ color: 'white', fontWeight: 600 }}>${pendingPlanChange?.newPrice}/mo</span>
+                  </div>
                 </div>
+                {pendingPlanChange?.newPricing?.discount && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem' }}>Discount</span>
+                    <span style={{
+                      color: '#4ade80',
+                      fontWeight: 600,
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      padding: '2px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem'
+                    }}>
+                      {pendingPlanChange.newPricing.discount.isPercentage
+                        ? `${pendingPlanChange.newPricing.discount.amount}% off`
+                        : `$${pendingPlanChange.newPricing.discount.amount} off`}
+                      {' '}&mdash; {pendingPlanChange.newPricing.discount.name}
+                    </span>
+                  </div>
+                )}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -3123,6 +3625,16 @@ const Account = () => {
                     ${(parseFloat(pendingPlanChange?.newPrice || 0) * (subscription?.locationCount || 1)).toFixed(2)}
                   </span>
                 </div>
+                {pendingPlanChange?.isUpgrade && subscription?.stripeSubscriptionId && (
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: 'rgba(255,255,255,0.6)',
+                    textAlign: 'center',
+                    marginTop: '4px'
+                  }}>
+                    Prorated billing — you'll only pay the difference for the remaining period
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3228,20 +3740,49 @@ const Account = () => {
             try {
               setSaving(true);
               setShowPlanModal(false);
-              if (pendingPlanChange.type === 'billing') {
-                await updateDoc(doc(db, 'restaurants', currentUser.uid), {
-                  'subscription.billingCycle': pendingPlanChange.newCycle,
-                  'subscription.updatedAt': new Date().toISOString()
-                });
-                setSuccess(`Billing cycle changed to ${pendingPlanChange.cycleLabel}!`);
+
+              // Use Stripe Subscription API for plan changes
+              if (subscription?.stripeSubscriptionId) {
+                // Has active Stripe subscription — use subscription update API
+                const result = await updateSubscriptionPlan(
+                  pendingPlanChange.newTier,
+                  pendingPlanChange.newCycle || pendingPlanChange.newBillingCycle || subscription.billingCycle,
+                  subscription?.locationCount || 1
+                );
+
+                if (result.type === 'upgrade_applied') {
+                  setSuccess(`Successfully upgraded to ${TIER_FEATURES[pendingPlanChange.newTier].name} plan! Prorated billing has been applied.`);
+                } else if (result.type === 'downgrade_scheduled') {
+                  const effectiveDate = result.effectiveAt
+                    ? new Date(result.effectiveAt).toLocaleDateString()
+                    : 'your next billing date';
+                  setSuccess(`Downgrade to ${TIER_FEATURES[pendingPlanChange.newTier].name} scheduled for ${effectiveDate}. You'll keep your current features until then.`);
+                }
               } else {
-                await updateDoc(doc(db, 'restaurants', currentUser.uid), {
-                  'subscription.tier': pendingPlanChange.newTier,
-                  'subscription.billingCycle': pendingPlanChange.newCycle,
-                  'subscription.updatedAt': new Date().toISOString()
-                });
-                const actionText = pendingPlanChange.action === 'update billing for' ? 'updated' : pendingPlanChange.action + 'd';
-                setSuccess(`Successfully ${actionText} to ${TIER_FEATURES[pendingPlanChange.newTier].name} plan!`);
+                // Legacy: no Stripe subscription (pre-subscription era accounts)
+                // Just update Firestore directly
+                if (pendingPlanChange.isUpgrade || pendingPlanChange.type === 'billing') {
+                  await updateDoc(doc(db, 'restaurants', currentUser.uid), {
+                    'subscription.tier': pendingPlanChange.newTier,
+                    'subscription.billingCycle': pendingPlanChange.newCycle || subscription?.billingCycle,
+                    'subscription.updatedAt': new Date().toISOString(),
+                  });
+                  setSuccess(`Plan updated to ${TIER_FEATURES[pendingPlanChange.newTier].name}!`);
+                } else {
+                  await updateDoc(doc(db, 'restaurants', currentUser.uid), {
+                    'subscription.pendingDowngrade': {
+                      newTier: pendingPlanChange.newTier,
+                      newBillingCycle: pendingPlanChange.newCycle || subscription?.billingCycle,
+                      scheduledAt: new Date().toISOString(),
+                      effectiveAt: subscription?.currentPeriodEnd || new Date().toISOString(),
+                    },
+                    'subscription.updatedAt': new Date().toISOString(),
+                  });
+                  const effectiveDate = subscription?.currentPeriodEnd
+                    ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
+                    : 'your next billing date';
+                  setSuccess(`Downgrade to ${TIER_FEATURES[pendingPlanChange.newTier].name} scheduled for ${effectiveDate}.`);
+                }
               }
             } catch (error) {
               setError(`Failed to ${pendingPlanChange.action}: ${error.message}`);
@@ -3252,6 +3793,7 @@ const Account = () => {
           }}
         />
       </Modal>
+      <ConfirmModal state={confirmState} onClose={() => setConfirmState(null)} />
     </Container>
   );
 };

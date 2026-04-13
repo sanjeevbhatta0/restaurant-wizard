@@ -33,7 +33,8 @@ const CardPaymentForm = ({
   orderIds,
   tableNumbers,
   restaurantId,
-  paymentDetails
+  paymentDetails,
+  source
 }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -61,7 +62,8 @@ const CardPaymentForm = ({
         total,
         orderIds,
         tableNumbers,
-        restaurantId
+        restaurantId,
+        source
       );
 
       // 2. Confirm the payment with Stripe

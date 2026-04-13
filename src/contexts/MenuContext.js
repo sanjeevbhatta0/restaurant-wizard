@@ -9,6 +9,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from './AuthContext';
 import { useLocation } from './LocationContext';
+import { preloadImages, extractImageUrls } from '../services/imageService';
 
 const MenuContext = createContext();
 
@@ -32,7 +33,10 @@ export function MenuProvider({ children }) {
         if (!currentUser) return;
 
         try {
-            const cached = localStorage.getItem(`${MENU_CACHE_KEY}_${restaurantUid}`);
+            const cacheKey = selectedLocation
+                ? `${MENU_CACHE_KEY}_${restaurantUid}_${selectedLocation}`
+                : `${MENU_CACHE_KEY}_${restaurantUid}`;
+            const cached = localStorage.getItem(cacheKey);
             if (cached) {
                 const { data, timestamp } = JSON.parse(cached);
                 const age = Date.now() - timestamp;
@@ -42,26 +46,31 @@ export function MenuProvider({ children }) {
                     console.log('MenuContext: Using cached menu data');
                     setAllCategories(data);
                     setLoading(false);
+                    // Preload images into browser cache immediately
+                    preloadImages(extractImageUrls(data));
                 }
             }
         } catch (err) {
             console.warn('MenuContext: Failed to load cache', err);
         }
-    }, [currentUser]);
+    }, [currentUser, selectedLocation]);
 
     // Save to cache whenever data changes
     const saveToCache = useCallback((data) => {
         if (!currentUser || !data || data.length === 0) return;
 
         try {
-            localStorage.setItem(`${MENU_CACHE_KEY}_${restaurantUid}`, JSON.stringify({
+            const cacheKey = selectedLocation
+                ? `${MENU_CACHE_KEY}_${restaurantUid}_${selectedLocation}`
+                : `${MENU_CACHE_KEY}_${restaurantUid}`;
+            localStorage.setItem(cacheKey, JSON.stringify({
                 data,
                 timestamp: Date.now()
             }));
         } catch (err) {
             console.warn('MenuContext: Failed to save cache', err);
         }
-    }, [currentUser]);
+    }, [currentUser, restaurantUid, selectedLocation]);
 
     // Load menu data with parallel queries
     const loadMenuData = useCallback(async () => {
@@ -97,6 +106,8 @@ export function MenuProvider({ children }) {
             setLastUpdated(Date.now());
             saveToCache(categoriesWithItems);
             setLoading(false);
+            // Preload images into browser cache
+            preloadImages(extractImageUrls(categoriesWithItems));
 
         } catch (error) {
             console.error('MenuContext: Error loading menu data', error);

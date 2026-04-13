@@ -11,13 +11,20 @@ service cloud.firestore {
       );
     }
 
+    // Helper: Check if user is a platform admin
+    function isPlatformAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     // Restaurants collection
     match /restaurants/{restaurantId} {
-      // Anyone can read restaurant info (for customer app discovery + theming)
-      allow read: if true;
+      // Only owner, staff, or platform admin can read restaurant config
+      // Public data (menu, website) is served via Cloud Functions using admin SDK
+      allow read: if isOwnerOrStaff(restaurantId) || isPlatformAdmin();
       // Restaurant owner or staff can write
       allow write: if isOwnerOrStaff(restaurantId);
-      
+
       // Menu Categories subcollection (used by MenuManagement and POS)
       match /menuCategories/{categoryId} {
         allow read, write: if isOwnerOrStaff(restaurantId);
@@ -34,26 +41,29 @@ service cloud.firestore {
         allow read, write: if isOwnerOrStaff(restaurantId);
         // Customers can read their own orders (matched by customerId)
         allow read: if request.auth != null && resource.data.customerId == request.auth.uid;
-        // Public can create orders (for customers ordering online)
-        allow create: if true;
+        // Online orders are created via submitOrder Cloud Function (admin SDK).
+        // Only POS/staff can create orders directly from the client.
+        allow create: if isOwnerOrStaff(restaurantId);
       }
 
       // Layout subcollection (used by TableLayout component)
       match /layout/{layoutId} {
         allow read, write: if isOwnerOrStaff(restaurantId);
       }
-      
+
       // Website subcollection (used by WebsiteBuilder + customer app theming)
+      // Public content served via serveWebsite Cloud Function (admin SDK)
       match /website/{websiteId} {
-        allow read: if true;
+        allow read: if isOwnerOrStaff(restaurantId);
         allow write: if isOwnerOrStaff(restaurantId);
       }
-      
+
       // Locations subcollection (used for multi-location restaurants + customer app)
+      // Public location data served via Cloud Functions (admin SDK)
       match /locations/{locationId} {
-        allow read: if true;
+        allow read: if request.auth != null;
         allow write: if request.auth != null && request.auth.uid == restaurantId;
-        
+
         // Layout subcollection within each location
         match /layout/{layoutId} {
           allow read, write: if isOwnerOrStaff(restaurantId);
@@ -78,10 +88,11 @@ service cloud.firestore {
           allow read, write: if isOwnerOrStaff(restaurantId);
           // Customers can read their own orders (matched by customerId)
           allow read: if request.auth != null && resource.data.customerId == request.auth.uid;
-          allow create: if true;
+          // Online orders are created via submitOrder Cloud Function (admin SDK).
+          allow create: if isOwnerOrStaff(restaurantId);
         }
       }
-      
+
       // Reimbursements subcollection
       match /reimbursements/{reimbursementId} {
         allow read, write: if isOwnerOrStaff(restaurantId);
@@ -91,13 +102,15 @@ service cloud.firestore {
       match /activities/{activityId} {
         allow read, write: if isOwnerOrStaff(restaurantId);
       }
-      
+
       // Customers subcollection (for customer portal)
       match /customers/{customerId} {
-        // Customer can read/write their own data
-        allow read, write: if request.auth != null && request.auth.uid == customerId;
-        // Allow authenticated users to create their customer record
+        // Customer can read/write their own data (excluding protected fields)
+        allow read: if request.auth != null && request.auth.uid == customerId;
         allow create: if request.auth != null && request.auth.uid == customerId;
+        // Updates: customer can update own data but cannot modify loyaltyPoints or tier
+        allow update: if request.auth != null && request.auth.uid == customerId
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['loyaltyPoints', 'tier', 'totalSpent']));
       }
 
       // Reviews subcollection
@@ -106,8 +119,11 @@ service cloud.firestore {
         allow read, write: if isOwnerOrStaff(restaurantId);
         // Public can read approved reviews
         allow read: if resource.data.status == 'approved';
-        // Anyone can create (submit a review) — Cloud Function validates
-        allow create: if true;
+        // Authenticated users can submit a review — status must be 'pending', rating 1-5
+        allow create: if request.auth != null
+          && request.resource.data.status == 'pending'
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5;
       }
 
       // Promotions subcollection
@@ -169,62 +185,73 @@ service cloud.firestore {
       match /socialPosts/{postId} {
         allow read, write: if isOwnerOrStaff(restaurantId);
       }
+
+      // Payment Review subcollection (POS ↔ Customer Display real-time sync)
+      match /paymentReview/{docId} {
+        allow read, write: if isOwnerOrStaff(restaurantId);
+      }
+
+      // Mobile App config — reads by owner/staff, writes via Cloud Functions (admin SDK)
+      match /mobileApp/{docId} {
+        allow read: if isOwnerOrStaff(restaurantId);
+        // All writes go through publishMobileApp Cloud Function (admin SDK).
+        // Direct client writes are blocked — status transitions must go through the pipeline.
+        allow write: if false;
+      }
     }
-    
+
     // Social media posts - users can only access their own
     match /socialMediaPosts/{postId} {
       allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
-    
+
     // Website settings - users can only access their own
     match /websiteSettings/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    
+
     // Social connections - users can only access their own
     match /socialConnections/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    
+
     // ==========================================
     // Admin Platform Configuration
     // ==========================================
-    
+
     // Platform configuration - read by all (for pricing display), write by admins only
     match /platformConfig/{docId} {
       allow read: if true;
-      allow write: if request.auth != null && 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow write: if isPlatformAdmin();
     }
-    
+
     // Draft configuration - admins only
     match /platformConfigDraft/{docId} {
-      allow read, write: if request.auth != null && 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow read, write: if isPlatformAdmin();
     }
-    
+
     // Scheduled changes - admins only
     match /scheduledChanges/{docId} {
-      allow read, write: if request.auth != null && 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow read, write: if isPlatformAdmin();
     }
-    
-    // Analytics events - anyone can write (for tracking), only admins can read
+
+    // Analytics events - anyone authenticated can create (for tracking), only admins can read
     match /analyticsEvents/{eventId} {
-      allow read: if request.auth != null && 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-      allow create: if true; // Public can log analytics events
+      allow read: if isPlatformAdmin();
+      // Validate event shape: must have type and timestamp, userId must match caller
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['type', 'timestamp'])
+        && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false; // Events are immutable
     }
-    
-    // Platform analytics - admins can read, public can write for real-time updates
+
+    // Platform analytics - admins only (read AND write)
     match /platformAnalytics/{docId} {
-      allow read: if request.auth != null && 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-      allow write: if true; // Allow real-time aggregate updates from client
+      allow read: if isPlatformAdmin();
+      allow write: if isPlatformAdmin();
     }
-    
+
     // Admin users collection - read own document only
     match /admins/{adminId} {
       allow read: if request.auth != null && request.auth.uid == adminId;
@@ -246,11 +273,30 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Phone verification OTPs — Cloud Functions only (admin SDK)
+    match /phoneVerifications/{phoneId} {
+      allow read, write: if false;
+    }
+
     // Contact form submissions — admins can read, writes handled by Cloud Function
     match /contactSubmissions/{docId} {
-      allow read: if request.auth != null &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow read: if isPlatformAdmin();
       allow write: if false;
+    }
+
+    // Mobile App bundle suffix uniqueness index
+    match /mobileAppBundles/{bundleSuffix} {
+      // Anyone authenticated can read (for uniqueness checks)
+      allow read: if request.auth != null;
+      // Owner can create/update only if restaurantId matches their uid
+      allow create: if request.auth != null && request.resource.data.restaurantId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.restaurantId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Deny-all fallback — any path not explicitly matched above is denied
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
