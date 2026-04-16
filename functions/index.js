@@ -5852,9 +5852,17 @@ exports.createTerminalLocation = onCall({ secrets: [stripeSecretKey] }, async (r
     }
     const restaurantId = request.auth.uid;
 
-    const { displayName, address } = request.data;
+    const data = request.data || {};
+    const displayName = data.displayName;
+    const address = data.address || {
+      line1: data.addressLine1,
+      city: data.city,
+      state: data.state,
+      postal_code: data.postalCode,
+      country: data.country,
+    };
 
-    if (!displayName || !address || !address.line1 || !address.city || !address.state || !address.postal_code) {
+    if (!displayName || !address.line1 || !address.city || !address.state || !address.postal_code) {
       throw new HttpsError('invalid-argument', 'Display name and full address are required');
     }
 
@@ -5872,11 +5880,10 @@ exports.createTerminalLocation = onCall({ secrets: [stripeSecretKey] }, async (r
       },
     });
 
-    // Save location ID to Firestore for future use
     const db = admin.firestore();
-    const settingsRef = db.doc(`restaurants/${restaurantId}/settings/terminal`);
+    const settingsRef = db.doc(`restaurants/${restaurantId}/settings/stripeTerminal`);
     await settingsRef.set(
-      { stripeTerminalLocationId: location.id, updatedAt: FieldValue.serverTimestamp() },
+      { stripeLocationId: location.id, updatedAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
 
@@ -5902,10 +5909,10 @@ exports.getTerminalLocation = onCall({ secrets: [stripeSecretKey] }, async (requ
 
     const db = admin.firestore();
     const settingsDoc = await db.doc(
-      `restaurants/${request.auth.uid}/settings/terminal`
+      `restaurants/${request.auth.uid}/settings/stripeTerminal`
     ).get();
 
-    const locationId = settingsDoc.data()?.stripeTerminalLocationId;
+    const locationId = settingsDoc.data()?.stripeLocationId;
     if (!locationId) {
       return { exists: false };
     }
