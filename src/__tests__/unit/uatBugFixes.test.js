@@ -269,3 +269,299 @@ describe('Bug #5 — Login error messages', () => {
     });
   });
 });
+
+// ---- Bug #7: React Error Boundary (prevents white screen of death) ----
+describe('Bug #7 — Error Boundary', () => {
+  test('ErrorBoundary component exists with class-based error catching', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(require.resolve('../../components/ErrorBoundary.js'), 'utf8');
+    // Must be a class component with getDerivedStateFromError
+    expect(source).toContain('class ErrorBoundary');
+    expect(source).toContain('getDerivedStateFromError');
+    expect(source).toContain('componentDidCatch');
+    expect(source).toContain('hasError');
+  });
+
+  test('ErrorBoundary renders user-friendly recovery UI', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(require.resolve('../../components/ErrorBoundary.js'), 'utf8');
+    expect(source).toContain('Something went wrong');
+    expect(source).toContain('Reload Page');
+    expect(source).toContain('Go Home');
+    // Must NOT show raw error details to users
+    expect(source).not.toContain('stack');
+    expect(source).not.toContain('toString');
+  });
+
+  test('App.js wraps entire app in ErrorBoundary', () => {
+    const fs = require('fs');
+    const appSource = fs.readFileSync(require.resolve('../../App.js'), 'utf8');
+    expect(appSource).toContain("import ErrorBoundary from './components/ErrorBoundary'");
+    expect(appSource).toContain('<ErrorBoundary>');
+    expect(appSource).toContain('</ErrorBoundary>');
+  });
+});
+
+// ---- Bug #8: POS beforeunload data loss prevention ----
+describe('Bug #8 — POS beforeunload guard', () => {
+  test('POS.js contains beforeunload event listener', () => {
+    const fs = require('fs');
+    const posSource = fs.readFileSync(require.resolve('../../components/POS.js'), 'utf8');
+    expect(posSource).toContain('beforeunload');
+    expect(posSource).toContain("window.addEventListener('beforeunload'");
+    expect(posSource).toContain("window.removeEventListener('beforeunload'");
+  });
+
+  test('beforeunload is tied to orderItems state', () => {
+    const fs = require('fs');
+    const posSource = fs.readFileSync(require.resolve('../../components/POS.js'), 'utf8');
+    // The effect should depend on orderItems
+    expect(posSource).toContain('orderItems.length > 0');
+  });
+});
+
+// ---- Security: Webhook signature verification ----
+describe('Security — Stripe webhook signature verification', () => {
+  test('stripeWebhook uses constructEvent with rawBody and secret', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    // Must verify webhook signature
+    expect(functionsSource).toContain('webhooks.constructEvent');
+    expect(functionsSource).toContain('req.rawBody');
+    expect(functionsSource).toContain('stripe-signature');
+    expect(functionsSource).toContain('STRIPE_WEBHOOK_SECRET');
+  });
+
+  test('invalid webhook signature returns 400', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    // Must return 400 on bad signature
+    expect(functionsSource).toContain("res.status(400)");
+    expect(functionsSource).toContain('Webhook Error');
+  });
+});
+
+// ---- Security: Server-side price verification ----
+describe('Security — Server-side price verification', () => {
+  test('tier payment uses server-calculated amount, not client amount', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('Server-side price calculation');
+    expect(functionsSource).toContain('never trust client-supplied amount');
+  });
+
+  test('createPaymentIntent validates amount > 0', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('Invalid payment amount');
+    expect(functionsSource).toContain('amount <= 0');
+  });
+
+  test('createPaymentIntent requires authentication', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('User must be authenticated');
+  });
+
+  test('createPaymentIntent verifies restaurant ownership', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('Not authorized for this restaurant');
+  });
+});
+
+// ---- Security: Input sanitization ----
+describe('Security — Input sanitization for website rendering', () => {
+  test('functions/index.js has escapeHtml function', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('function escapeHtml');
+    expect(functionsSource).toContain('&lt;');
+    expect(functionsSource).toContain('&gt;');
+    expect(functionsSource).toContain('&amp;');
+  });
+
+  test('restaurant name is escaped in website templates', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('escapeHtml(websiteData.restaurantName');
+    expect(functionsSource).toContain('escapeHtml(websiteData.address');
+    expect(functionsSource).toContain('escapeHtml(websiteData.phone');
+  });
+
+  test('URL inputs are sanitized', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('function sanitizeUrl');
+    expect(functionsSource).toContain('sanitizeUrl(websiteData.heroImage');
+    expect(functionsSource).toContain('sanitizeUrl(websiteData.logo');
+  });
+
+  test('color inputs are sanitized', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const functionsSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/index.js'), 'utf8'
+    );
+    expect(functionsSource).toContain('function sanitizeColor');
+    expect(functionsSource).toContain('sanitizeColor(websiteData.primaryColor');
+  });
+
+  test('no dangerouslySetInnerHTML in React components (except print windows)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const srcDir = path.resolve(__dirname, '../../components');
+    const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
+
+    files.forEach(file => {
+      const content = fs.readFileSync(path.join(srcDir, file), 'utf8');
+      // Only PromotionsRewards and ReceiptModal use innerHTML for print windows
+      if (file === 'PromotionsRewards.js' || file === 'ReceiptModal.js') return;
+      expect(content).not.toContain('dangerouslySetInnerHTML');
+      // innerHTML is acceptable only in print windows
+      if (content.includes('.innerHTML')) {
+        // Must be in a print context
+        expect(content).toMatch(/print|Print/);
+      }
+    });
+  });
+});
+
+// ---- Security: Double-submit prevention ----
+describe('Security — Double-submit prevention', () => {
+  test('POS Send to Kitchen button disables during submission', () => {
+    const fs = require('fs');
+    const posSource = fs.readFileSync(require.resolve('../../components/POS.js'), 'utf8');
+    expect(posSource).toContain('sendingOrder');
+    // Button must use disabled={...sendingOrder}
+    expect(posSource).toMatch(/disabled=\{.*sendingOrder/);
+  });
+
+  test('CardPaymentForm disables button during processing', () => {
+    const fs = require('fs');
+    const cardSource = fs.readFileSync(require.resolve('../../components/CardPaymentForm.js'), 'utf8');
+    expect(cardSource).toContain('processing');
+    expect(cardSource).toMatch(/disabled=\{.*processing/);
+  });
+
+  test('Account save button has saving guard', () => {
+    const fs = require('fs');
+    const accountSource = fs.readFileSync(require.resolve('../../components/Account.js'), 'utf8');
+    expect(accountSource).toContain('saving');
+  });
+});
+
+// ---- Security: Auth protection ----
+describe('Security — Route protection', () => {
+  test('PrivateRoute redirects unauthenticated users to /login', () => {
+    const fs = require('fs');
+    const prSource = fs.readFileSync(require.resolve('../../components/PrivateRoute.js'), 'utf8');
+    expect(prSource).toContain('Navigate to="/login"');
+    expect(prSource).toContain('currentUser');
+  });
+
+  test('all dashboard routes use PrivateRoute wrapper', () => {
+    const fs = require('fs');
+    const appSource = fs.readFileSync(require.resolve('../../App.js'), 'utf8');
+    const protectedPaths = [
+      '/home', '/analytics', '/menu-management', '/pos', '/kitchen',
+      '/server', '/table-layout', '/payments', '/orders', '/promotions',
+      '/reviews', '/website-builder', '/account'
+    ];
+    protectedPaths.forEach(path => {
+      // Each protected path should have PrivateRoute wrapper
+      const routePattern = new RegExp(`path="${path.replace('/', '\\/')}"[\\s\\S]*?PrivateRoute`);
+      expect(appSource).toMatch(routePattern);
+    });
+  });
+});
+
+// ---- UX: Multi-location guards ----
+describe('UX — Multi-location data isolation', () => {
+  test('Kitchen shows empty state when multi-location but no location selected', () => {
+    const fs = require('fs');
+    const kitchenSource = fs.readFileSync(require.resolve('../../components/Kitchen.js'), 'utf8');
+    expect(kitchenSource).toContain('isMultiLocation && !selectedLocation');
+  });
+
+  test('Server shows empty state when multi-location but no location selected', () => {
+    const fs = require('fs');
+    const serverSource = fs.readFileSync(require.resolve('../../components/Server.js'), 'utf8');
+    expect(serverSource).toContain('isMultiLocation && !selectedLocation');
+  });
+
+  test('Home filters activities by location', () => {
+    const fs = require('fs');
+    const homeSource = fs.readFileSync(require.resolve('../../components/Home.js'), 'utf8');
+    expect(homeSource).toContain('isMultiLocation && selectedLocation');
+    expect(homeSource).toContain('activity.locationId === selectedLocation');
+  });
+
+  test('TableLayout shows empty when multi-location but no location selected', () => {
+    const fs = require('fs');
+    const tlSource = fs.readFileSync(require.resolve('../../components/TableLayout.js'), 'utf8');
+    expect(tlSource).toContain('isMultiLocation && !selectedLocation');
+  });
+});
+
+// ---- Bug #6: 404 page for unknown routes ----
+describe('Bug #6 — 404 Not Found page', () => {
+  test('NotFound component exists and has correct structure', () => {
+    const fs = require('fs');
+    const notFoundSource = fs.readFileSync(require.resolve('../../components/NotFound.js'), 'utf8');
+    expect(notFoundSource).toContain('404');
+    expect(notFoundSource).toContain('Page Not Found');
+    expect(notFoundSource).toContain('Go Home');
+    expect(notFoundSource).toContain('Log In');
+    expect(notFoundSource).toContain('export default NotFound');
+  });
+
+  test('App.js has catch-all route for unknown paths', () => {
+    const fs = require('fs');
+    const appSource = fs.readFileSync(require.resolve('../../App.js'), 'utf8');
+    // Must have a Route with path="*"
+    expect(appSource).toContain('path="*"');
+    expect(appSource).toContain('NotFound');
+  });
+
+  test('No window.alert, window.confirm, or window.prompt in src/', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const srcDir = path.resolve(__dirname, '../../components');
+    const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
+
+    files.forEach(file => {
+      const content = fs.readFileSync(path.join(srcDir, file), 'utf8');
+      // Skip test files and comments about window.confirm
+      if (file.includes('ConfirmModal')) return;
+      expect(content).not.toMatch(/window\.(alert|confirm|prompt)\s*\(/);
+    });
+  });
+});

@@ -29,6 +29,8 @@ import CustomerDisplay from './components/CustomerDisplay';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import SmsTerms from './components/SmsTerms';
 import LandingPage from './components/landing/LandingPage';
+import NotFound from './components/NotFound';
+import ErrorBoundary from './components/ErrorBoundary';
 import AdminDashboard from './components/admin/AdminDashboard';
 import AdminLogin from './components/admin/AdminLogin';
 import Layout from './components/Layout';
@@ -37,6 +39,7 @@ import './App.css';
 
 function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <SubscriptionProvider>
         <LocationProvider>
@@ -150,6 +153,9 @@ function App() {
                     <Layout><Account /></Layout>
                   </PrivateRoute>
                 } />
+
+                {/* 404 Catch-All */}
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </Router>
             </OnboardingProvider>
@@ -157,6 +163,7 @@ function App() {
         </LocationProvider>
       </SubscriptionProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

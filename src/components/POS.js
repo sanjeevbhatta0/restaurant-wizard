@@ -194,6 +194,18 @@ const POS = () => {
     };
   }, []);
 
+  // Warn before leaving page with active order items
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (orderItems.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [orderItems]);
+
   // Load restaurant settings (tax rate, name, address, etc.)
   useEffect(() => {
     if (!currentUser?.uid) return;
