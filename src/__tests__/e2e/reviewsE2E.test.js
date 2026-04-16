@@ -72,6 +72,14 @@ describeE2E('E2E: Reviews Full Lifecycle', () => {
     } catch (e) { /* ignore */ }
   });
 
+  // Each test gets a unique RFC-5737 test IP so the in-memory rate limiter
+  // (keyed off client IP) gives every request its own bucket.
+  let _testIpCounter = 0;
+  const nextTestIp = () => {
+    _testIpCounter = (_testIpCounter % 253) + 1;
+    return `192.0.2.${_testIpCounter}`;
+  };
+
   // Helper: make HTTP request to Functions emulator
   const httpRequest = (method, path, body) => {
     const http = require('http');
@@ -83,7 +91,10 @@ describeE2E('E2E: Reviews Full Lifecycle', () => {
         port: url.port,
         path: url.pathname + url.search,
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': nextTestIp(),
+        },
         timeout: 10000,
       };
 
