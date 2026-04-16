@@ -565,3 +565,113 @@ describe('Bug #6 — 404 Not Found page', () => {
     });
   });
 });
+
+// ---- Bug #9: Signup.js must use friendly error mapping (not raw Firebase errors) ----
+describe('Bug #9 — Signup friendly error messages', () => {
+  test('Signup.js uses friendlySignupErrors mapping for free signup flow', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const signupSource = fs.readFileSync(
+      path.resolve(__dirname, '../../components/Signup.js'), 'utf8'
+    );
+
+    // Must contain friendlySignupErrors object
+    expect(signupSource).toContain('friendlySignupErrors');
+    // Must map common Firebase auth error codes
+    expect(signupSource).toContain('auth/email-already-in-use');
+    expect(signupSource).toContain('auth/invalid-email');
+    expect(signupSource).toContain('auth/weak-password');
+    expect(signupSource).toContain('auth/network-request-failed');
+    expect(signupSource).toContain('auth/too-many-requests');
+    // Must NOT show raw err.message directly (should use friendlySignupErrors mapping)
+    expect(signupSource).not.toMatch(/setError\(err\.message\s*\|\|/);
+  });
+
+  test('Signup.js shows user-friendly messages for all error types', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const signupSource = fs.readFileSync(
+      path.resolve(__dirname, '../../components/Signup.js'), 'utf8'
+    );
+
+    // Friendly messages for specific error codes
+    expect(signupSource).toContain('An account with this email already exists');
+    expect(signupSource).toContain('Please enter a valid email address');
+    // Generic fallback should NOT expose raw error message
+    expect(signupSource).toContain("Failed to complete signup. Please try again.");
+  });
+});
+
+// ---- Bug #10: embed-app.js must escape user-controlled HTML to prevent XSS ----
+describe('Bug #10 — Embed App XSS prevention', () => {
+  test('embed-app.js has _escHtml function defined', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const embedSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/templates/customer-portal/embed-app.js'), 'utf8'
+    );
+
+    expect(embedSource).toContain('function _escHtml(str)');
+    // Must escape all 5 dangerous characters
+    expect(embedSource).toContain("&amp;");
+    expect(embedSource).toContain("&lt;");
+    expect(embedSource).toContain("&gt;");
+    expect(embedSource).toContain("&quot;");
+    expect(embedSource).toContain("&#39;");
+  });
+
+  test('embed-app.js uses _escHtml for item names in menu rendering', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const embedSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/templates/customer-portal/embed-app.js'), 'utf8'
+    );
+
+    // Item name must be escaped in menu rendering
+    expect(embedSource).toContain('${_escHtml(item.name)}');
+    // Item description must be escaped
+    expect(embedSource).toContain('${_escHtml(item.description)}');
+    // Category name must be escaped
+    expect(embedSource).toContain('${_escHtml(cat.name)}');
+  });
+
+  test('embed-app.js uses _escHtml for cart item rendering', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const embedSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/templates/customer-portal/embed-app.js'), 'utf8'
+    );
+
+    // Cart item notes must be escaped
+    expect(embedSource).toContain('${_escHtml(item.notes)}');
+    // Spice level must be escaped
+    expect(embedSource).toContain('${_escHtml(item.spiceLevel)}');
+  });
+
+  test('embed-app.js uses _escHtml for toast and confirmation rendering', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const embedSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/templates/customer-portal/embed-app.js'), 'utf8'
+    );
+
+    // Toast messages must be escaped
+    expect(embedSource).toContain('${_escHtml(name)} added to cart');
+    expect(embedSource).toContain('${_escHtml(msg)}');
+    // Order confirmation customer name must be escaped
+    expect(embedSource).toContain('${_escHtml(orderData.customer.name)}');
+    expect(embedSource).toContain('${_escHtml(orderData.customer.email)}');
+  });
+
+  test('portal.js already has _escHtml for user-controlled content', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const portalSource = fs.readFileSync(
+      path.resolve(__dirname, '../../../functions/templates/customer-portal/portal.js'), 'utf8'
+    );
+
+    expect(portalSource).toContain('function _escHtml(str)');
+    // User name must be escaped in portal
+    expect(portalSource).toContain('_escHtml(this.user.fullName');
+  });
+});

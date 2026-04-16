@@ -3,8 +3,9 @@
 > **Purpose:** Exhaustive browser-based User Acceptance Testing for every feature and flow.
 > **Status legend:** `[ ]` = Not tested, `[x]` = Passed, `[!]` = Bug found, `[-]` = N/A / Skipped
 > **Environments:** DEV (restaurant-portal-6b147.web.app) | PROD (kodacarte-861d8.web.app)
-> **Last updated:** 2026-04-15
-> **Test run:** 2026-04-13 to 2026-04-15 (DEV environment, automated via agent-browser + code inspection)
+> **Last updated:** 2026-04-16
+> **Test run:** 2026-04-13 to 2026-04-16 (DEV environment, automated via agent-browser + code inspection)
+> **UAT Rounds:** 8 total (3 initial + 5 additional critical rounds on 2026-04-16)
 
 ---
 
@@ -1142,7 +1143,7 @@
 | 31. Performance            | 7           | 2      | 5       | 0          |
 | 32. Error Handling         | 8           | 8      | 0       | 2          |
 | 33. Security Hardening     | 20          | 20     | 0       | 0          |
-| **TOTAL**                  | **~510**    | **404**| **77**  | **8**      |
+| **TOTAL**                  | **~517**    | **411**| **77**  | **10**     |
 
 
 ---
@@ -1160,6 +1161,8 @@
 | 6   | 32          | 404 page for unknown routes  | Medium   | Unknown routes render blank page — no 404 feedback. **Fix:** created `NotFound.js` component with 404 heading, description, Go Home and Log In buttons. Added `<Route path="*" element={<NotFound />} />` as catch-all in App.js. Deployed to both DEV and PROD.  | Fixed  |
 | 7   | 32          | No React Error Boundary      | Critical | **Any unhandled JS error crashes the entire app to a white screen with no recovery.** Users see nothing useful and must manually reload. **Fix:** created `ErrorBoundary.js` class component with `getDerivedStateFromError` + `componentDidCatch`. Shows "Something went wrong" + Reload/Go Home buttons. Wraps entire app in `App.js`. Deployed to both DEV and PROD. | Fixed  |
 | 8   | 7.12 POS    | No beforeunload guard        | High     | Accidentally closing the browser tab during an active POS order loses all order data with no warning. In a busy restaurant, this means lost revenue and frustrated staff. **Fix:** added `beforeunload` event listener that triggers browser confirmation dialog when `orderItems.length > 0`. Deployed to both DEV and PROD. | Fixed  |
+| 9   | 2.2 Signup  | Raw Firebase error messages  | Medium   | Public signup page exposes raw Firebase errors like "Firebase: Error (auth/email-already-in-use)" to users. Same class as Bug #5 but in both free and paid signup catch blocks. **Fix:** added `friendlySignupErrors` mapping for 6 common auth error codes in both catch blocks. Paid signup also preserves Stripe's already-friendly error messages via `err.type` check. | Fixed  |
+| 10  | 33 Security | XSS in embed-app.js          | Critical | Customer-facing widget uses `innerHTML` with unescaped user-controlled data (menu item names, descriptions, cart notes, spice levels, customer info). An attacker could inject malicious scripts via menu item names in Firestore. **Fix:** added `_escHtml()` function and applied it to all 15+ innerHTML call sites — menu items, categories, cart, toast, order confirmation. portal.js already had this protection. | Fixed  |
 
 
 ---
@@ -1177,4 +1180,4 @@ The following categories of tests were marked `[-]` (skipped) because they requi
 7. **Long-running sessions** — Memory leak detection, 8+ hour POS sessions
 8. **Elder tier features** — Mobile app builds require Apple developer account + Elder subscription
 
-All 8 bugs found during testing have been **fixed, deployed to both DEV and PROD, and have regression tests** in `src/__tests__/unit/uatBugFixes.test.js` (67 test assertions passing).
+All 10 bugs found during testing have been **fixed, deployed to both DEV and PROD, and have regression tests** in `src/__tests__/unit/uatBugFixes.test.js` (74 test assertions passing).

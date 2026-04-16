@@ -5,6 +5,13 @@
  * Handles: menu browsing, cart, checkout, and view orchestration.
  * Delegates to CustomerPortal for account/orders/promotions/rewards.
  */
+
+// HTML escape helper — prevents XSS when rendering user-controlled text via innerHTML
+function _escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 class EmbedApp {
   constructor(config) {
     this.config = config;
@@ -196,8 +203,8 @@ class EmbedApp {
     // Categories
     const catHtml = this.menuData.map(cat => `
       <button class="ea-cat-btn ${cat.id === this.activeCategory ? 'active' : ''}"
-              onclick="embedApp.selectCategory('${cat.id}')">
-        ${cat.name}
+              onclick="embedApp.selectCategory('${_escHtml(cat.id)}')">
+        ${_escHtml(cat.name)}
         <span class="ea-cat-count">${cat.items.length}</span>
       </button>
     `).join('');
@@ -238,10 +245,10 @@ class EmbedApp {
 
       return `
         <div class="ea-item-card">
-          ${item.imageUrl ? `<img class="ea-item-img" src="${item.imageUrl}" alt="${item.name}" onerror="this.style.display='none'">` : `<div class="ea-item-img-placeholder"><i class="bi bi-egg-fried"></i></div>`}
+          ${item.imageUrl ? `<img class="ea-item-img" src="${_escHtml(item.imageUrl)}" alt="${_escHtml(item.name)}" onerror="this.style.display='none'">` : `<div class="ea-item-img-placeholder"><i class="bi bi-egg-fried"></i></div>`}
           <div class="ea-item-body">
-            <div class="ea-item-name">${item.name}</div>
-            ${item.description ? `<div class="ea-item-desc">${item.description}</div>` : ''}
+            <div class="ea-item-name">${_escHtml(item.name)}</div>
+            ${item.description ? `<div class="ea-item-desc">${_escHtml(item.description)}</div>` : ''}
             ${hasSpice ? `<div class="ea-item-spice-hint"><i class="bi bi-fire"></i> Spice level selection required</div>` : ''}
             <div class="ea-item-footer">
               <div class="ea-item-price">
@@ -303,7 +310,7 @@ class EmbedApp {
     overlay.innerHTML = `
       <div class="ea-item-options-panel">
         <div class="ea-item-options-header">
-          <strong>${item.name}</strong>
+          <strong>${_escHtml(item.name)}</strong>
           <button class="ea-item-options-close" onclick="embedApp.closeItemOptions()">&times;</button>
         </div>
         ${spiceLevels.length > 0 ? `
@@ -311,7 +318,7 @@ class EmbedApp {
             <label>Spice Level <span style="color:#e74c3c">*</span></label>
             <div class="ea-spice-options">
               ${spiceLevels.map(level => `
-                <button class="ea-spice-btn" data-level="${level}" onclick="embedApp.selectSpice(this, '${level.replace(/'/g, "\\'")}')">${level}</button>
+                <button class="ea-spice-btn" data-level="${_escHtml(level)}" onclick="embedApp.selectSpice(this, '${_escHtml(level).replace(/'/g, "\\'")}')">${_escHtml(level)}</button>
               `).join('')}
             </div>
           </div>
@@ -363,11 +370,11 @@ class EmbedApp {
     overlay.innerHTML = `
       <div class="ea-item-options-panel">
         <div class="ea-item-options-header">
-          <strong>${item.name} — Note</strong>
+          <strong>${_escHtml(item.name)} — Note</strong>
           <button class="ea-item-options-close" onclick="embedApp.closeNoteEditor()">&times;</button>
         </div>
         <div class="ea-item-options-section">
-          <textarea id="ea-edit-note" class="ea-item-notes-input" maxlength="200" placeholder="e.g. extra roasted, no ice">${item.notes || ''}</textarea>
+          <textarea id="ea-edit-note" class="ea-item-notes-input" maxlength="200" placeholder="e.g. extra roasted, no ice">${_escHtml(item.notes || '')}</textarea>
         </div>
         <button class="ea-item-options-add" onclick="embedApp.saveCartNote()">Save Note</button>
       </div>
@@ -498,13 +505,13 @@ class EmbedApp {
       <div class="ea-cart-item">
         <div class="ea-cart-item-info">
           <div class="ea-cart-item-name">
-            ${item.name}
+            ${_escHtml(item.name)}
             <span class="ea-cart-note-btn" onclick="embedApp.editCartNote(${idx})" title="${item.notes ? 'Edit note' : 'Add note'}">
               <i class="bi bi-pencil${item.notes ? '-fill' : ''}"></i>
             </span>
           </div>
-          ${item.spiceLevel ? `<div class="ea-cart-item-spice"><i class="bi bi-fire"></i> ${item.spiceLevel}</div>` : ''}
-          ${item.notes ? `<div class="ea-cart-item-notes">${item.notes}</div>` : ''}
+          ${item.spiceLevel ? `<div class="ea-cart-item-spice"><i class="bi bi-fire"></i> ${_escHtml(item.spiceLevel)}</div>` : ''}
+          ${item.notes ? `<div class="ea-cart-item-notes">${_escHtml(item.notes)}</div>` : ''}
           <div class="ea-cart-item-price">$${(item.finalPrice * item.qty).toFixed(2)}</div>
         </div>
         <div class="ea-cart-item-controls">
@@ -535,7 +542,7 @@ class EmbedApp {
     if (existing) existing.remove();
     const toast = document.createElement('div');
     toast.className = 'ea-toast';
-    toast.innerHTML = `<i class="bi bi-check-circle"></i> ${name} added to cart`;
+    toast.innerHTML = `<i class="bi bi-check-circle"></i> ${_escHtml(name)} added to cart`;
     document.querySelector('.ea-app').appendChild(toast);
     setTimeout(() => { if (toast.parentElement) toast.remove(); }, 2000);
   }
@@ -673,7 +680,7 @@ class EmbedApp {
             <div class="ea-order-items">
               ${this.cart.map(item => `
                 <div class="ea-order-item">
-                  <span>${item.qty}x ${item.name}</span>
+                  <span>${item.qty}x ${_escHtml(item.name)}</span>
                   <span>$${(item.finalPrice * item.qty).toFixed(2)}</span>
                 </div>
               `).join('')}
@@ -912,11 +919,11 @@ class EmbedApp {
         <div class="ea-conf-icon"><i class="bi bi-check-circle-fill"></i></div>
         <h2>Order Placed!</h2>
         <p class="ea-conf-id">Order #${orderId}</p>
-        <p>Thank you, ${orderData.customer.name}! Your ${orderData.orderType} order has been received.</p>
-        ${isDelivery && orderData.deliveryAddress ? `<p class="ea-conf-time"><i class="bi bi-geo-alt"></i> Delivering to: ${orderData.deliveryAddress.fullAddress}</p>` : ''}
-        ${isDelivery && trackingUrl ? `<a href="${trackingUrl}" target="_blank" class="ea-track-btn"><i class="bi bi-truck"></i> Track Your Delivery</a>` : ''}
+        <p>Thank you, ${_escHtml(orderData.customer.name)}! Your ${_escHtml(orderData.orderType)} order has been received.</p>
+        ${isDelivery && orderData.deliveryAddress ? `<p class="ea-conf-time"><i class="bi bi-geo-alt"></i> Delivering to: ${_escHtml(orderData.deliveryAddress.fullAddress)}</p>` : ''}
+        ${isDelivery && trackingUrl ? `<a href="${_escHtml(trackingUrl)}" target="_blank" class="ea-track-btn"><i class="bi bi-truck"></i> Track Your Delivery</a>` : ''}
         ${!isDelivery && orderData.pickupTime ? `<p class="ea-conf-time"><i class="bi bi-clock"></i> Pickup: ${orderData.pickupTime === 'ASAP' ? 'ASAP' : new Date(orderData.pickupTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>` : ''}
-        <p class="ea-conf-detail">We've sent a confirmation to <strong>${orderData.customer.email}</strong></p>
+        <p class="ea-conf-detail">We've sent a confirmation to <strong>${_escHtml(orderData.customer.email)}</strong></p>
         <button class="ea-checkout-btn" onclick="embedApp.hideCheckout(); embedApp.orderPlaced = false;">
           <i class="bi bi-arrow-left"></i> Back to Menu
         </button>
@@ -1344,7 +1351,7 @@ class EmbedApp {
     if (existing) existing.remove();
     const toast = document.createElement('div');
     toast.className = `ea-toast ea-toast-${type}`;
-    toast.innerHTML = `${type === 'error' ? '<i class="bi bi-exclamation-circle"></i>' : '<i class="bi bi-check-circle"></i>'} ${msg}`;
+    toast.innerHTML = `${type === 'error' ? '<i class="bi bi-exclamation-circle"></i>' : '<i class="bi bi-check-circle"></i>'} ${_escHtml(msg)}`;
     document.querySelector('.ea-app').appendChild(toast);
     setTimeout(() => { if (toast.parentElement) toast.remove(); }, type === 'error' ? 5000 : 2500);
   }

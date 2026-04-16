@@ -169,7 +169,15 @@ const SignupForm = () => {
       navigate('/home');
     } catch (err) {
       console.error('Signup error:', err);
-      setError(err.message || 'Failed to complete signup. Please try again.');
+      const friendlySignupErrors = {
+        'auth/email-already-in-use': 'An account with this email already exists. Please log in or use a different email.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/weak-password': 'Password is too weak. Please use at least 6 characters.',
+        'auth/operation-not-allowed': 'Account creation is temporarily unavailable. Please try again later.',
+        'auth/network-request-failed': 'Network error. Please check your connection and try again.',
+        'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
+      };
+      setError(friendlySignupErrors[err.code] || 'Failed to complete signup. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -320,7 +328,18 @@ const SignupForm = () => {
       navigate('/home');
     } catch (err) {
       console.error('Signup error:', err);
-      setError(err.message || 'Failed to complete signup. Please try again.');
+      const friendlySignupErrors = {
+        'auth/email-already-in-use': 'An account with this email already exists. Please log in or use a different email.',
+        'auth/invalid-email': 'Please enter a valid email address.',
+        'auth/weak-password': 'Password is too weak. Please use at least 6 characters.',
+        'auth/operation-not-allowed': 'Account creation is temporarily unavailable. Please try again later.',
+        'auth/network-request-failed': 'Network error. Please check your connection and try again.',
+        'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
+      };
+      // Stripe errors already have user-friendly messages, Firebase auth errors need mapping
+      const errorMessage = friendlySignupErrors[err.code] ||
+        (err.type === 'card_error' || err.type === 'validation_error' ? err.message : 'Failed to complete signup. Please try again.');
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
