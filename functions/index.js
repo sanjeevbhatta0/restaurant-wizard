@@ -266,11 +266,11 @@ const doordashKeyId = defineSecret('DOORDASH_KEY_ID');
 const doordashSigningSecret = defineSecret('DOORDASH_SIGNING_SECRET');
 const doordashWebhookToken = defineSecret('DOORDASH_WEBHOOK_TOKEN');
 
-// Notification secrets (Resend email + Twilio SMS)
+// Notification secrets (Resend email + Plivo SMS)
 const resendApiKey = defineSecret('RESEND_API_KEY');
-const twilioAccountSid = defineSecret('TWILIO_ACCOUNT_SID');
-const twilioAuthToken = defineSecret('TWILIO_AUTH_TOKEN');
-const twilioFromNumber = defineSecret('TWILIO_FROM_NUMBER');
+const plivoAuthId = defineSecret('PLIVO_AUTH_ID');
+const plivoAuthToken = defineSecret('PLIVO_AUTH_TOKEN');
+const plivoFromNumber = defineSecret('PLIVO_FROM_NUMBER');
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 
 // Mobile App build pipeline secrets
@@ -2207,7 +2207,7 @@ exports.serveWebsite = onRequest({ secrets: [stripeSecretKey, stripePublishableK
         stripeConnectedAccountId: await getStripeConnectAccountId(restaurantId) || '',
         taxRate: finalTaxRate,
         promoId: promoId,
-        skipPhoneVerification: websiteData.skipPhoneVerification !== false, // Default true until Twilio toll-free verified
+        skipPhoneVerification: websiteData.skipPhoneVerification !== false, // Default true until SMS is enabled (10DLC approval)
         // Delivery settings
         deliveryEnabled: !!(restaurantData.deliverySettings && restaurantData.deliverySettings.enabled),
         deliveryTipSuggestions: (restaurantData.deliverySettings && restaurantData.deliverySettings.tipSuggestions) || [15, 20, 25],
@@ -7979,7 +7979,7 @@ exports.submitContactForm = onCall(async (request) => {
 });
 
 // ============================================
-// CUSTOMER PHONE VERIFICATION (OTP via Twilio)
+// CUSTOMER PHONE VERIFICATION (OTP via Plivo; gated by SMS_ENABLED flag)
 // ============================================
 const { sendSMS } = require('./services/smsService');
 
@@ -7988,7 +7988,7 @@ const { sendSMS } = require('./services/smsService');
  * Stores the code in Firestore with a 10-minute expiry.
  */
 exports.sendVerificationCode = onCall(
-  { secrets: [twilioAccountSid, twilioAuthToken, twilioFromNumber] },
+  { secrets: [plivoAuthId, plivoAuthToken, plivoFromNumber] },
   async (request) => {
     const { phone, restaurantId } = request.data;
     if (!phone) throw new HttpsError('invalid-argument', 'Phone number is required');
@@ -8004,11 +8004,9 @@ exports.sendVerificationCode = onCall(
     const code = String(crypto.randomInt(100000, 999999));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
-    // Normalize phone for storage key (digits only)
     const phoneDigits = phone.replace(/\D/g, '');
     if (phoneDigits.length < 10) throw new HttpsError('invalid-argument', 'Invalid phone number');
 
-    // Store OTP in Firestore
     const otpRef = admin.firestore().collection('phoneVerifications').doc(phoneDigits);
     await otpRef.set({
       code,
@@ -8020,15 +8018,24 @@ exports.sendVerificationCode = onCall(
       createdAt: FieldValue.serverTimestamp()
     });
 
-    // Send SMS
     const result = await sendSMS(
       { to: phone, body: `Your Koda Carte verification code is: ${code}. It expires in 10 minutes.` },
       {
-        accountSid: twilioAccountSid.value(),
-        authToken: twilioAuthToken.value(),
-        fromNumber: twilioFromNumber.value()
+        authId: plivoAuthId.value(),
+        authToken: plivoAuthToken.value(),
+        fromNumber: plivoFromNumber.value()
       }
     );
+
+    if (result.skipped) {
+      // SMS is gated off awaiting 10DLC approval. Surface a clear error so
+      // the UI can route users to an alternate flow (email verification).
+      await otpRef.delete().catch(() => {});
+      throw new HttpsError(
+        'failed-precondition',
+        'SMS verification is temporarily unavailable. Please use email sign-up instead.'
+      );
+    }
 
     if (!result.success) {
       console.error('Failed to send OTP SMS:', result.error);
@@ -8097,7 +8104,7 @@ const { createNotificationService } = require('./services/notificationService');
 exports.onRestaurantCreated = onDocumentCreated(
   {
     document: 'restaurants/{restaurantId}',
-    secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber]
+    secrets: [resendApiKey, plivoAuthId, plivoAuthToken, plivoFromNumber]
   },
   async (event) => {
     const data = event.data?.data();
@@ -8108,9 +8115,9 @@ exports.onRestaurantCreated = onDocumentCreated(
 
     const notifier = createNotificationService({
       resendApiKey: resendApiKey.value(),
-      twilioAccountSid: twilioAccountSid.value(),
-      twilioAuthToken: twilioAuthToken.value(),
-      twilioFromNumber: twilioFromNumber.value()
+      plivoAuthId: plivoAuthId.value(),
+      plivoAuthToken: plivoAuthToken.value(),
+      plivoFromNumber: plivoFromNumber.value()
     });
 
     const results = await notifier.sendWelcomeRestaurant({
@@ -8149,7 +8156,7 @@ exports.onRestaurantCreated = onDocumentCreated(
 exports.onOrderCompleted = onDocumentUpdated(
   {
     document: 'restaurants/{restaurantId}/orders/{orderId}',
-    secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber]
+    secrets: [resendApiKey, plivoAuthId, plivoAuthToken, plivoFromNumber]
   },
   async (event) => {
     const before = event.data?.before?.data();
@@ -8206,9 +8213,9 @@ exports.onOrderCompleted = onDocumentUpdated(
 
     const notifier = createNotificationService({
       resendApiKey: resendApiKey.value(),
-      twilioAccountSid: twilioAccountSid.value(),
-      twilioAuthToken: twilioAuthToken.value(),
-      twilioFromNumber: twilioFromNumber.value()
+      plivoAuthId: plivoAuthId.value(),
+      plivoAuthToken: plivoAuthToken.value(),
+      plivoFromNumber: plivoFromNumber.value()
     });
 
     try {
@@ -8243,7 +8250,7 @@ exports.onOrderCompleted = onDocumentUpdated(
 // Send Receipt On Demand (Email / SMS)
 // ========================================
 exports.sendReceiptOnDemand = onCall(
-  { secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber] },
+  { secrets: [resendApiKey, plivoAuthId, plivoAuthToken, plivoFromNumber] },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Must be logged in');
@@ -8260,11 +8267,19 @@ exports.sendReceiptOnDemand = onCall(
       throw new HttpsError('invalid-argument', 'customerPhone is required for SMS delivery');
     }
 
+    const { SMS_ENABLED } = require('./services/smsService');
+    if (deliveryMethod === 'sms' && !SMS_ENABLED) {
+      throw new HttpsError(
+        'failed-precondition',
+        'SMS delivery is temporarily unavailable. Please use email instead.'
+      );
+    }
+
     const notifier = createNotificationService({
       resendApiKey: resendApiKey.value(),
-      twilioAccountSid: twilioAccountSid.value(),
-      twilioAuthToken: twilioAuthToken.value(),
-      twilioFromNumber: twilioFromNumber.value()
+      plivoAuthId: plivoAuthId.value(),
+      plivoAuthToken: plivoAuthToken.value(),
+      plivoFromNumber: plivoFromNumber.value()
     });
 
     // Build order-like object for the notification service

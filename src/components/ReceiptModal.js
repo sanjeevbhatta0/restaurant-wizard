@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Modal, Button, Form, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
+import { SMS_ENABLED } from '../config/features';
 import './ReceiptModal.css';
 
 const ReceiptModal = ({ show, onHide, receiptData }) => {
@@ -260,6 +261,8 @@ const ReceiptModal = ({ show, onHide, receiptData }) => {
                 size="sm"
                 className="w-100"
                 onClick={() => { setDeliveryMethod('sms'); setSendSuccess(''); setSendError(''); }}
+                disabled={!SMS_ENABLED}
+                title={!SMS_ENABLED ? 'SMS delivery temporarily unavailable' : undefined}
               >
                 <i className="bi bi-phone me-1"></i> SMS
               </Button>

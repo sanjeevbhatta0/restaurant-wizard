@@ -10,6 +10,7 @@ import { TIER_FEATURES } from '../contexts/SubscriptionContext';
 import { getStripe, createStripeSubscription, activateTrialSubscription, calculateTierPrice, formatAmount } from '../services/stripeService';
 import { getPublishedConfig } from '../services/adminConfigService';
 import { trackPageView, trackSignup } from '../services/platformAnalyticsService';
+import { SMS_ENABLED } from '../config/features';
 import './Login.css';
 
 // Stripe card element styling
@@ -622,7 +623,9 @@ const SignupForm = () => {
                       placeholder="(937) 361-9400"
                     />
                     <Form.Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem' }}>
-                      We'll send you a welcome SMS with setup instructions
+                      {SMS_ENABLED
+                        ? "We'll send you a welcome SMS with setup instructions"
+                        : "For account recovery and support contact"}
                     </Form.Text>
                   </Form.Group>
                   <Form.Group className="mb-3">

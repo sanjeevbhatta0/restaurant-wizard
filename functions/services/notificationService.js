@@ -2,61 +2,60 @@
  * Notification Service — Orchestrator
  *
  * Central service that coordinates email and SMS delivery.
- * Uses template functions to generate content, then dispatches via emailService / smsService.
+ * Uses template functions to generate content, then dispatches via
+ * emailService / smsService. SMS is currently gated off by the
+ * SMS_ENABLED flag in smsService.js (awaiting 10DLC approval); when
+ * disabled, sendSMS short-circuits with { skipped: true } and this
+ * orchestrator treats that as a successful skip (email remains the
+ * canonical delivery path).
  *
  * Usage:
- *   const notifier = createNotificationService({ resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber });
+ *   const notifier = createNotificationService({
+ *     resendApiKey,
+ *     plivoAuthId,
+ *     plivoAuthToken,
+ *     plivoFromNumber
+ *   });
  *   await notifier.sendWelcomeRestaurant({ restaurantName, email, phone, tier });
  */
 const { logger } = require('firebase-functions');
 const { sendEmail } = require('./emailService');
-const { sendSMS } = require('./smsService');
+const { sendSMS, SMS_ENABLED } = require('./smsService');
 const { welcomeRestaurantEmail } = require('../templates/emails/welcomeRestaurant');
 const { orderReceiptEmail } = require('../templates/emails/orderReceipt');
 
-/**
- * Create a notification service instance with credentials
- */
-function createNotificationService({ resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber }) {
-  const twilioCredentials = {
-    accountSid: twilioAccountSid,
-    authToken: twilioAuthToken,
-    fromNumber: twilioFromNumber
+function createNotificationService({ resendApiKey, plivoAuthId, plivoAuthToken, plivoFromNumber }) {
+  const plivoCredentials = {
+    authId: plivoAuthId,
+    authToken: plivoAuthToken,
+    fromNumber: plivoFromNumber,
   };
 
   return {
-    /**
-     * Send welcome notifications to a new restaurant admin
-     */
     async sendWelcomeRestaurant({ restaurantName, email, phone, tier, username }) {
       const results = { email: null, sms: null };
 
-      // 1. Send welcome email
       if (email) {
         const { subject, html } = welcomeRestaurantEmail({ restaurantName, email, tier, username });
         results.email = await sendEmail({ to: email, subject, html }, resendApiKey);
       }
 
-      // 2. Send welcome SMS (only if phone provided)
-      if (phone) {
+      if (phone && SMS_ENABLED) {
         const tierName = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Free';
         const smsBody = `Welcome to Koda Carte, ${restaurantName}! 🎉 Your ${tierName} plan is active. Log in at https://kodacarte.com to set up your menu, POS, and start taking orders. Need help? Reply to this text or email support@kodacarte.com`;
-
-        results.sms = await sendSMS({ to: phone, body: smsBody }, twilioCredentials);
+        results.sms = await sendSMS({ to: phone, body: smsBody }, plivoCredentials);
       }
 
       logger.info('Welcome notifications sent:', {
         restaurant: restaurantName,
         emailSent: results.email?.success || false,
-        smsSent: results.sms?.success || false
+        smsSent: results.sms?.success || false,
+        smsEnabled: SMS_ENABLED,
       });
 
       return results;
     },
 
-    /**
-     * Send order receipt to customer via email and/or SMS
-     */
     async sendOrderReceipt({ order, restaurantName, customerEmail, customerPhone, receiptPreference }) {
       const results = { email: null, sms: null };
 
@@ -74,24 +73,26 @@ function createNotificationService({ resendApiKey, twilioAccountSid, twilioAuthT
         rewardDiscount: order.rewardDiscount || 0,
         orderType: order.orderType || 'dine_in',
         customerName: order.customer?.name || '',
-        createdAt: order.createdAt?._seconds ? new Date(order.createdAt._seconds * 1000).toISOString() : order.createdAt || null
+        createdAt: order.createdAt?._seconds ? new Date(order.createdAt._seconds * 1000).toISOString() : order.createdAt || null,
       };
 
-      // Send email receipt if customer has email and preference allows it
-      const shouldEmail = customerEmail && (!receiptPreference || receiptPreference === 'email' || receiptPreference === 'both');
+      // While SMS is disabled, promote email whenever the customer has one.
+      // If the customer only has a phone and no email, we skip and log.
+      const smsRequested = receiptPreference === 'sms' || receiptPreference === 'both';
+      const emailRequested = !receiptPreference || receiptPreference === 'email' || receiptPreference === 'both';
+      const fallbackToEmail = smsRequested && !SMS_ENABLED && !!customerEmail;
+
+      const shouldEmail = customerEmail && (emailRequested || fallbackToEmail);
       if (shouldEmail) {
         const { subject, html } = orderReceiptEmail(receiptData);
         results.email = await sendEmail({ to: customerEmail, subject, html }, resendApiKey);
       }
 
-      // Send SMS receipt if customer has phone and preference allows it
-      const shouldSMS = customerPhone && (receiptPreference === 'sms' || receiptPreference === 'both');
-      if (shouldSMS) {
+      if (customerPhone && smsRequested && SMS_ENABLED) {
         const itemsSummary = (order.items || []).slice(0, 5).map(i => `${i.name}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ');
         const moreItems = (order.items || []).length > 5 ? ` +${order.items.length - 5} more` : '';
         const smsBody = `Receipt from ${restaurantName}\nOrder #${receiptData.orderNumber}\n${itemsSummary}${moreItems}\nTotal: $${Number(order.total || 0).toFixed(2)}\nThank you for your visit!`;
-
-        results.sms = await sendSMS({ to: customerPhone, body: smsBody }, twilioCredentials);
+        results.sms = await sendSMS({ to: customerPhone, body: smsBody }, plivoCredentials);
       }
 
       logger.info('Order receipt sent:', {
@@ -99,25 +100,21 @@ function createNotificationService({ resendApiKey, twilioAccountSid, twilioAuthT
         restaurant: restaurantName,
         emailSent: results.email?.success || false,
         smsSent: results.sms?.success || false,
-        preference: receiptPreference || 'email'
+        preference: receiptPreference || 'email',
+        smsEnabled: SMS_ENABLED,
+        fellBackToEmail: fallbackToEmail,
       });
 
       return results;
     },
 
-    /**
-     * Send a generic email (for future use — order confirmations, customer emails, etc.)
-     */
     async sendGenericEmail({ to, subject, html, text }) {
       return sendEmail({ to, subject, html, text }, resendApiKey);
     },
 
-    /**
-     * Send a generic SMS (for future use — order updates, customer notifications, etc.)
-     */
     async sendGenericSMS({ to, body }) {
-      return sendSMS({ to, body }, twilioCredentials);
-    }
+      return sendSMS({ to, body }, plivoCredentials);
+    },
   };
 }
 

@@ -25,7 +25,7 @@ describe('Customer Portal Flow — Integration', () => {
     function simulatePhoneVerification(phone) {
       const digits = phone.replace(/[^\d]/g, '');
       if (digits.length < 10) return { success: false, error: 'Invalid phone' };
-      // Server generates OTP, sends via Twilio, returns last 4
+      // Server generates OTP, sends via Plivo (gated by SMS_ENABLED), returns last 4
       const lastFour = digits.slice(-4);
       return { success: true, phoneLastFour: lastFour, codeSent: true };
     }

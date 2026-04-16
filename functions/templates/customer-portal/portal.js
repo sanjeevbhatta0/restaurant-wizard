@@ -19,7 +19,7 @@ class CustomerPortal {
       themeConfig: config.themeConfig || {},
       firebaseConfig: config.firebaseConfig || null,
       useMockData: config.useMockData !== false, // Default true for development
-      skipPhoneVerification: config.skipPhoneVerification || false, // Bypass Twilio SMS when disabled
+      skipPhoneVerification: config.skipPhoneVerification || false, // Bypass SMS OTP when disabled (current default until 10DLC approval)
       promoId: config.promoId || '',
       embedMode: config.embedMode || false,
       initialTab: config.initialTab || 'menu'
@@ -578,7 +578,7 @@ class CustomerPortal {
         this._pendingPhone = phone;
 
         if (this.config.skipPhoneVerification) {
-          // Twilio bypass: auto-approve phone and go straight to auth
+          // SMS bypass: auto-approve phone and go straight to auth
           await this.delay(500);
           this.verifiedPhone = phone;
           this.modal.innerHTML = this.renderAuth('signin');
