@@ -283,7 +283,11 @@ function getStripe() {
   if (!_stripe) {
     const key = stripeSecretKey.value() || process.env.STRIPE_SECRET_KEY;
     if (!key) throw new Error('STRIPE_SECRET_KEY is not configured. Set it via: firebase functions:secrets:set STRIPE_SECRET_KEY');
-    _stripe = require('stripe')(key);
+    // Pin API version so behavior is independent of the account's default.
+    // New Stripe accounts default to newer versions where
+    // `latest_invoice.payment_intent` on default_incomplete subscriptions is
+    // no longer auto-populated (replaced by `confirmation_secret`).
+    _stripe = require('stripe')(key, { apiVersion: '2024-12-18.acacia' });
   }
   return _stripe;
 }
