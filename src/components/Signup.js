@@ -50,6 +50,8 @@ const SignupForm = () => {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1); // 1 = account details, 2 = payment
   const [adminConfig, setAdminConfig] = useState(null);
+  const [cardComplete, setCardComplete] = useState(false);
+  const [cardError, setCardError] = useState('');
   const navigate = useNavigate();
 
   // Get tier and billing cycle from URL params
@@ -191,6 +193,14 @@ const SignupForm = () => {
       return setError('Payment system not loaded. Please refresh the page.');
     }
 
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) {
+      return setError('Card input not ready. Please refresh the page.');
+    }
+    if (!cardComplete) {
+      return setError(cardError || 'Please enter your card details (number, expiration, and CVC) to complete signup.');
+    }
+
     try {
       setError('');
       setLoading(true);
@@ -203,8 +213,6 @@ const SignupForm = () => {
         restaurantName,
         email
       );
-
-      const cardElement = elements.getElement(CardElement);
 
       let subscriptionId;
       let stripeCustomerId = subscriptionResult.customerId;
@@ -224,7 +232,10 @@ const SignupForm = () => {
         );
 
         if (setupError) {
-          throw new Error(setupError.message);
+          const e = new Error(setupError.message);
+          e.type = setupError.type;
+          e.code = setupError.code;
+          throw e;
         }
 
         if (setupIntent.status !== 'succeeded') {
@@ -259,7 +270,10 @@ const SignupForm = () => {
         );
 
         if (stripeError) {
-          throw new Error(stripeError.message);
+          const e = new Error(stripeError.message);
+          e.type = stripeError.type;
+          e.code = stripeError.code;
+          throw e;
         }
 
         if (paymentIntent.status !== 'succeeded') {
@@ -750,8 +764,19 @@ const SignupForm = () => {
                       borderRadius: '8px',
                       padding: '12px'
                     }}>
-                      <CardElement options={CARD_ELEMENT_OPTIONS} />
+                      <CardElement
+                        options={CARD_ELEMENT_OPTIONS}
+                        onChange={(event) => {
+                          setCardComplete(event.complete);
+                          setCardError(event.error ? event.error.message : '');
+                        }}
+                      />
                     </div>
+                    {cardError && (
+                      <Form.Text style={{ display: 'block', marginTop: '8px', color: '#dc2626' }}>
+                        {cardError}
+                      </Form.Text>
+                    )}
                     <Form.Text className="text-muted" style={{ display: 'block', marginTop: '8px' }}>
                       {hasFreeTrial
                         ? 'Your card will be saved and charged after the trial ends'
